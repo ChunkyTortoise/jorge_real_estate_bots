@@ -1,0 +1,605 @@
+# Phase 3B: Advanced Dashboard Features - Priority 2
+**Project**: Jorge Real Estate AI MVP Dashboard
+**Location**: ~/Documents/GitHub/jorge_real_estate_bots/
+**Estimated Time**: 2-3 hours
+**Goal**: Add advanced analytics, performance charts, and interactive tables
+
+---
+
+## Context
+
+I'm working on Phase 3B of the Jorge Real Estate AI project. Phase 3A (core dashboard) is complete. Now I need to add advanced analytics and interactive features.
+
+**Current Status**:
+- ✅ Phase 1: 6 components (PerformanceCache, BusinessRules, LeadAnalyzer)
+- ✅ Phase 2: 3 components (LeadIntelligence, SellerBot, GHLClient)
+- ✅ Phase 3A: Core dashboard (Hero metrics, basic visualizations)
+- ✅ All tests passing (~130+ tests expected)
+- 🎯 Phase 3B: Add advanced features (this task)
+
+---
+
+## What I Need You To Do
+
+Build the **Priority 2 dashboard components**:
+
+1. **Performance Analytics Dashboard**:
+   - Response time chart (line chart: Cache, AI, GHL over 24 hours)
+   - Cache performance metrics (hit rate, miss rate, avg time)
+   - AI analysis statistics (avg time, 5-minute rule compliance)
+   - Cost savings tracking (LeadIntelligence pattern vs AI)
+
+2. **Budget Range Analysis** (Enhanced):
+   - Interactive horizontal bar chart
+   - Click to filter leads by budget range
+   - Show counts and percentages
+   - Display average lead score per range
+
+3. **Timeline Classification** (Enhanced):
+   - Interactive timeline/Gantt view
+   - Show lead counts per timeline category
+   - Prioritization indicators (Immediate = high priority)
+   - Click to view leads in that timeline
+
+4. **Active Conversations Table**:
+   - Sortable/filterable table of seller bot conversations
+   - Columns: Seller, Stage (Q0-Q4), Temperature, Last Activity, Next Action
+   - Action buttons: View conversation, Trigger CMA, Advance stage
+   - Pagination (10 per page)
+
+5. **Commission Tracking Dashboard**:
+   - Total commission potential (from BusinessRules)
+   - Average commission per deal
+   - Budget validation pass rate
+   - Service area match rate
+   - Trend chart (30-day commission forecast)
+
+6. **Enhanced Styling & Layout**:
+   - Improved responsive design
+   - Better spacing and visual hierarchy
+   - Smooth transitions and animations
+   - Loading states and skeletons
+
+---
+
+## Files to Read (in order)
+
+### Critical Context (Read First):
+1. `PHASE3_DASHBOARD_SPECIFICATION.md` ⭐⭐⭐
+   - Read sections: Performance Analytics (Section 4), Design System
+   - Focus on Priority 2 components
+
+2. `PHASE3A_COMPLETION_REPORT.md` ⭐⭐
+   - What was built in Phase 3A
+   - Current dashboard structure
+   - Components to enhance
+
+### Component Reference:
+3. `command_center/dashboard.py`
+   - Current dashboard implementation from Phase 3A
+   - Integration patterns
+
+4. `command_center/components/` (all files)
+   - Existing components to enhance
+   - Patterns to follow
+
+5. `bots/shared/lead_intelligence_optimized.py`
+   - Budget extraction logic (lines 200-250)
+   - Timeline classification (lines 250-300)
+
+6. `bots/seller_bot/jorge_seller_bot.py`
+   - Conversation state management
+   - Get active conversations method
+
+7. `modules/jorge_business_rules.py`
+   - Commission calculation logic
+   - Budget validation rules
+
+8. `modules/performance_cache.py`
+   - Cache statistics methods
+   - Performance metrics
+
+9. `bots/lead_bot/services/lead_analyzer.py`
+   - AI analysis performance tracking
+   - 5-minute rule monitoring
+
+---
+
+## Agents to Use
+
+### Agent 1: Code Explorer Agent (Deep Analysis)
+**When**: At the start, to understand Phase 3A implementation
+**Subagent Type**: `feature-dev:code-explorer`
+**Task**: "Analyze Phase 3A dashboard implementation to understand component patterns, data flow, and integration points"
+
+```
+Use Task tool:
+- subagent_type: "feature-dev:code-explorer"
+- description: "Analyze Phase 3A dashboard"
+- prompt: "Deeply analyze the command_center/ directory to understand: (1) How components fetch data, (2) Caching strategies used, (3) Chart implementation patterns, (4) Integration with bots/ modules. Focus on patterns I should follow for Phase 3B advanced features."
+```
+
+### Agent 2: Code Architect Agent (Feature Design)
+**When**: After exploration, before implementation
+**Subagent Type**: `feature-dev:code-architect`
+**Task**: "Design architecture for advanced analytics, interactive tables, and performance charts"
+
+```
+Use Task tool:
+- subagent_type: "feature-dev:code-architect"
+- description: "Design Phase 3B features"
+- prompt: "Design the architecture for Priority 2 features: (1) Performance analytics with time-series data, (2) Interactive budget/timeline charts with filtering, (3) Active conversations table with actions, (4) Commission tracking dashboard. Include: component structure, data aggregation, state management, chart libraries, and integration approach."
+```
+
+### Agent 3: Code Reviewer Agent (Quality Check)
+**When**: After implementation, before finalizing
+**Subagent Type**: `feature-dev:code-reviewer`
+**Task**: "Review Phase 3B implementation for bugs, performance issues, and best practices"
+
+```
+Use Task tool:
+- subagent_type: "feature-dev:code-reviewer"
+- description: "Review Phase 3B code"
+- prompt: "Review the newly implemented Phase 3B dashboard components for: (1) Performance issues (caching, render time), (2) Code quality (DRY, patterns), (3) Security (data exposure), (4) User experience (loading states, errors), (5) Testing coverage"
+```
+
+---
+
+## Skills to Use
+
+### Skill 1: TDD Workflow
+**When**: Throughout development for each component
+**Skill**: `test-driven-development`
+
+```
+Use Skill tool:
+- skill: "test-driven-development"
+- args: "--component=performance_analytics"
+```
+
+### Skill 2: Frontend Design
+**When**: Building interactive charts and tables
+**Skill**: `frontend-design`
+
+```
+Use Skill tool:
+- skill: "frontend-design"
+```
+
+### Skill 3: Performance Optimization
+**When**: Optimizing chart rendering and data loading
+**Skill**: Performance optimization patterns from .claude/skills/
+
+---
+
+## Step-by-Step Workflow
+
+### Step 1: Analysis & Planning (20 minutes)
+
+1. Navigate to project:
+```bash
+cd ~/Documents/GitHub/jorge_real_estate_bots
+source venv/bin/activate
+```
+
+2. Read Phase 3A completion report and current dashboard
+
+3. Use **Code Explorer Agent**:
+```
+Task tool → code-explorer → "Analyze Phase 3A implementation patterns"
+```
+
+4. Use **Code Architect Agent**:
+```
+Task tool → code-architect → "Design Phase 3B architecture"
+```
+
+5. Review architecture with user before proceeding
+
+### Step 2: Performance Analytics Dashboard (45 minutes)
+
+**Component**: `command_center/components/performance_analytics.py`
+
+Features:
+1. Response time line chart (Plotly)
+   - 3 lines: Cache hits (~0.19ms), AI analysis (~489ms), GHL API (~150ms)
+   - X-axis: Last 24 hours
+   - Y-axis: Response time (ms, log scale)
+   - Hover: Show exact times
+
+2. Cache performance card
+   - Hit rate: 95% (green if >90%)
+   - Miss rate: 5%
+   - Average hit time: 0.19ms
+   - Total hits today: 1,247
+
+3. AI analysis stats
+   - Average analysis time: 489ms (green if <500ms)
+   - 5-minute rule compliance: 100% (red if <100%)
+   - Fallback activations today: 3
+   - Cost savings: $127 today (from LeadIntelligence)
+
+**Data Source**:
+```python
+# Create command_center/services/performance_aggregator.py
+from modules.performance_cache import PerformanceCache
+from bots.lead_bot.services.lead_analyzer import LeadAnalyzer
+
+def get_performance_metrics():
+    cache_stats = PerformanceCache().get_stats()
+    analyzer_stats = LeadAnalyzer().get_performance_stats()
+    # Aggregate and return
+```
+
+**TDD**: Write tests first for each metric calculation
+
+### Step 3: Interactive Budget/Timeline Charts (40 minutes)
+
+**Component**: `command_center/components/enhanced_lead_intelligence.py`
+
+Enhance existing LeadIntelligence component with:
+
+1. **Interactive Budget Range Chart**:
+   - Horizontal bar chart (Plotly)
+   - Ranges: $200-300K, $300-400K, $400-500K, $500-600K, $600K+
+   - Show count + percentage
+   - Click to filter: Store selected range in `st.session_state`
+   - Display filtered leads below chart
+
+2. **Interactive Timeline Chart**:
+   - Timeline view showing lead counts per category
+   - Categories: Immediate, 1 Month, 2 Months, 3-6 Months, 6+ Months
+   - Color by priority (Immediate = red, 1 Month = orange, etc.)
+   - Click to filter and show leads
+
+**Interactivity Pattern**:
+```python
+import streamlit as st
+
+# Budget range selection
+selected_range = st.selectbox("Filter by budget", budget_ranges)
+if selected_range:
+    st.session_state.budget_filter = selected_range
+    filtered_leads = filter_leads_by_budget(selected_range)
+    display_leads_table(filtered_leads)
+```
+
+### Step 4: Active Conversations Table (40 minutes)
+
+**Component**: `command_center/components/active_conversations_table.py`
+
+Features:
+1. **Data Table** with columns:
+   - Seller Name
+   - Stage (Q0/Q1/Q2/Q3/Q4/Qualified with icon)
+   - Temperature (🔥 HOT / 🟡 WARM / 🔵 COLD)
+   - Last Activity (e.g., "2m ago")
+   - Next Action (text)
+   - Actions (buttons)
+
+2. **Sorting & Filtering**:
+   - Sort by: Stage, Temperature, Last Activity
+   - Filter by: Temperature, Stage, Date range
+
+3. **Action Buttons**:
+   - "View Conversation" → Opens detailed view
+   - "Trigger CMA" → Calls seller bot CMA automation
+   - "Advance Stage" → Manual stage override
+
+4. **Pagination**: 10 conversations per page
+
+**Implementation**:
+```python
+import pandas as pd
+import streamlit as st
+
+# Get active conversations from SellerBot
+conversations = get_active_seller_conversations()
+
+# Create DataFrame
+df = pd.DataFrame(conversations)
+
+# Filters
+temp_filter = st.multiselect("Temperature", ["HOT", "WARM", "COLD"])
+stage_filter = st.multiselect("Stage", ["Q0", "Q1", "Q2", "Q3", "Q4"])
+
+# Apply filters
+filtered_df = apply_filters(df, temp_filter, stage_filter)
+
+# Display table with actions
+for idx, row in filtered_df.iterrows():
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+    with col1:
+        st.write(row['seller_name'])
+    with col2:
+        st.write(row['stage'])
+    # ... more columns
+    with col4:
+        if st.button("View", key=f"view_{idx}"):
+            st.session_state.selected_conversation = row['id']
+        if row['temperature'] == 'HOT' and st.button("Trigger CMA", key=f"cma_{idx}"):
+            trigger_cma_automation(row['id'])
+```
+
+**Data Source**:
+```python
+# In command_center/services/seller_bot_service.py
+from bots.seller_bot.jorge_seller_bot import JorgeSellerBot
+
+def get_active_seller_conversations():
+    bot = JorgeSellerBot(ghl_client, business_rules)
+    # Get all active conversation states
+    # Return list of dicts with seller info, stage, temperature, etc.
+```
+
+### Step 5: Commission Tracking Dashboard (30 minutes)
+
+**Component**: `command_center/components/commission_tracker.py`
+
+Features:
+1. **Commission Summary Card**:
+   - Total potential commission: $127,000
+   - Average per deal: $27,000
+   - Number of deals in pipeline: 5
+   - Projected monthly commission
+
+2. **Business Rules Metrics**:
+   - Budget validation pass rate: 87%
+   - Service area match rate: 92%
+   - Qualified leads vs total: 47/100
+
+3. **30-Day Commission Forecast** (Line chart):
+   - X-axis: Next 30 days
+   - Y-axis: Projected commission
+   - Based on current pipeline and historical conversion rates
+
+**Data Source**:
+```python
+# In command_center/services/commission_service.py
+from modules.jorge_business_rules import JorgeBusinessRules
+
+def get_commission_metrics():
+    rules = JorgeBusinessRules()
+    # Calculate total potential commission from qualified leads
+    # Get business rules validation rates
+    # Project 30-day forecast
+```
+
+### Step 6: Enhanced Styling & UX (30 minutes)
+
+Improvements:
+1. **Loading States**:
+   - Show skeletons while data loads
+   - "Loading metrics..." placeholders
+   - Smooth transitions
+
+2. **Error Handling**:
+   - Graceful fallbacks if data unavailable
+   - User-friendly error messages
+   - Retry buttons
+
+3. **Responsive Design**:
+   - Test on different screen sizes
+   - Adjust card sizes for mobile
+   - Collapsible sections for small screens
+
+4. **Animations** (CSS):
+   - Fade-in for cards
+   - Smooth chart transitions
+   - Hover effects on interactive elements
+
+**Implementation**:
+```python
+# Loading state example
+with st.spinner("Loading performance metrics..."):
+    metrics = load_performance_metrics()
+
+# Error handling
+try:
+    data = fetch_data()
+except Exception as e:
+    st.error(f"Failed to load data: {e}")
+    if st.button("Retry"):
+        st.rerun()
+
+# Skeleton loader
+if data is None:
+    st.markdown("⏳ Loading...")
+    # Show placeholder content
+else:
+    # Display actual data
+```
+
+### Step 7: Testing & Integration (30 minutes)
+
+1. **Unit Tests** for each component:
+```bash
+pytest tests/command_center/test_performance_analytics.py -v
+pytest tests/command_center/test_active_conversations_table.py -v
+pytest tests/command_center/test_commission_tracker.py -v
+```
+
+2. **Integration Tests**:
+```bash
+pytest tests/command_center/test_phase3b_integration.py -v
+```
+
+3. **Manual Testing**:
+```bash
+streamlit run command_center/dashboard.py
+```
+
+Verify:
+- [ ] Performance charts render with real data
+- [ ] Budget/timeline charts are interactive (click to filter)
+- [ ] Active conversations table shows real seller bot data
+- [ ] Sorting/filtering works
+- [ ] Action buttons trigger correct functions
+- [ ] Commission tracker shows accurate calculations
+- [ ] Loading states appear during data fetch
+- [ ] Error handling works gracefully
+- [ ] All Phase 3A features still work
+
+4. **Use Code Reviewer Agent**:
+```
+Task tool → code-reviewer → "Review Phase 3B implementation"
+```
+
+---
+
+## Deliverables
+
+### Code Files:
+- [ ] `command_center/components/performance_analytics.py`
+- [ ] `command_center/components/enhanced_lead_intelligence.py`
+- [ ] `command_center/components/active_conversations_table.py`
+- [ ] `command_center/components/commission_tracker.py`
+- [ ] `command_center/services/performance_aggregator.py`
+- [ ] `command_center/services/seller_bot_service.py`
+- [ ] `command_center/services/commission_service.py`
+- [ ] Updated `command_center/dashboard.py`
+
+### Tests:
+- [ ] `tests/command_center/test_performance_analytics.py`
+- [ ] `tests/command_center/test_enhanced_lead_intelligence.py`
+- [ ] `tests/command_center/test_active_conversations_table.py`
+- [ ] `tests/command_center/test_commission_tracker.py`
+- [ ] `tests/command_center/test_phase3b_integration.py`
+
+### Documentation:
+- [ ] `PHASE3B_COMPLETION_REPORT.md`
+- [ ] Component usage docs
+- [ ] Screenshots of new features
+
+---
+
+## Technical Requirements
+
+### Chart Libraries:
+- **Plotly**: For all interactive charts
+- **Pandas**: For data manipulation in tables
+- **Streamlit-Aggrid** (optional): For advanced table features
+
+### State Management:
+```python
+# Use session state for filters and selections
+if 'budget_filter' not in st.session_state:
+    st.session_state.budget_filter = None
+
+if 'selected_conversation' not in st.session_state:
+    st.session_state.selected_conversation = None
+```
+
+### Performance Optimization:
+```python
+# Cache expensive operations
+@st.cache_data(ttl=60)  # Cache for 1 minute
+def get_performance_metrics():
+    # Expensive calculation
+    pass
+
+@st.cache_resource
+def get_seller_bot_client():
+    # Singleton client
+    return JorgeSellerBot(...)
+```
+
+### Styling (from Phase 3 spec):
+- Maintain design system from Phase 3A
+- Card-based layout
+- 8px grid spacing
+- Consistent colors
+
+---
+
+## Success Criteria
+
+✅ **Functionality**:
+- Performance analytics dashboard displays real metrics
+- Interactive charts allow filtering (budget, timeline)
+- Active conversations table shows live seller bot data
+- Table actions work (View, Trigger CMA, Advance)
+- Commission tracker calculates accurately
+- All Phase 3A features still work
+
+✅ **User Experience**:
+- Loading states prevent confusion
+- Error handling is graceful
+- Interactive elements respond quickly (<200ms)
+- Tables are sortable and filterable
+- Smooth animations and transitions
+
+✅ **Testing**:
+- All existing tests pass (~130+ tests)
+- New tests pass (aim for 30+ new tests)
+- No performance regressions
+- No breaking changes
+
+✅ **Performance**:
+- Charts render in <200ms
+- Table pagination works smoothly
+- No memory leaks on interactions
+- Dashboard stays responsive
+
+---
+
+## Git Workflow
+
+After each major component:
+```bash
+git add command_center/components/<component>.py tests/command_center/test_<component>.py
+git commit -m "feat(dashboard): Add <component> with interactivity
+
+- Implement <features>
+- Add filtering/sorting
+- Include tests
+- Follow Phase 3B specification
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+```
+
+Final commit:
+```bash
+git add command_center/ tests/command_center/
+git commit -m "feat(dashboard): Complete Phase 3B - Advanced Analytics
+
+Implemented Priority 2 features:
+- Performance analytics with time-series charts
+- Interactive budget/timeline filtering
+- Active conversations table with actions
+- Commission tracking dashboard
+- Enhanced styling and loading states
+
+Tests: +30 new tests, all passing
+Performance: <200ms chart rendering
+Features: Fully interactive dashboard
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+```
+
+---
+
+## Questions to Ask User Before Starting
+
+1. Should I use Streamlit-Aggrid for advanced table features, or stick with basic Streamlit tables?
+2. Do you want real-time updates in Phase 3B, or continue with 30s polling?
+3. Any specific performance metrics you want to prioritize?
+4. Should "Trigger CMA" button require confirmation, or execute immediately?
+
+---
+
+## Reference Files Summary
+
+| File | Purpose | Priority |
+|------|---------|----------|
+| PHASE3_DASHBOARD_SPECIFICATION.md | Design spec (Section 4) | 🔴 Critical |
+| PHASE3A_COMPLETION_REPORT.md | Previous phase context | 🔴 Critical |
+| command_center/dashboard.py | Current implementation | 🔴 Critical |
+| bots/seller_bot/jorge_seller_bot.py | Data source | 🟡 Important |
+| modules/jorge_business_rules.py | Commission logic | 🟡 Important |
+
+---
+
+**Ready to start Phase 3B!** 🚀
+
+Copy this entire prompt and paste into a new Claude Code chat session.
