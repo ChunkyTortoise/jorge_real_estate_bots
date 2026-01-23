@@ -272,3 +272,69 @@ class CacheService:
 def get_cache_service() -> CacheService:
     """Get the global cache service instance."""
     return CacheService()
+
+
+class PerformanceCache:
+    """
+    High-performance caching for Claude AI lead intelligence responses.
+
+    Specialized wrapper around CacheService for lead analysis with:
+    - Message + context-based cache keys (MD5 hashing)
+    - TTL-based expiration (default 300s)
+    - Optimized for <100ms cache hits
+    - Integrated with Redis + Memory backend
+
+    Extracted from jorge_deployment_package/jorge_claude_intelligence.py
+    """
+
+    def __init__(self, ttl_seconds: int = 300):
+        self.ttl_seconds = ttl_seconds
+        self.cache_service = get_cache_service()
+        logger.info(f"Initialized PerformanceCache with {ttl_seconds}s TTL")
+
+    def _get_cache_key(self, message: str, context: Dict = None) -> str:
+        """Generate cache key from message and context using MD5 hash"""
+        import hashlib
+        content = message + str(context or {})
+        return f"lead_intel:{hashlib.md5(content.encode()).hexdigest()}"
+
+    async def get(self, message: str, context: Dict = None) -> Optional[Dict]:
+        """
+        Get cached analysis if available and not expired.
+
+        Returns cached lead intelligence analysis or None if cache miss.
+        Optimized for <100ms response time.
+        """
+        cache_key = self._get_cache_key(message, context)
+
+        try:
+            cached_data = await self.cache_service.get(cache_key)
+            if cached_data:
+                # Return just the analysis portion
+                return cached_data.get("analysis")
+            return None
+        except Exception as e:
+            logger.error(f"PerformanceCache get error: {e}")
+            return None
+
+    async def set(self, message: str, analysis: Dict, context: Dict = None):
+        """
+        Cache analysis result with TTL.
+
+        Stores lead intelligence analysis with timestamp for debugging.
+        """
+        import datetime
+
+        cache_key = self._get_cache_key(message, context)
+
+        cached_data = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "analysis": analysis,
+            "message_hash": cache_key.split(":")[-1][:8]  # For debugging
+        }
+
+        try:
+            await self.cache_service.set(cache_key, cached_data, self.ttl_seconds)
+            logger.debug(f"Cached lead analysis: {cache_key[:20]}... (TTL: {self.ttl_seconds}s)")
+        except Exception as e:
+            logger.error(f"PerformanceCache set error: {e}")
