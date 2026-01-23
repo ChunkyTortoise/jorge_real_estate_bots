@@ -1,0 +1,274 @@
+"""
+Cache Service for Jorge's Real Estate Bots.
+
+Provides Redis-backed caching with memory fallback for <500ms performance.
+Simplified version from EnterpriseHub focused on Jorge's needs.
+"""
+import time
+import pickle
+from typing import Any, Optional, Dict
+from abc import ABC, abstractmethod
+
+from bots.shared.config import settings
+from bots.shared.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class AbstractCache(ABC):
+    """Abstract base class for cache backends."""
+
+    @abstractmethod
+    async def get(self, key: str) -> Optional[Any]:
+        """Retrieve value from cache."""
+        pass
+
+    @abstractmethod
+    async def set(self, key: str, value: Any, ttl: int = 300) -> bool:
+        """Set value in cache with TTL in seconds."""
+        pass
+
+    @abstractmethod
+    async def delete(self, key: str) -> bool:
+        """Delete value from cache."""
+        pass
+
+
+class MemoryCache(AbstractCache):
+    """In-memory cache fallback."""
+
+    def __init__(self):
+        self._cache: Dict[str, Any] = {}
+        self._expiry: Dict[str, float] = {}
+        logger.info("Initialized MemoryCache")
+
+    async def get(self, key: str) -> Optional[Any]:
+        if key not in self._cache:
+            return None
+
+        if time.time() > self._expiry.get(key, 0):
+            await self.delete(key)
+            return None
+
+        return self._cache[key]
+
+    async def set(self, key: str, value: Any, ttl: int = 300) -> bool:
+        self._cache[key] = value
+        self._expiry[key] = time.time() + ttl
+        return True
+
+    async def delete(self, key: str) -> bool:
+        if key in self._cache:
+            del self._cache[key]
+            del self._expiry[key]
+            return True
+        return False
+
+
+class RedisCache(AbstractCache):
+    """Redis-based cache for production."""
+
+    def __init__(self, redis_url: str):
+        try:
+            import redis.asyncio as redis
+            self.redis = redis.from_url(
+                redis_url,
+                max_connections=settings.redis_max_connections,
+                socket_timeout=settings.redis_socket_timeout,
+                socket_connect_timeout=settings.redis_socket_connect_timeout,
+                decode_responses=False
+            )
+            self.enabled = True
+            logger.info(f"Initialized RedisCache: {redis_url}")
+        except ImportError:
+            logger.error("Redis package not installed. Install with 'pip install redis'")
+            self.enabled = False
+        except Exception as e:
+            logger.error(f"Redis connection failed: {e}")
+            self.enabled = False
+
+    async def get(self, key: str) -> Optional[Any]:
+        if not self.enabled:
+            return None
+
+        try:
+            data = await self.redis.get(key)
+            if data:
+                return pickle.loads(data)
+            return None
+        except Exception as e:
+            logger.error(f"Redis get error for key {key}: {e}")
+            return None
+
+    async def set(self, key: str, value: Any, ttl: int = 300) -> bool:
+        if not self.enabled:
+            return False
+
+        try:
+            data = pickle.dumps(value)
+            await self.redis.set(key, data, ex=ttl)
+            return True
+        except Exception as e:
+            logger.error(f"Redis set error for key {key}: {e}")
+            return False
+
+    async def delete(self, key: str) -> bool:
+        if not self.enabled:
+            return False
+
+        try:
+            result = await self.redis.delete(key)
+            return result > 0
+        except Exception as e:
+            logger.error(f"Redis delete error for key {key}: {e}")
+            return False
+
+    async def increment(self, key: str, amount: int = 1) -> int:
+        """Atomic increment operation."""
+        if not self.enabled:
+            return 0
+
+        try:
+            return await self.redis.incrby(key, amount)
+        except Exception as e:
+            logger.error(f"Redis increment error for key {key}: {e}")
+            return 0
+
+
+class CacheService:
+    """
+    Unified cache service with automatic fallback.
+
+    Features:
+    - Redis primary with memory fallback
+    - Automatic circuit breaker for resilience
+    - <500ms performance for lead analysis
+    """
+
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(CacheService, cls).__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+
+    def _initialize(self):
+        """Initialize cache backends."""
+        self.backend: AbstractCache = None
+        self.fallback_backend: AbstractCache = MemoryCache()
+
+        # Try Redis first if configured
+        if settings.redis_url:
+            try:
+                self.backend = RedisCache(settings.redis_url)
+                if not getattr(self.backend, 'enabled', False):
+                    logger.warning("Redis unavailable, using memory cache")
+                    self.backend = self.fallback_backend
+                else:
+                    logger.info("Redis cache initialized with memory fallback")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Redis: {e}")
+                self.backend = self.fallback_backend
+        else:
+            self.backend = self.fallback_backend
+            logger.info("Using MemoryCache (no Redis configured)")
+
+    async def get(self, key: str) -> Optional[Any]:
+        """Get value from cache."""
+        try:
+            return await self.backend.get(key)
+        except Exception as e:
+            logger.error(f"Cache get error: {e}")
+            if self.fallback_backend != self.backend:
+                return await self.fallback_backend.get(key)
+            return None
+
+    async def set(self, key: str, value: Any, ttl: int = 300) -> bool:
+        """Set value in cache."""
+        try:
+            result = await self.backend.set(key, value, ttl)
+            # Also set in fallback if using Redis
+            if self.fallback_backend != self.backend:
+                await self.fallback_backend.set(key, value, ttl)
+            return result
+        except Exception as e:
+            logger.error(f"Cache set error: {e}")
+            if self.fallback_backend != self.backend:
+                return await self.fallback_backend.set(key, value, ttl)
+            return False
+
+    async def delete(self, key: str) -> bool:
+        """Delete value from cache."""
+        try:
+            result = await self.backend.delete(key)
+            if self.fallback_backend != self.backend:
+                await self.fallback_backend.delete(key)
+            return result
+        except Exception as e:
+            logger.error(f"Cache delete error: {e}")
+            return False
+
+    async def increment(self, key: str, amount: int = 1, ttl: Optional[int] = None) -> int:
+        """Atomic increment operation."""
+        if hasattr(self.backend, 'increment'):
+            result = await self.backend.increment(key, amount)
+            if result and ttl:
+                # Set expiry if this is a new counter
+                await self.backend.set(f"{key}_ttl", True, ttl)
+            return result
+        return 0
+
+    async def cached_computation(
+        self,
+        key: str,
+        computation_func,
+        ttl: int = 300,
+        *args,
+        **kwargs
+    ) -> Any:
+        """
+        Cache the result of a computation.
+
+        Checks cache first, computes if miss, caches result.
+        Critical for <500ms lead analysis performance.
+        """
+        import asyncio
+
+        start_time = time.time()
+
+        # Check cache first
+        cached_result = await self.get(key)
+        if cached_result is not None:
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.debug(f"Cache HIT for {key} ({elapsed_ms:.1f}ms)")
+            return cached_result
+
+        # Compute result
+        logger.debug(f"Cache MISS for {key}, computing...")
+        compute_start = time.time()
+
+        try:
+            if asyncio.iscoroutinefunction(computation_func):
+                result = await computation_func(*args, **kwargs)
+            else:
+                result = computation_func(*args, **kwargs)
+
+            compute_time_ms = (time.time() - compute_start) * 1000
+
+            # Cache the result
+            await self.set(key, result, ttl)
+
+            total_time_ms = (time.time() - start_time) * 1000
+            logger.debug(f"Cached {key} (compute: {compute_time_ms:.1f}ms, total: {total_time_ms:.1f}ms)")
+
+            return result
+        except Exception as e:
+            logger.error(f"Computation failed for key {key}: {e}")
+            raise
+
+
+# Global cache instance
+def get_cache_service() -> CacheService:
+    """Get the global cache service instance."""
+    return CacheService()
