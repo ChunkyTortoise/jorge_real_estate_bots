@@ -20,7 +20,7 @@ Created: 2026-01-23
 """
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from enum import Enum
@@ -29,6 +29,7 @@ from bots.shared.logger import get_logger
 from bots.shared.claude_client import ClaudeClient
 from bots.shared.ghl_client import GHLClient
 from bots.shared.business_rules import JorgeBusinessRules
+from bots.shared.cache_service import get_cache_service
 
 logger = get_logger(__name__)
 
@@ -52,9 +53,15 @@ class SellerQualificationState:
     3: Motivation to sell (urgency)
     4: Offer acceptance with timeline
     """
+    # Required identifiers (added for Redis persistence)
+    contact_id: str
+    location_id: str
+
+    # Qualification state
     current_question: int = 0
     questions_answered: int = 0
     is_qualified: bool = False
+    stage: str = "Q0"  # Q0, Q1, Q2, Q3, Q4, QUALIFIED, STALLED
 
     # Q1: Condition
     condition: Optional[str] = None  # "needs_major_repairs", "needs_minor_repairs", "move_in_ready"
@@ -72,12 +79,15 @@ class SellerQualificationState:
 
     # Metadata
     conversation_history: List[Dict[str, str]] = field(default_factory=list)
+    extracted_data: Dict[str, Any] = field(default_factory=dict)  # For dashboard integration
     last_interaction: Optional[datetime] = None
+    conversation_started: datetime = field(default_factory=datetime.now)
 
     def advance_question(self):
-        """Move to next question in sequence"""
+        """Move to next question in sequence and update stage"""
         if self.current_question < 4:
             self.current_question += 1
+            self.stage = f"Q{self.current_question}"
             logger.info(f"Advanced to Q{self.current_question}")
 
     def record_answer(self, question_num: int, answer: str, extracted_data: Dict[str, Any]):
@@ -115,6 +125,10 @@ class SellerQualificationState:
             # Auto-mark as qualified if offer accepted with good timeline
             if self.offer_accepted and self.timeline_acceptable:
                 self.is_qualified = True
+                self.stage = "QUALIFIED"
+
+        # Update extracted_data field for dashboard
+        self.extracted_data.update(extracted_data)
 
         self.last_interaction = datetime.now()
         logger.debug(f"Recorded Q{question_num} answer: {extracted_data}")
@@ -185,17 +199,147 @@ class JorgeSellerBot:
 
     def __init__(self, ghl_client: Optional[GHLClient] = None):
         """
-        Initialize seller bot.
+        Initialize seller bot with Redis persistence.
 
         Args:
             ghl_client: Optional GHL client instance (creates default if not provided)
         """
         self.claude_client = ClaudeClient()
         self.ghl_client = ghl_client or GHLClient()
+        self.cache = get_cache_service()  # Redis cache for persistence
         self.logger = get_logger(__name__)
 
-        # State management: contact_id -> SellerQualificationState
-        self._states: Dict[str, SellerQualificationState] = {}
+        # Note: No in-memory _states dict - all state now in Redis
+        self.logger.info("Initialized JorgeSellerBot with Redis persistence")
+
+    async def get_conversation_state(
+        self,
+        contact_id: str
+    ) -> Optional[SellerQualificationState]:
+        """
+        Load conversation state from Redis.
+
+        Args:
+            contact_id: GHL contact ID
+
+        Returns:
+            SellerQualificationState if exists, None otherwise
+        """
+        key = f"seller:state:{contact_id}"
+        state_dict = await self.cache.get(key)
+
+        if not state_dict:
+            return None
+
+        # Deserialize datetime fields
+        if 'last_interaction' in state_dict and state_dict['last_interaction']:
+            state_dict['last_interaction'] = datetime.fromisoformat(
+                state_dict['last_interaction']
+            )
+        if 'conversation_started' in state_dict and state_dict['conversation_started']:
+            state_dict['conversation_started'] = datetime.fromisoformat(
+                state_dict['conversation_started']
+            )
+
+        return SellerQualificationState(**state_dict)
+
+    async def save_conversation_state(
+        self,
+        contact_id: str,
+        state: SellerQualificationState
+    ):
+        """
+        Save conversation state to Redis with 7-day TTL.
+
+        Args:
+            contact_id: GHL contact ID
+            state: Current conversation state
+        """
+        key = f"seller:state:{contact_id}"
+
+        # Convert dataclass to dict and serialize datetime fields
+        state_dict = {
+            'contact_id': state.contact_id,
+            'location_id': state.location_id,
+            'current_question': state.current_question,
+            'questions_answered': state.questions_answered,
+            'is_qualified': state.is_qualified,
+            'stage': state.stage,
+            'condition': state.condition,
+            'price_expectation': state.price_expectation,
+            'motivation': state.motivation,
+            'urgency': state.urgency,
+            'offer_accepted': state.offer_accepted,
+            'timeline_acceptable': state.timeline_acceptable,
+            'conversation_history': state.conversation_history,
+            'extracted_data': state.extracted_data,
+            'last_interaction': state.last_interaction.isoformat() if state.last_interaction else None,
+            'conversation_started': state.conversation_started.isoformat() if state.conversation_started else None,
+        }
+
+        # Save to Redis with 7-day TTL (604,800 seconds)
+        await self.cache.set(key, state_dict, ttl=604800)
+
+        # Add to active contacts set (if Redis Set support available)
+        if hasattr(self.cache, 'sadd'):
+            try:
+                await self.cache.sadd("seller:active_contacts", contact_id)
+            except Exception as e:
+                self.logger.warning(f"Could not add to active contacts set: {e}")
+
+        self.logger.debug(f"Saved state for contact {contact_id}: stage={state.stage}, Q{state.current_question}")
+
+    async def get_all_active_conversations(self) -> List[SellerQualificationState]:
+        """
+        Get all active seller conversations from Redis.
+
+        Returns:
+            List of active conversation states
+        """
+        states = []
+
+        # Get active contact IDs from Redis Set
+        if hasattr(self.cache, 'smembers'):
+            try:
+                contact_ids = await self.cache.smembers("seller:active_contacts")
+
+                # Decode bytes to strings if needed
+                if contact_ids and isinstance(next(iter(contact_ids)), bytes):
+                    contact_ids = [cid.decode('utf-8') for cid in contact_ids]
+            except Exception as e:
+                self.logger.warning(f"Could not get active contacts from set: {e}")
+                return []
+        else:
+            # Fallback: return empty list
+            self.logger.warning("Redis Set operations not available, returning empty list")
+            return []
+
+        # Load each state
+        for contact_id in contact_ids:
+            state = await self.get_conversation_state(contact_id)
+            if state:
+                states.append(state)
+
+        return states
+
+    async def delete_conversation_state(self, contact_id: str):
+        """
+        Delete conversation state from Redis.
+
+        Args:
+            contact_id: GHL contact ID
+        """
+        key = f"seller:state:{contact_id}"
+        await self.cache.delete(key)
+
+        # Remove from active contacts set
+        if hasattr(self.cache, 'srem'):
+            try:
+                await self.cache.srem("seller:active_contacts", contact_id)
+            except Exception as e:
+                self.logger.warning(f"Could not remove from active contacts set: {e}")
+
+        self.logger.info(f"Deleted state for contact {contact_id}")
 
     async def process_seller_message(
         self,
@@ -219,8 +363,8 @@ class JorgeSellerBot:
         try:
             self.logger.info(f"Processing seller message for contact {contact_id}")
 
-            # Get or create qualification state
-            state = self._get_or_create_state(contact_id)
+            # Get or create qualification state (now from Redis)
+            state = await self._get_or_create_state(contact_id, location_id)
 
             # Determine current question and generate response
             response_data = await self._generate_response(
@@ -243,6 +387,9 @@ class JorgeSellerBot:
                     answer=message,
                     extracted_data=response_data["extracted_data"]
                 )
+
+            # Save state to Redis after updates
+            await self.save_conversation_state(contact_id, state)
 
             # Calculate temperature
             temperature = self._calculate_temperature(state)
@@ -284,12 +431,26 @@ class JorgeSellerBot:
             # Return safe fallback response
             return self._create_fallback_result()
 
-    def _get_or_create_state(self, contact_id: str) -> SellerQualificationState:
-        """Get existing state or create new one for contact"""
-        if contact_id not in self._states:
-            self._states[contact_id] = SellerQualificationState()
-            self.logger.debug(f"Created new qualification state for {contact_id}")
-        return self._states[contact_id]
+    async def _get_or_create_state(
+        self,
+        contact_id: str,
+        location_id: str
+    ) -> SellerQualificationState:
+        """Get existing state from Redis or create new one."""
+        state = await self.get_conversation_state(contact_id)
+
+        if not state:
+            state = SellerQualificationState(
+                contact_id=contact_id,
+                location_id=location_id,
+                current_question=0,
+                stage="Q0",
+                conversation_started=datetime.now()
+            )
+            await self.save_conversation_state(contact_id, state)
+            self.logger.info(f"Created new qualification state for {contact_id}")
+
+        return state
 
     async def _generate_response(
         self,
@@ -681,7 +842,7 @@ RESPONSE (keep under 100 words):"""
         Returns:
             Analytics dictionary with qualification status and metrics
         """
-        state = self._get_or_create_state(contact_id)
+        state = await self._get_or_create_state(contact_id, location_id)
         temperature = self._calculate_temperature(state)
         return self._build_analytics(state, temperature)
 
@@ -717,3 +878,6 @@ RESPONSE (keep under 100 words):"""
 def create_seller_bot(ghl_client: Optional[GHLClient] = None) -> JorgeSellerBot:
     """Create and configure Jorge's seller bot"""
     return JorgeSellerBot(ghl_client=ghl_client)
+
+# Alias for tests
+SellerBotService = JorgeSellerBot
