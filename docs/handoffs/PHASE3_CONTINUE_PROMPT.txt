@@ -1,0 +1,114 @@
+I'm continuing Phase 3 implementation for the Jorge Real Estate AI dashboard.
+
+**Context**: Phase 3B Priority 3 - Streamlit UI components with real-time seller bot integration.
+
+**Progress So Far**:
+✅ Phase 1 Foundation (COMPLETED):
+  - dashboard_models.py with 12 dataclasses
+  - performance_tracker.py for metrics tracking
+  - 42 tests passing
+
+✅ Phase 2 Service Layer (99.4% COMPLETE - 171/173 tests):
+  - metrics_service.py: Performance aggregation (18/18 tests ✅)
+  - dashboard_data_service.py: Data orchestration (20/21 tests ✅)
+  - jorge_seller_bot.py: Redis persistence (9/10 tests ✅)
+  - Total: 171/173 tests passing
+
+⏳ Phase 3 UI Components (NEXT - ~60 minutes):
+  - Streamlit dashboard components for real-time data
+  - Integration with seller bot persistence
+  - Interactive charts and conversation monitoring
+
+**What I Need You To Do**:
+Complete Phase 3 - Streamlit UI components for the Jorge Real Estate Dashboard:
+
+1. **Read Phase 3 Handoff Documentation**:
+   - PHASE3_IMPLEMENTATION_HANDOFF.md - Complete architecture and component specs
+   - PHASE3_FILES_TO_READ.md - Priority reading list with line numbers
+
+2. **Build 3 Core Streamlit Components** (command_center/components/):
+   
+   A. **HeroMetricsCard** (hero_metrics_card.py):
+      - Display 4 hero metrics: Active Conversations, Qualification Rate, Avg Response Time, Hot Leads
+      - Real-time data from DashboardDataService
+      - Color-coded indicators (green/yellow/red)
+      - Streamlit columns layout with st.metric()
+      - Caching with @st.cache_data(ttl=30)
+   
+   B. **ActiveConversationsTable** (active_conversations_table.py):
+      - Paginated table of active seller conversations
+      - Columns: Contact, Stage, Temperature, Questions Answered, Last Activity
+      - Temperature color coding (🔥 HOT, ⚡ WARM, ❄️ COLD)
+      - Click-to-expand for conversation details
+      - Search and filter by temperature/stage
+      - Caching with @st.cache_data(ttl=60)
+   
+   C. **PerformanceChart** (performance_chart.py):
+      - Time-series chart of qualification metrics
+      - Plotly area chart: Qualification rate, response time trends
+      - 24h rolling window data from MetricsService
+      - Interactive tooltips and zoom
+      - Caching with @st.cache_data(ttl=300)
+
+3. **Integration Dashboard** (command_center/dashboard_v3.py):
+   - Main Streamlit app integrating all 3 components
+   - Auto-refresh every 30 seconds
+   - Real-time data from DashboardDataService
+   - Clean layout with st.columns() and st.container()
+   - Error handling with fallback UI
+
+4. **Write Component Tests** (tests/command_center/):
+   - test_hero_metrics_card.py (5 tests)
+   - test_active_conversations_table.py (7 tests)
+   - test_performance_chart.py (6 tests)
+   - Mock DashboardDataService and data fixtures
+   - Test rendering, caching, error handling
+
+5. **Run Tests and Verify**:
+   - pytest tests/command_center/ -v
+   - Manual testing: streamlit run command_center/dashboard_v3.py
+   - All components render without errors
+   - Data updates on refresh
+
+**Critical Files to Read First** (in order):
+1. PHASE3_IMPLEMENTATION_HANDOFF.md - Architecture guide
+2. bots/shared/dashboard_data_service.py:42-370 - Data source API
+3. bots/shared/dashboard_models.py:1-250 - Data model structures
+4. bots/shared/metrics_service.py:56-473 - Metrics calculation patterns
+
+**Key Patterns to Follow**:
+- Streamlit caching: @st.cache_data(ttl=X) for data, @st.cache_resource for clients
+- Error handling: try-except with st.error() for user-friendly messages
+- Session state: st.session_state for pagination, filters
+- Async data: Use asyncio.run() to call async DashboardDataService methods
+- Datetime formatting: Use .strftime("%Y-%m-%d %H:%M") for display
+
+**Environment**:
+```bash
+cd ~/Documents/GitHub/jorge_real_estate_bots
+source venv/bin/activate
+```
+
+**Testing**:
+```bash
+# Run component tests
+pytest tests/command_center/ -v
+
+# Run full test suite
+pytest tests/ --cov=bots --cov=command_center --cov-report=html
+
+# Manual testing
+streamlit run command_center/dashboard_v3.py
+```
+
+**Success Criteria**:
+- [ ] All 3 Streamlit components render without errors
+- [ ] Real-time data from DashboardDataService displays correctly
+- [ ] Temperature color coding works (HOT=red, WARM=yellow, COLD=blue)
+- [ ] Pagination and search work in conversations table
+- [ ] Charts show 24h trends from MetricsService
+- [ ] Auto-refresh updates data every 30 seconds
+- [ ] All 18 component tests pass (5 + 7 + 6)
+- [ ] Coverage ≥80% for new components
+
+Start by reading PHASE3_IMPLEMENTATION_HANDOFF.md for complete component specifications, then implement the 3 core components following Streamlit best practices.

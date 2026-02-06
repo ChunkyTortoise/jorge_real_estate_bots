@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 
 from bots.shared.config import settings
 from bots.shared.logger import get_logger
+from bots.shared.event_broker import event_broker
 
 logger = get_logger(__name__)
 
@@ -123,13 +124,16 @@ class RedisCache(AbstractCache):
             logger.error(f"Redis delete error for key {key}: {e}")
             return False
 
-    async def increment(self, key: str, amount: int = 1) -> int:
-        """Atomic increment operation."""
+    async def increment(self, key: str, amount: int = 1, ttl: Optional[int] = None) -> int:
+        """Atomic increment operation with optional TTL."""
         if not self.enabled:
             return 0
 
         try:
-            return await self.redis.incrby(key, amount)
+            value = await self.redis.incrby(key, amount)
+            if ttl and value == amount:
+                await self.redis.expire(key, ttl)
+            return value
         except Exception as e:
             logger.error(f"Redis increment error for key {key}: {e}")
             return 0
@@ -212,12 +216,11 @@ class CacheService:
     async def increment(self, key: str, amount: int = 1, ttl: Optional[int] = None) -> int:
         """Atomic increment operation."""
         if hasattr(self.backend, 'increment'):
-            result = await self.backend.increment(key, amount)
-            if result and ttl:
-                # Set expiry if this is a new counter
-                await self.backend.set(f"{key}_ttl", True, ttl)
-            return result
-        return 0
+            return await self.backend.increment(key, amount, ttl)
+        current = await self.get(key) or 0
+        new_value = int(current) + amount
+        await self.set(key, new_value, ttl or 300)
+        return new_value
 
     async def cached_computation(
         self,
@@ -242,10 +245,31 @@ class CacheService:
         if cached_result is not None:
             elapsed_ms = (time.time() - start_time) * 1000
             logger.debug(f"Cache HIT for {key} ({elapsed_ms:.1f}ms)")
+
+            # Emit cache hit event
+            try:
+                await event_broker.publish_cache_event(
+                    "cache.hit",
+                    cache_key=key[:100],  # Truncate for privacy
+                    response_time_ms=elapsed_ms,
+                    data_size_bytes=len(str(cached_result)) if cached_result else 0
+                )
+            except Exception as e:
+                logger.warning(f"Failed to publish cache hit event: {e}")
+
             return cached_result
 
         # Compute result
         logger.debug(f"Cache MISS for {key}, computing...")
+
+        # Emit cache miss event
+        try:
+            await event_broker.publish_cache_event(
+                "cache.miss",
+                cache_key=key[:100]  # Truncate for privacy
+            )
+        except Exception as e:
+            logger.warning(f"Failed to publish cache miss event: {e}")
         compute_start = time.time()
 
         try:
@@ -258,6 +282,17 @@ class CacheService:
 
             # Cache the result
             await self.set(key, result, ttl)
+
+            # Emit cache set event
+            try:
+                await event_broker.publish_cache_event(
+                    "cache.set",
+                    cache_key=key[:100],  # Truncate for privacy
+                    ttl_seconds=ttl,
+                    data_size_bytes=len(str(result)) if result else 0
+                )
+            except Exception as e:
+                logger.warning(f"Failed to publish cache set event: {e}")
 
             total_time_ms = (time.time() - start_time) * 1000
             logger.debug(f"Cached {key} (compute: {compute_time_ms:.1f}ms, total: {total_time_ms:.1f}ms)")
@@ -272,3 +307,69 @@ class CacheService:
 def get_cache_service() -> CacheService:
     """Get the global cache service instance."""
     return CacheService()
+
+
+class PerformanceCache:
+    """
+    High-performance caching for Claude AI lead intelligence responses.
+
+    Specialized wrapper around CacheService for lead analysis with:
+    - Message + context-based cache keys (MD5 hashing)
+    - TTL-based expiration (default 300s)
+    - Optimized for <100ms cache hits
+    - Integrated with Redis + Memory backend
+
+    Extracted from jorge_deployment_package/jorge_claude_intelligence.py
+    """
+
+    def __init__(self, ttl_seconds: int = 300):
+        self.ttl_seconds = ttl_seconds
+        self.cache_service = get_cache_service()
+        logger.info(f"Initialized PerformanceCache with {ttl_seconds}s TTL")
+
+    def _get_cache_key(self, message: str, context: Dict = None) -> str:
+        """Generate cache key from message and context using MD5 hash"""
+        import hashlib
+        content = message + str(context or {})
+        return f"lead_intel:{hashlib.md5(content.encode()).hexdigest()}"
+
+    async def get(self, message: str, context: Dict = None) -> Optional[Dict]:
+        """
+        Get cached analysis if available and not expired.
+
+        Returns cached lead intelligence analysis or None if cache miss.
+        Optimized for <100ms response time.
+        """
+        cache_key = self._get_cache_key(message, context)
+
+        try:
+            cached_data = await self.cache_service.get(cache_key)
+            if cached_data:
+                # Return just the analysis portion
+                return cached_data.get("analysis")
+            return None
+        except Exception as e:
+            logger.error(f"PerformanceCache get error: {e}")
+            return None
+
+    async def set(self, message: str, analysis: Dict, context: Dict = None):
+        """
+        Cache analysis result with TTL.
+
+        Stores lead intelligence analysis with timestamp for debugging.
+        """
+        import datetime
+
+        cache_key = self._get_cache_key(message, context)
+
+        cached_data = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "analysis": analysis,
+            "message_hash": cache_key.split(":")[-1][:8]  # For debugging
+        }
+
+        try:
+            await self.cache_service.set(cache_key, cached_data, self.ttl_seconds)
+            logger.debug(f"Cached lead analysis: {cache_key[:20]}... (TTL: {self.ttl_seconds}s)")
+        except Exception as e:
+            logger.error(f"PerformanceCache set error: {e}")

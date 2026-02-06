@@ -1,0 +1,398 @@
+# Phase 3A: Core Dashboard Components - Priority 1
+**Project**: Jorge Real Estate AI MVP Dashboard
+**Location**: ~/Documents/GitHub/jorge_real_estate_bots/
+**Estimated Time**: 2-3 hours
+**Goal**: Implement core dashboard components with hero metrics and basic visualizations
+
+---
+
+## Context
+
+I'm working on Phase 3 of the Jorge Real Estate AI project. Phases 1 & 2 are complete (9 components, 160+ tests passing). Now I need to build a professional dashboard that visualizes our AI intelligence.
+
+**Current Status**:
+- ✅ Phase 1: 6 components (PerformanceCache, BusinessRules, LeadAnalyzer, etc.)
+- ✅ Phase 2: 3 components (LeadIntelligence, SellerBot, GHLClient)
+- ✅ All 110 tests passing in 5.84s
+- ✅ Complete design specification created
+- 🎯 Phase 3A: Build core dashboard (this task)
+
+---
+
+## What I Need You To Do
+
+Build the **Priority 1 dashboard components**:
+
+1. **Hero Metrics Cards** (4 cards):
+   - Leads Today (with trend)
+   - Conversion Rate (with target)
+   - AI Intelligence Score (with breakdown)
+   - Jorge's HOT Leads (with CTA)
+
+2. **Lead Intelligence Dashboard**:
+   - Score Distribution (Pie/Donut chart)
+   - Budget Range Analysis (Bar chart)
+   - Timeline Classification (Timeline view)
+
+3. **Seller Bot State Visualization**:
+   - Q0→Q1→Q2→Q3→Q4→Qualified flow diagram
+   - Active conversations count by stage
+   - Temperature breakdown (HOT/WARM/COLD)
+
+4. **GHL Integration Status Card**:
+   - API health indicator
+   - Last sync time
+   - Cache hit rate
+   - Today's activity summary
+
+5. **Basic Auto-Refresh**:
+   - Use Streamlit auto-refresh (polling every 30s)
+   - No WebSocket needed for Phase 3A
+
+---
+
+## Files to Read (in order)
+
+### Critical Context (Read First):
+1. `PHASE3_DASHBOARD_SPECIFICATION.md` ⭐⭐⭐
+   - Complete design spec with layout, colors, components
+   - Read sections: Executive Summary, Layout Structure, Detailed Component Specs, Design System
+
+2. `PHASE2_COMPLETION_REPORT.md` ⭐⭐
+   - Understanding what components we have (LeadIntelligence, SellerBot, GHLClient)
+   - Performance metrics to display
+
+3. `PHASE1_COMPLETION_REPORT.md` ⭐
+   - PerformanceCache, BusinessRules, LeadAnalyzer context
+
+### Component Reference (Read as Needed):
+4. `bots/shared/lead_intelligence_optimized.py`
+   - Shows what data LeadIntelligence provides
+   - Budget extraction, timeline classification, scoring logic
+
+5. `bots/seller_bot/jorge_seller_bot.py`
+   - Seller bot Q1-Q4 states
+   - Temperature scoring (HOT/WARM/COLD)
+   - State machine flow
+
+6. `bots/shared/ghl_client.py`
+   - GHL API methods to call
+   - Health check methods
+
+7. `command_center/dashboard.py`
+   - Existing dashboard to upgrade
+   - Current structure and patterns
+
+---
+
+## Agents to Use
+
+### Agent 1: Explore Agent (Initial Codebase Understanding)
+**When**: At the start, to understand current dashboard structure
+**Subagent Type**: `Explore`
+**Task**: "Explore the existing Streamlit dashboard in command_center/ to understand current structure, components, and patterns"
+**Thoroughness**: "quick"
+
+```
+Use Task tool:
+- subagent_type: "Explore"
+- description: "Explore dashboard structure"
+- prompt: "Analyze the command_center/dashboard.py file and any existing components to understand the current dashboard structure, Streamlit patterns used, and how to integrate new components"
+```
+
+### Agent 2: Plan Agent (Architecture Planning)
+**When**: After exploration, before coding
+**Subagent Type**: `Plan`
+**Task**: "Design the component architecture for hero metrics cards, lead intelligence visualizations, seller bot state display, and GHL status card"
+
+```
+Use Task tool:
+- subagent_type: "Plan"
+- description: "Plan dashboard architecture"
+- prompt: "Based on PHASE3_DASHBOARD_SPECIFICATION.md, design the component architecture for Priority 1 features. Include: (1) Component file structure, (2) Data flow from bots/ to components, (3) Streamlit caching strategy, (4) Chart library choices (Plotly), (5) Integration with existing dashboard"
+```
+
+---
+
+## Skills to Use
+
+### Skill 1: TDD Workflow
+**When**: Throughout development for each component
+**Skill**: `test-driven-development`
+
+```
+Use Skill tool:
+- skill: "test-driven-development"
+- args: "--component=hero_metrics_cards"
+```
+
+**Pattern**: RED → GREEN → REFACTOR for each component
+
+### Skill 2: Streamlit Component Skill
+**When**: Creating new Streamlit components
+**Skill**: `streamlit-component` (if available in project)
+
+```
+Use Skill tool:
+- skill: "streamlit-component"
+- args: "--name=HeroMetricsCards"
+```
+
+### Skill 3: Frontend Design
+**When**: Implementing UI with proper styling
+**Skill**: `frontend-design`
+
+```
+Use Skill tool:
+- skill: "frontend-design"
+```
+
+---
+
+## Step-by-Step Workflow
+
+### Step 1: Setup & Exploration (15 minutes)
+
+1. Navigate to project:
+```bash
+cd ~/Documents/GitHub/jorge_real_estate_bots
+source venv/bin/activate
+```
+
+2. Read critical files:
+   - PHASE3_DASHBOARD_SPECIFICATION.md (focus on sections 1-5)
+   - PHASE2_COMPLETION_REPORT.md (understand components)
+
+3. Use **Explore Agent** to understand existing dashboard:
+```
+Task tool → Explore agent → "Analyze command_center/dashboard.py structure"
+```
+
+### Step 2: Architecture Planning (20 minutes)
+
+1. Use **Plan Agent** to design component architecture:
+```
+Task tool → Plan agent → "Design Priority 1 dashboard components"
+```
+
+2. Review plan with user before proceeding
+
+### Step 3: Create Component Files (30 minutes)
+
+Create new component files:
+```
+command_center/
+├── components/
+│   ├── __init__.py
+│   ├── hero_metrics.py          # NEW
+│   ├── lead_intelligence.py     # NEW
+│   ├── seller_bot_status.py     # NEW
+│   └── ghl_status.py            # NEW
+```
+
+For each component, use **TDD Skill**:
+1. Write tests first (RED)
+2. Implement component (GREEN)
+3. Refactor and style (REFACTOR)
+
+### Step 4: Integrate Components (45 minutes)
+
+Update `command_center/dashboard.py`:
+1. Import new components
+2. Add to main layout
+3. Set up auto-refresh (streamlit-autorefresh)
+4. Apply design system (colors, spacing from spec)
+
+### Step 5: Connect Real Data (30 minutes)
+
+Create `command_center/services/metrics_service.py`:
+```python
+"""
+Calculate dashboard metrics from real components:
+- Query LeadIntelligenceOptimized for scores
+- Query JorgeSellerBot for conversation states
+- Query GHLClient for integration status
+- Query PerformanceCache for cache stats
+"""
+```
+
+### Step 6: Testing & Validation (20 minutes)
+
+1. Run all tests:
+```bash
+pytest tests/ -v
+pytest tests/command_center/ -v  # New tests
+```
+
+2. Start dashboard:
+```bash
+streamlit run command_center/dashboard.py
+```
+
+3. Verify:
+   - [ ] Hero metrics display correctly
+   - [ ] Charts render (Lead Intelligence)
+   - [ ] Seller Bot state shows Q0-Q4
+   - [ ] GHL status card shows health
+   - [ ] Auto-refresh works (30s interval)
+   - [ ] Design system colors applied
+   - [ ] Responsive layout
+
+---
+
+## Deliverables
+
+### Code Files:
+- [ ] `command_center/components/hero_metrics.py`
+- [ ] `command_center/components/lead_intelligence.py`
+- [ ] `command_center/components/seller_bot_status.py`
+- [ ] `command_center/components/ghl_status.py`
+- [ ] `command_center/services/metrics_service.py`
+- [ ] Updated `command_center/dashboard.py`
+
+### Tests:
+- [ ] `tests/command_center/test_hero_metrics.py`
+- [ ] `tests/command_center/test_lead_intelligence.py`
+- [ ] `tests/command_center/test_seller_bot_status.py`
+- [ ] `tests/command_center/test_ghl_status.py`
+
+### Documentation:
+- [ ] `PHASE3A_COMPLETION_REPORT.md` (summary of what was built)
+- [ ] Component usage documentation
+- [ ] Screenshots (optional)
+
+---
+
+## Technical Requirements
+
+### Technology Stack:
+- **Streamlit**: 1.31+ (existing framework)
+- **Plotly**: For interactive charts
+- **Streamlit-Autorefresh**: For auto-refresh
+- **Caching**: `@st.cache_data` for metrics, `@st.cache_resource` for clients
+
+### Design System (from spec):
+**Colors**:
+- Primary: `#2563eb` (Blue)
+- Success: `#10b981` (Green)
+- Warning: `#f59e0b` (Amber)
+- Danger: `#ef4444` (Red)
+- HOT: `#ef4444`, WARM: `#f59e0b`, COLD: `#3b82f6`
+
+**Spacing**: 8px grid system
+- Card padding: 24px
+- Card gap: 16px
+- Section gap: 32px
+
+**Typography**:
+- Hero numbers: 48px bold
+- Card titles: 18px semibold
+- Body text: 14px regular
+
+### Performance Targets:
+- Dashboard load: <2 seconds
+- Chart render: <200ms
+- Auto-refresh: 30s interval (no lag)
+
+---
+
+## Success Criteria
+
+✅ **Functionality**:
+- All 4 hero metric cards display real data
+- Lead Intelligence charts render with real scores
+- Seller Bot shows Q0-Q4 state breakdown
+- GHL status card shows live API health
+- Auto-refresh updates metrics every 30s
+
+✅ **Design Quality**:
+- Design system colors applied consistently
+- Card-based layout matches spec
+- Responsive (works on 1440px desktop)
+- Clean, professional appearance
+
+✅ **Testing**:
+- All existing tests still pass (110 tests)
+- New component tests pass (aim for 20+ new tests)
+- No breaking changes to Phase 1 & 2
+
+✅ **Performance**:
+- Dashboard loads in <2 seconds
+- No memory leaks on auto-refresh
+- Smooth chart rendering
+
+---
+
+## Important Notes
+
+1. **Don't Break Existing Code**: All Phase 1 & 2 tests must still pass
+2. **Use Existing Components**: Integrate with LeadIntelligenceOptimized, JorgeSellerBot, GHLClient
+3. **Mock Data Initially**: Start with mock data, then connect real data
+4. **Incremental Development**: Build one component at a time, test, commit
+5. **Follow Spec**: Refer to PHASE3_DASHBOARD_SPECIFICATION.md for all design decisions
+
+---
+
+## Git Workflow
+
+After each major component:
+```bash
+# Test
+pytest tests/command_center/test_<component>.py -v
+
+# Commit
+git add command_center/components/<component>.py tests/command_center/test_<component>.py
+git commit -m "feat(dashboard): Add <component> with tests
+
+- Implement <specific features>
+- Add comprehensive tests
+- Follow Phase 3A specification
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+```
+
+Final commit:
+```bash
+git add command_center/ tests/command_center/
+git commit -m "feat(dashboard): Complete Phase 3A - Core Dashboard Components
+
+Implemented Priority 1 features:
+- Hero Metrics Cards (4 cards with trends)
+- Lead Intelligence visualizations (charts)
+- Seller Bot Q0-Q4 state display
+- GHL Integration status card
+- Auto-refresh (30s interval)
+
+Tests: +20 new tests, all passing
+Performance: <2s load time
+Design: Matches Phase 3 specification
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
+```
+
+---
+
+## Questions to Ask User Before Starting
+
+1. Do you want to review the Plan agent's architecture proposal before I start coding?
+2. Should I use mock data initially, or connect to real components immediately?
+3. Any specific metric in the hero cards you want to prioritize?
+4. Preferred auto-refresh interval (30s recommended, or different)?
+
+---
+
+## Reference Files Summary
+
+| File | Purpose | Priority |
+|------|---------|----------|
+| PHASE3_DASHBOARD_SPECIFICATION.md | Complete design spec | 🔴 Critical |
+| PHASE2_COMPLETION_REPORT.md | Component context | 🔴 Critical |
+| bots/shared/lead_intelligence_optimized.py | Data source | 🟡 Important |
+| bots/seller_bot/jorge_seller_bot.py | Data source | 🟡 Important |
+| command_center/dashboard.py | Existing dashboard | 🟡 Important |
+
+---
+
+**Ready to start Phase 3A!** 🚀
+
+Copy this entire prompt and paste into a new Claude Code chat session.

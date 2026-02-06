@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     # ========== SECURITY ==========
     jwt_secret: str = "change_this_in_production"
     ghl_webhook_secret: Optional[str] = None
+    ghl_webhook_public_key: Optional[str] = None
 
     # API Rate Limiting
     rate_limit_per_minute: int = 60
@@ -83,6 +84,10 @@ class Settings(BaseSettings):
 
     # ========== WEBHOOK CONFIGURATION ==========
     base_url: str = "http://localhost:8000"
+
+    # ========== BUYER BOT CONFIGURATION ==========
+    buyer_pipeline_id: Optional[str] = None
+    buyer_alert_workflow_id: Optional[str] = None
 
     # ========== MULTI-TENANT (Phase 2) ==========
     multi_tenant_enabled: bool = False

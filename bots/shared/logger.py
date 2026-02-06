@@ -6,6 +6,7 @@ Adapted from EnterpriseHub.
 """
 import logging
 import sys
+import re
 from typing import Optional
 from contextvars import ContextVar
 import uuid
@@ -21,6 +22,24 @@ class CorrelationFilter(logging.Filter):
 
     def filter(self, record):
         record.correlation_id = correlation_id.get()
+        return True
+
+
+class RedactionFilter(logging.Filter):
+    """Redact common PII patterns from log messages."""
+
+    EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+    PHONE_RE = re.compile(r"(\+?\d{1,2}[\s.-]?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})")
+
+    def filter(self, record):
+        try:
+            message = record.getMessage()
+            message = self.EMAIL_RE.sub("[REDACTED_EMAIL]", message)
+            message = self.PHONE_RE.sub("[REDACTED_PHONE]", message)
+            record.msg = message
+            record.args = ()
+        except Exception:
+            pass
         return True
 
 
@@ -55,6 +74,7 @@ def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
 
         # Add Filter
         handler.addFilter(CorrelationFilter())
+        handler.addFilter(RedactionFilter())
 
         logger.addHandler(handler)
         logger.propagate = False

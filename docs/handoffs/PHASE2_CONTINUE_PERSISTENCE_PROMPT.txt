@@ -1,0 +1,82 @@
+I'm continuing Phase 3B Phase 2 implementation for the Jorge Real Estate AI dashboard.
+
+**Context**: Phase 3B Priority 2 - Advanced analytics dashboard with seller bot persistence.
+
+**Progress So Far**:
+✅ Phase 1 Foundation (COMPLETED):
+  - dashboard_models.py with 12 dataclasses
+  - performance_tracker.py for metrics tracking
+  - 42 tests passing
+
+✅ Phase 2 Service Layer (93% COMPLETE):
+  - metrics_service.py: Performance aggregation (18/18 tests ✅)
+  - dashboard_data_service.py: Data orchestration (21/21 tests ✅)
+  - Total: 81/81 tests passing
+  - All test failures fixed (mocking issues resolved)
+
+⏳ Seller Bot Persistence (FINAL 7% - 30 minutes):
+  - Tests created: tests/seller_bot/test_persistence.py (10 tests)
+  - Implementation needed: Add Redis persistence to jorge_seller_bot.py
+
+**What I Need You To Do**:
+Complete the final Phase 2 component - Seller Bot Redis Persistence:
+
+1. **Update SellerQualificationState dataclass** (bots/seller_bot/jorge_seller_bot.py:43-121):
+   - Add missing fields: contact_id, location_id, stage, conversation_started
+   - These fields are required by tests and dashboard_models.py
+
+2. **Add Redis Persistence Methods to JorgeSellerBot** (bots/seller_bot/jorge_seller_bot.py:135+):
+   - Replace in-memory `self._states` dict with CacheService
+   - Add: `async def get_conversation_state(contact_id: str) -> Optional[SellerQualificationState]`
+   - Add: `async def save_conversation_state(contact_id: str, state: SellerQualificationState)`
+   - Add: `async def get_all_active_conversations() -> List[SellerQualificationState]`
+   - Add: `async def delete_conversation_state(contact_id: str)`
+   - Key pattern: "seller:state:{contact_id}"
+   - Active set: "seller:active_contacts" (Redis Set)
+   - TTL: 7 days (604,800 seconds)
+
+3. **Update State Management**:
+   - Replace `self._states[contact_id]` reads → `await self.get_conversation_state(contact_id)`
+   - Replace `self._states[contact_id] = state` writes → `await self.save_conversation_state(contact_id, state)`
+   - Update `_get_or_create_state()` to use Redis
+   - Ensure datetime fields serialize to ISO strings
+
+4. **Run Tests**:
+   - pytest tests/seller_bot/test_persistence.py -v
+   - pytest tests/shared/ -v (ensure no regressions)
+   - All 91 tests should pass (81 + 10 new)
+
+**Critical Files to Read First** (in order):
+1. PHASE2_PERSISTENCE_HANDOFF.md - Complete implementation guide
+2. tests/seller_bot/test_persistence.py - Test expectations
+3. bots/seller_bot/jorge_seller_bot.py:43-121 - Current SellerQualificationState
+4. bots/seller_bot/jorge_seller_bot.py:135-240 - JorgeSellerBot class initialization
+5. bots/shared/cache_service.py:139-222 - CacheService async patterns
+6. bots/shared/dashboard_models.py:128-166 - ConversationState model (reference)
+
+**Key Patterns to Follow**:
+- Async/await throughout (all Redis methods are async)
+- Use `get_cache_service()` singleton
+- Datetime serialization: `dt.isoformat()` for save, `datetime.fromisoformat(str)` for load
+- Error handling: try-except with logging
+- Use `asdict()` from dataclasses for serialization
+
+**Environment**:
+```bash
+cd ~/Documents/GitHub/jorge_real_estate_bots
+source venv/bin/activate
+```
+
+**Testing**:
+```bash
+# Run persistence tests
+pytest tests/seller_bot/test_persistence.py -v
+
+# Run all Phase 2 tests
+pytest tests/shared/ tests/seller_bot/ -v
+
+# Check coverage
+pytest tests/ --cov=bots.shared --cov=bots.seller_bot --cov-report=html
+```
+
+Start by reading PHASE2_PERSISTENCE_HANDOFF.md for complete architecture, then implement the Redis persistence following TDD workflow.
