@@ -11,6 +11,7 @@ Features:
 - Security validation
 """
 import os
+import secrets
 import jwt
 import hashlib
 from passlib.context import CryptContext
@@ -92,9 +93,9 @@ class AuthService:
 
     def _get_secret_key(self) -> str:
         """Get JWT secret key from environment or generate one."""
-        secret = os.getenv("JWT_SECRET_KEY")
+        secret = os.getenv("JWT_SECRET")
         if not secret:
-            logger.warning("JWT_SECRET_KEY not set, using default (not for production!)")
+            logger.warning("JWT_SECRET not set, using default (not for production!)")
             secret = "jorge_real_estate_ai_default_secret_change_in_production"
         return secret
 
@@ -104,15 +105,18 @@ class AuthService:
             # Check if any users exist
             users = await self.list_users()
             if not users:
-                # Create default admin user
+                # Generate a secure random password or use env var
+                default_password = os.getenv("ADMIN_DEFAULT_PASSWORD") or secrets.token_urlsafe(16)
                 admin_user = await self.create_user(
                     email="jorge@realestate.ai",
-                    password="admin123",  # TODO: Force password change on first login
+                    password=default_password,
                     name="Jorge (Admin)",
                     role=UserRole.ADMIN,
                     must_change_password=True
                 )
                 logger.info(f"Created default admin user: {admin_user.email}")
+                if not os.getenv("ADMIN_DEFAULT_PASSWORD"):
+                    logger.warning(f"Generated admin password (change on first login): {default_password}")
                 
         except Exception as e:
             logger.exception(f"Error initializing default users: {e}")
