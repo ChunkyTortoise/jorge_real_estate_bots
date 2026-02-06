@@ -167,13 +167,23 @@ class TestDashboardDataService:
             # Test first page
             result_page1 = await dashboard_service.get_active_conversations(page=1, page_size=10)
             assert result_page1.page == 1
-            assert result_page1.page_size == 10
-            assert len(result_page1.conversations) <= 10
+        with patch.object(dashboard_service, "cache_service", mock_cache_service), \
+             patch.object(dashboard_service, "_fetch_real_conversation_data") as mock_fetch:
+            # Mock stable conversation data
+            mock_fetch.return_value = [
+                ConversationState(contact_id=f"contact_{i:03d}", seller_name=f"Seller {i}", stage=ConversationStage.Q1, temperature=Temperature.WARM, current_question=1, questions_answered=1, last_activity=datetime.now(), conversation_started=datetime.now(), is_qualified=False, property_address=None, condition=None, price_expectation=None, motivation=None, next_action="Wait", cma_triggered=False)
+                for i in range(1, 26)
+            ]
+
+            # Test first page
+            result_page1 = await dashboard_service.get_active_conversations(page=1, page_size=10)
+            assert result_page1.page == 1
+            assert len(result_page1.conversations) == 10
 
             # Test second page
             result_page2 = await dashboard_service.get_active_conversations(page=2, page_size=10)
             assert result_page2.page == 2
-            assert result_page2.page_size == 10
+            assert len(result_page2.conversations) == 10
 
             # Verify different conversations on different pages
             page1_ids = {c.contact_id for c in result_page1.conversations}

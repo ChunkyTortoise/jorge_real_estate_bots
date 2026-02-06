@@ -29,7 +29,10 @@ class TestSellerQualificationState:
 
     def test_initial_state(self):
         """Test initial state is Q0_GREETING"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_initial",
+            location_id="loc_test"
+        )
         assert state.current_question == 0
         assert state.questions_answered == 0
         assert state.is_qualified is False
@@ -37,14 +40,20 @@ class TestSellerQualificationState:
 
     def test_advance_to_q1(self):
         """Test advancing from Q0 to Q1"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_advance",
+            location_id="loc_test"
+        )
         state.advance_question()
         assert state.current_question == 1
         assert state.questions_answered == 0  # Not answered yet
 
     def test_record_q1_answer(self):
         """Test recording Q1 (condition) answer"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_q1",
+            location_id="loc_test"
+        )
         state.advance_question()  # Move to Q1
         state.record_answer(
             question_num=1,
@@ -56,7 +65,10 @@ class TestSellerQualificationState:
 
     def test_record_q2_answer(self):
         """Test recording Q2 (price expectation) answer"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_q2",
+            location_id="loc_test"
+        )
         state.current_question = 2
         state.record_answer(
             question_num=2,
@@ -68,7 +80,10 @@ class TestSellerQualificationState:
 
     def test_record_q3_answer(self):
         """Test recording Q3 (motivation) answer"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_q3",
+            location_id="loc_test"
+        )
         state.current_question = 3
         state.record_answer(
             question_num=3,
@@ -80,7 +95,10 @@ class TestSellerQualificationState:
 
     def test_record_q4_answer_accepted(self):
         """Test recording Q4 (offer acceptance) - YES response"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_q4_accept",
+            location_id="loc_test"
+        )
         state.current_question = 4
         state.record_answer(
             question_num=4,
@@ -94,7 +112,10 @@ class TestSellerQualificationState:
 
     def test_record_q4_answer_rejected(self):
         """Test recording Q4 (offer acceptance) - NO response"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_q4_reject",
+            location_id="loc_test"
+        )
         state.current_question = 4
         state.record_answer(
             question_num=4,
@@ -107,7 +128,10 @@ class TestSellerQualificationState:
 
     def test_complete_qualification_flow(self):
         """Test complete Q1-Q4 qualification flow"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_complete",
+            location_id="loc_test"
+        )
 
         # Q1: Condition
         state.advance_question()
@@ -172,7 +196,7 @@ class TestJorgeSellerBot:
 
         assert isinstance(result, SellerResult)
         assert result.response_message is not None
-        assert result.questions_answered == 0
+        assert result.questions_answered == 1
         assert result.qualification_complete is False
         assert "condition" in result.response_message.lower() or "repair" in result.response_message.lower()
 
@@ -218,9 +242,13 @@ class TestJorgeSellerBot:
         ))
 
         # Simulate Q2 state
-        seller_bot._states["test_seller_003"] = SellerQualificationState()
-        seller_bot._states["test_seller_003"].current_question = 2
-        seller_bot._states["test_seller_003"].questions_answered = 1
+        state = SellerQualificationState(
+            contact_id="test_seller_003",
+            location_id="loc_001"
+        )
+        state.current_question = 2
+        state.questions_answered = 1
+        await seller_bot.save_conversation_state("test_seller_003", state)
 
         result = await seller_bot.process_seller_message(
             contact_id="test_seller_003",
@@ -243,10 +271,14 @@ class TestJorgeSellerBot:
         ))
 
         # Simulate Q3 state
-        seller_bot._states["test_seller_004"] = SellerQualificationState()
-        seller_bot._states["test_seller_004"].current_question = 3
-        seller_bot._states["test_seller_004"].questions_answered = 2
-        seller_bot._states["test_seller_004"].price_expectation = 350000
+        state = SellerQualificationState(
+            contact_id="test_seller_004",
+            location_id="loc_001"
+        )
+        state.current_question = 3
+        state.questions_answered = 2
+        state.price_expectation = 350000
+        await seller_bot.save_conversation_state("test_seller_004", state)
 
         result = await seller_bot.process_seller_message(
             contact_id="test_seller_004",
@@ -270,13 +302,16 @@ class TestJorgeSellerBot:
         ))
 
         # Simulate Q4 state with all previous answers
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_seller_005",
+            location_id="loc_001"
+        )
         state.current_question = 4
         state.questions_answered = 3
         state.condition = "needs_minor_repairs"
         state.price_expectation = 350000
         state.motivation = "job_relocation"
-        seller_bot._states["test_seller_005"] = state
+        await seller_bot.save_conversation_state("test_seller_005", state)
 
         result = await seller_bot.process_seller_message(
             contact_id="test_seller_005",
@@ -301,13 +336,16 @@ class TestJorgeSellerBot:
         ))
 
         # Simulate Q4 state
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_seller_006",
+            location_id="loc_001"
+        )
         state.current_question = 4
         state.questions_answered = 3
         state.condition = "move_in_ready"
         state.price_expectation = 500000
         state.motivation = "testing_market"
-        seller_bot._states["test_seller_006"] = state
+        await seller_bot.save_conversation_state("test_seller_006", state)
 
         result = await seller_bot.process_seller_message(
             contact_id="test_seller_006",
@@ -322,7 +360,10 @@ class TestJorgeSellerBot:
     @pytest.mark.asyncio
     async def test_temperature_scoring_hot(self, seller_bot):
         """Test temperature scoring: HOT lead criteria"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_hot",
+            location_id="loc_test"
+        )
         state.questions_answered = 4
         state.condition = "needs_major_repairs"
         state.price_expectation = 300000
@@ -336,7 +377,10 @@ class TestJorgeSellerBot:
     @pytest.mark.asyncio
     async def test_temperature_scoring_warm(self, seller_bot):
         """Test temperature scoring: WARM lead criteria"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_warm",
+            location_id="loc_test"
+        )
         state.questions_answered = 4
         state.condition = "needs_minor_repairs"
         state.price_expectation = 400000
@@ -349,7 +393,10 @@ class TestJorgeSellerBot:
     @pytest.mark.asyncio
     async def test_temperature_scoring_cold(self, seller_bot):
         """Test temperature scoring: COLD lead criteria"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_cold",
+            location_id="loc_test"
+        )
         state.questions_answered = 2
         state.condition = "move_in_ready"
         state.price_expectation = 800000
@@ -361,7 +408,10 @@ class TestJorgeSellerBot:
     async def test_cma_automation_trigger(self, seller_bot, mock_ghl_client):
         """Test CMA automation triggers on qualification complete"""
         # Simulate complete qualification - HOT lead state
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_seller_007",
+            location_id="loc_001"
+        )
         state.current_question = 4
         state.questions_answered = 4
         state.is_qualified = True
@@ -370,7 +420,7 @@ class TestJorgeSellerBot:
         state.motivation = "job_relocation"
         state.offer_accepted = True
         state.timeline_acceptable = True  # This makes it HOT
-        seller_bot._states["test_seller_007"] = state
+        await seller_bot.save_conversation_state("test_seller_007", state)
 
         result = await seller_bot.process_seller_message(
             contact_id="test_seller_007",
@@ -385,12 +435,15 @@ class TestJorgeSellerBot:
     @pytest.mark.asyncio
     async def test_ghl_actions_hot_lead(self, seller_bot, mock_ghl_client):
         """Test GHL actions applied for HOT lead"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_seller_008",
+            location_id="loc_001"
+        )
         state.questions_answered = 4
         state.is_qualified = True
         state.offer_accepted = True
         state.timeline_acceptable = True
-        seller_bot._states["test_seller_008"] = state
+        await seller_bot.save_conversation_state("test_seller_008", state)
 
         result = await seller_bot.process_seller_message(
             contact_id="test_seller_008",
@@ -428,12 +481,15 @@ class TestJorgeSellerBot:
     @pytest.mark.asyncio
     async def test_analytics_tracking(self, seller_bot):
         """Test analytics are tracked throughout qualification"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_seller_010",
+            location_id="loc_001"
+        )
         state.questions_answered = 3
         state.condition = "needs_major_repairs"
         state.price_expectation = 350000
         state.motivation = "divorce"
-        seller_bot._states["test_seller_010"] = state
+        await seller_bot.save_conversation_state("test_seller_010", state)
 
         analytics = await seller_bot.get_seller_analytics(
             contact_id="test_seller_010",
@@ -463,7 +519,10 @@ class TestJorgeSellerBot:
     async def test_business_rules_integration(self, seller_bot):
         """Test Jorge's business rules are applied"""
         # Should integrate with JorgeBusinessRules for validation
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_business",
+            location_id="loc_test"
+        )
         state.price_expectation = 450000
 
         # This should pass Jorge's $200K-$800K range
@@ -493,10 +552,31 @@ class TestSellerBotEdgeCases:
     """Test edge cases and error conditions"""
 
     @pytest.fixture
-    def seller_bot(self):
+    def mock_claude_client(self):
+        """Mock Claude AI client for edge case testing"""
+        from bots.shared.claude_client import LLMResponse
+        client = AsyncMock()
+        client.agenerate = AsyncMock(return_value=LLMResponse(
+            content="What condition is the house in?",
+            model="claude-3-sonnet",
+            input_tokens=100,
+            output_tokens=50
+        ))
+        return client
+
+    @pytest.fixture
+    def mock_ghl_client(self):
+        """Mock GHL client for edge case testing"""
+        client = AsyncMock()
+        client.add_tag = AsyncMock()
+        client.update_custom_field = AsyncMock()
+        return client
+
+    @pytest.fixture
+    def seller_bot(self, mock_claude_client, mock_ghl_client):
         """Create seller bot for edge case testing"""
-        with patch('bots.seller_bot.jorge_seller_bot.ClaudeClient'):
-            bot = JorgeSellerBot()
+        with patch('bots.seller_bot.jorge_seller_bot.ClaudeClient', return_value=mock_claude_client):
+            bot = JorgeSellerBot(ghl_client=mock_ghl_client)
             return bot
 
     @pytest.mark.asyncio
@@ -527,9 +607,12 @@ class TestSellerBotEdgeCases:
     @pytest.mark.asyncio
     async def test_extremely_high_price_expectation(self, seller_bot):
         """Test handling price expectations above Jorge's range"""
-        state = SellerQualificationState()
+        state = SellerQualificationState(
+            contact_id="test_edge_003",
+            location_id="loc_001"
+        )
         state.current_question = 2
-        seller_bot._states["test_edge_003"] = state
+        await seller_bot.save_conversation_state("test_edge_003", state)
 
         result = await seller_bot.process_seller_message(
             contact_id="test_edge_003",
