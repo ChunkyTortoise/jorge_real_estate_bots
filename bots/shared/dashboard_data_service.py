@@ -24,7 +24,7 @@ from bots.shared.dashboard_models import (
     ConversationStage,
     Temperature,
 )
-from sqlalchemy import select
+from sqlalchemy import cast, func, select, Date
 from database.session import AsyncSessionFactory
 from database.models import ConversationModel, ContactModel
 
@@ -556,12 +556,42 @@ class DashboardDataService:
                 result = await session.execute(stmt)
                 stalled_count = len(result.scalars().all())
 
+            # Calculate avg response time from active conversations
+            avg_response_time_hours = 0.0
+            cma_requests_today = 0
+            async with AsyncSessionFactory() as session:
+                # Avg hours between conversation_started and last_activity
+                avg_stmt = select(
+                    func.avg(
+                        func.extract("epoch", ConversationModel.last_activity)
+                        - func.extract("epoch", ConversationModel.conversation_started)
+                    )
+                ).where(
+                    ConversationModel.bot_type == "seller",
+                    ConversationModel.conversation_started.isnot(None),
+                    ConversationModel.last_activity.isnot(None),
+                )
+                avg_result = await session.execute(avg_stmt)
+                avg_seconds = avg_result.scalar()
+                if avg_seconds and avg_seconds > 0:
+                    avg_response_time_hours = round(avg_seconds / 3600, 1)
+
+                # Count CMA requests today
+                today = datetime.now().date()
+                cma_stmt = select(func.count()).select_from(ConversationModel).where(
+                    ConversationModel.bot_type == "seller",
+                    cast(ConversationModel.created_at, Date) == today,
+                    ConversationModel.metadata_json["cma_triggered"].as_string() == "true",
+                )
+                cma_result = await session.execute(cma_stmt)
+                cma_requests_today = cma_result.scalar() or 0
+
             summary = {
                 'total_active': total_active,
                 'by_stage': by_stage,
                 'by_temperature': by_temperature,
-                'avg_response_time_hours': 4.2,
-                'cma_requests_today': 0,
+                'avg_response_time_hours': avg_response_time_hours,
+                'cma_requests_today': cma_requests_today,
                 'qualified_this_week': by_stage.get('QUALIFIED', 0),
                 'stalled_conversations': stalled_count
             }
