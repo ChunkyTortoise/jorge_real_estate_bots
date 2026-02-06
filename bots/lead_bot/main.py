@@ -21,6 +21,8 @@ import base64
 import hmac
 import hashlib
 
+from sqlalchemy import text
+
 from bots.shared.logger import get_logger, set_correlation_id
 from bots.shared.config import settings
 from bots.shared.event_broker import event_broker
@@ -221,6 +223,47 @@ async def health_check():
             "target_ms": settings.lead_analysis_timeout_ms
         }
     }
+
+
+@app.get("/health/aggregate")
+async def aggregate_health():
+    """Check all bots, Redis, and Postgres. Returns unified status JSON."""
+    import httpx
+    from bots.shared.config import settings as _s
+
+    results: Dict[str, str] = {}
+
+    # Check sibling bot health endpoints
+    bot_ports = {"lead_bot": 8001, "seller_bot": 8002, "buyer_bot": 8003}
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        for name, port in bot_ports.items():
+            try:
+                resp = await client.get(f"http://localhost:{port}/health")
+                results[name] = "ok" if resp.status_code == 200 else "degraded"
+            except Exception:
+                results[name] = "down"
+
+    # Check Redis
+    try:
+        if event_broker._redis:
+            await event_broker._redis.ping()
+            results["redis"] = "ok"
+        else:
+            results["redis"] = "not_configured"
+    except Exception:
+        results["redis"] = "down"
+
+    # Check Postgres
+    try:
+        from database.session import AsyncSessionFactory
+        async with AsyncSessionFactory() as session:
+            await session.execute(text("SELECT 1"))
+            results["postgres"] = "ok"
+    except Exception:
+        results["postgres"] = "down"
+
+    overall = "healthy" if all(v == "ok" for v in results.values()) else "degraded"
+    return {"status": overall, "services": results, "timestamp": datetime.now().isoformat()}
 
 
 @app.post("/ghl/webhook/new-lead")
