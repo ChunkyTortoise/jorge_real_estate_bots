@@ -163,17 +163,47 @@ class TestDashboardDataService:
         # Mock cache miss
         mock_cache_service.get.return_value = None
 
-        with patch.object(dashboard_service, 'cache_service', mock_cache_service):
-            # Test first page
-            result_page1 = await dashboard_service.get_active_conversations(page=1, page_size=10)
-            assert result_page1.page == 1
         with patch.object(dashboard_service, "cache_service", mock_cache_service), \
-             patch.object(dashboard_service, "_fetch_real_conversation_data") as mock_fetch:
-            # Mock stable conversation data
-            mock_fetch.return_value = [
-                ConversationState(contact_id=f"contact_{i:03d}", seller_name=f"Seller {i}", stage=ConversationStage.Q1, temperature=Temperature.WARM, current_question=1, questions_answered=1, last_activity=datetime.now(), conversation_started=datetime.now(), is_qualified=False, property_address=None, condition=None, price_expectation=None, motivation=None, next_action="Wait", cma_triggered=False)
+             patch.object(dashboard_service, "_fetch_active_conversations", new_callable=AsyncMock) as mock_fetch:
+            # Mock stable conversation data for deterministic pagination
+            all_conversations = [
+                ConversationState(
+                    contact_id=f"contact_{i:03d}",
+                    seller_name=f"Seller {i}",
+                    stage=ConversationStage.Q1,
+                    temperature=Temperature.WARM,
+                    current_question=1,
+                    questions_answered=1,
+                    last_activity=datetime.now(),
+                    conversation_started=datetime.now(),
+                    is_qualified=False,
+                    property_address=None,
+                    condition=None,
+                    price_expectation=None,
+                    motivation=None,
+                    next_action="Wait",
+                    cma_triggered=False,
+                )
                 for i in range(1, 26)
             ]
+
+            async def _fake_fetch(filters, page: int, page_size: int):
+                total_count = len(all_conversations)
+                start_idx = (page - 1) * page_size
+                end_idx = start_idx + page_size
+                page_items = all_conversations[start_idx:end_idx]
+                total_pages = (total_count + page_size - 1) // page_size
+                return PaginatedConversations(
+                    conversations=page_items,
+                    total_count=total_count,
+                    page=page,
+                    page_size=page_size,
+                    total_pages=total_pages,
+                    has_next=page < total_pages,
+                    has_prev=page > 1,
+                )
+
+            mock_fetch.side_effect = _fake_fetch
 
             # Test first page
             result_page1 = await dashboard_service.get_active_conversations(page=1, page_size=10)
@@ -383,9 +413,24 @@ class TestDashboardDataService:
     @pytest.mark.asyncio
     async def test_conversation_stage_distribution(self, dashboard_service):
         """Test that conversations are distributed across all stages."""
-        with patch.object(dashboard_service, 'cache_service') as mock_cache:
+        with patch.object(dashboard_service, 'cache_service') as mock_cache, \
+             patch.object(dashboard_service, '_fetch_active_conversations') as mock_fetch:
             mock_cache.get = AsyncMock(return_value=None)
             mock_cache.set = AsyncMock(return_value=True)
+            
+            # Mock conversations with different stages
+            mock_fetch.return_value = PaginatedConversations(
+                conversations=[
+                    ConversationState(contact_id=f"c_{i}", seller_name=f"S{i}", stage=stage, temperature=Temperature.WARM, current_question=i%4, questions_answered=i%4, last_activity=datetime.now(), conversation_started=datetime.now(), is_qualified=False, property_address=None, condition=None, price_expectation=None, motivation=None, next_action="Wait", cma_triggered=False)
+                    for i, stage in enumerate([ConversationStage.Q1, ConversationStage.Q2, ConversationStage.Q3, ConversationStage.Q4, ConversationStage.QUALIFIED] * 5)
+                ],
+                total_count=25,
+                page=1,
+                page_size=25,
+                total_pages=1,
+                has_next=False,
+                has_prev=False
+            )
 
             result = await dashboard_service.get_active_conversations(page_size=25)
 
@@ -402,9 +447,24 @@ class TestDashboardDataService:
     @pytest.mark.asyncio
     async def test_conversation_temperature_distribution(self, dashboard_service):
         """Test that conversations have different temperatures."""
-        with patch.object(dashboard_service, 'cache_service') as mock_cache:
+        with patch.object(dashboard_service, 'cache_service') as mock_cache, \
+             patch.object(dashboard_service, '_fetch_active_conversations') as mock_fetch:
             mock_cache.get = AsyncMock(return_value=None)
             mock_cache.set = AsyncMock(return_value=True)
+            
+            # Mock conversations with different temperatures
+            mock_fetch.return_value = PaginatedConversations(
+                conversations=[
+                    ConversationState(contact_id=f"c_{i}", seller_name=f"S{i}", stage=ConversationStage.Q1, temperature=temp, current_question=1, questions_answered=1, last_activity=datetime.now(), conversation_started=datetime.now(), is_qualified=False, property_address=None, condition=None, price_expectation=None, motivation=None, next_action="Wait", cma_triggered=False)
+                    for i, temp in enumerate([Temperature.HOT, Temperature.WARM, Temperature.COLD] * 8 + [Temperature.HOT])
+                ],
+                total_count=25,
+                page=1,
+                page_size=25,
+                total_pages=1,
+                has_next=False,
+                has_prev=False
+            )
 
             result = await dashboard_service.get_active_conversations(page_size=25)
 

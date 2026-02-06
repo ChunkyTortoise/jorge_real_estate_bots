@@ -272,11 +272,12 @@ def get_sample_real_estate_data() -> Dict[str, Any]:
     })
     
     # Revenue data
-    monthly_dates = pd.date_range(start='2024-01-01', end='2024-12-01', freq='M')
+    # Use a fixed 12-month series to avoid DataFrame column length mismatches.
+    monthly_dates = pd.date_range(start='2024-01-01', periods=12, freq='MS')
     revenue_data = pd.DataFrame({
         'month': monthly_dates,
-        'revenue': np.random.normal(75000, 20000, 12).clip(min=20000),
-        'commission': np.random.normal(22500, 6000, 12).clip(min=6000)
+        'revenue': np.random.normal(75000, 20000, len(monthly_dates)).clip(min=20000),
+        'commission': np.random.normal(22500, 6000, len(monthly_dates)).clip(min=6000)
     })
     
     # Property data

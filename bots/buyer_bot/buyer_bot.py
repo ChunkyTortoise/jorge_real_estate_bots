@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
 
 from bots.shared.logger import get_logger
@@ -59,7 +59,7 @@ class BuyerQualificationState:
     conversation_history: List[Dict[str, Any]] = field(default_factory=list)
     extracted_data: Dict[str, Any] = field(default_factory=dict)
     last_interaction: Optional[datetime] = None
-    conversation_started: datetime = field(default_factory=datetime.utcnow)
+    conversation_started: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def advance_question(self):
         if self.current_question < 4:
@@ -70,7 +70,7 @@ class BuyerQualificationState:
         self.conversation_history.append({
             "question": question_num,
             "answer": answer,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "extracted_data": extracted_data,
         })
         if question_num > self.questions_answered:
@@ -94,7 +94,7 @@ class BuyerQualificationState:
                 self.stage = "QUALIFIED"
 
         self.extracted_data.update(extracted_data)
-        self.last_interaction = datetime.utcnow()
+        self.last_interaction = datetime.now(timezone.utc)
 
 
 @dataclass

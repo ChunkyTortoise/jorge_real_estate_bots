@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -111,7 +112,7 @@ def test_buyer_routes():
         email="test@example.com",
         name="Tester",
         role=UserRole.ADMIN,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
 
     class DummyBuyerBot:

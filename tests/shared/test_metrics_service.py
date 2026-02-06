@@ -209,7 +209,35 @@ class TestMetricsService:
         # Mock cache miss
         mock_cache_service.get.return_value = None
 
-        with patch.object(metrics_service, 'cache_service', mock_cache_service):
+        sample_leads = [
+            {
+                'lead_id': 'lead_1',
+                'budget_min': 220000,
+                'budget_max': 280000,
+                'lead_score': 75,
+                'created_at': datetime.now(),
+                'service_area_match': True,
+            },
+            {
+                'lead_id': 'lead_2',
+                'budget_min': 320000,
+                'budget_max': 380000,
+                'lead_score': 65,
+                'created_at': datetime.now(),
+                'service_area_match': True,
+            },
+            {
+                'lead_id': 'lead_3',
+                'budget_min': 520000,
+                'budget_max': 650000,
+                'lead_score': 85,
+                'created_at': datetime.now(),
+                'service_area_match': False,
+            },
+        ]
+
+        with patch.object(metrics_service, 'cache_service', mock_cache_service), \
+             patch.object(metrics_service, '_fetch_lead_data_for_budget_analysis', AsyncMock(return_value=sample_leads)):
             result = await metrics_service.get_budget_distribution()
 
             # Verify cache set with 5 min TTL
@@ -229,7 +257,35 @@ class TestMetricsService:
         # Mock cache miss
         mock_cache_service.get.return_value = None
 
-        with patch.object(metrics_service, 'cache_service', mock_cache_service):
+        sample_leads = [
+            {
+                'lead_id': 'lead_1',
+                'budget_min': 220000,
+                'budget_max': 280000,
+                'lead_score': 75,
+                'created_at': datetime.now(),
+                'timeline': 'immediate',
+            },
+            {
+                'lead_id': 'lead_2',
+                'budget_min': 320000,
+                'budget_max': 380000,
+                'lead_score': 65,
+                'created_at': datetime.now(),
+                'timeline': 'short_term',
+            },
+            {
+                'lead_id': 'lead_3',
+                'budget_min': 520000,
+                'budget_max': 650000,
+                'lead_score': 85,
+                'created_at': datetime.now(),
+                'timeline': 'long_term',
+            },
+        ]
+
+        with patch.object(metrics_service, 'cache_service', mock_cache_service), \
+             patch.object(metrics_service, '_fetch_lead_data_for_timeline_analysis', AsyncMock(return_value=sample_leads)):
             result = await metrics_service.get_timeline_distribution()
 
             # Verify cache set
@@ -247,7 +303,34 @@ class TestMetricsService:
         # Mock cache miss
         mock_cache_service.get.return_value = None
 
-        with patch.object(metrics_service, 'cache_service', mock_cache_service):
+        sample_leads = [
+            {
+                'lead_id': 'lead_1',
+                'budget_min': 220000,
+                'budget_max': 280000,
+                'lead_score': 75,
+                'temperature': 'HOT',
+                'is_qualified': True,
+                'service_area_match': True,
+                'qualification_date': datetime.now(),
+                'metadata_json': {},
+            },
+            {
+                'lead_id': 'lead_2',
+                'budget_min': 320000,
+                'budget_max': 380000,
+                'lead_score': 65,
+                'temperature': 'WARM',
+                'is_qualified': True,
+                'service_area_match': True,
+                'qualification_date': datetime.now(),
+                'metadata_json': {},
+            },
+        ]
+
+        with patch.object(metrics_service, 'cache_service', mock_cache_service), \
+             patch.object(metrics_service, '_fetch_lead_data_for_commission_analysis', AsyncMock(return_value=sample_leads)), \
+             patch.object(metrics_service, '_generate_commission_trend_data', AsyncMock(return_value=[{'month': 'Jan', 'amount': 10000.0, 'deals': 1}])):
             result = await metrics_service.get_commission_metrics()
 
             # Verify cache set with 10 min TTL
