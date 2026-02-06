@@ -10,6 +10,7 @@ Production enhancements from jorge_deployment_package/jorge_fastapi_lead_bot.py:
 - Additional analysis endpoints
 """
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Query, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import time
@@ -99,6 +100,15 @@ app = FastAPI(
     description="AI-powered lead qualification with <5 minute response rule",
     version="1.0.0",
     lifespan=lifespan
+)
+
+# CORS middleware for browser-based clients
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins if hasattr(settings, 'cors_origins') else ["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

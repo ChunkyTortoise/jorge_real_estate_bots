@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from datetime import datetime
 
 from bots.buyer_bot.buyer_bot import JorgeBuyerBot
+from bots.shared.models import ProcessMessageRequest
 from bots.shared.auth_middleware import get_current_active_user
 
 router = APIRouter()
@@ -21,22 +22,13 @@ async def health_check():
 
 
 @router.post("/api/jorge-buyer/process")
-async def process_buyer_message(request: Request, user=Depends(get_current_active_user())):
+async def process_buyer_message(request: ProcessMessageRequest, user=Depends(get_current_active_user())):
     try:
-        body = await request.json()
-        contact_id = body.get("contact_id")
-        location_id = body.get("location_id")
-        message = body.get("message")
-        contact_info = body.get("contact_info")
-
-        if not all([contact_id, location_id, message]):
-            raise HTTPException(status_code=400, detail="Missing required fields: contact_id, location_id, message")
-
         result = await buyer_bot.process_buyer_message(
-            contact_id=contact_id,
-            location_id=location_id,
-            message=message,
-            contact_info=contact_info,
+            contact_id=request.contact_id,
+            location_id=request.location_id,
+            message=request.message,
+            contact_info=request.contact_info,
         )
         return result
     except Exception as e:

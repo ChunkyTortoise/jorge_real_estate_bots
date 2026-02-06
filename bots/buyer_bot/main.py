@@ -2,9 +2,11 @@
 Buyer Bot FastAPI Application.
 """
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from bots.shared.logger import get_logger
+from bots.shared.config import settings
 from bots.buyer_bot.buyer_bot import JorgeBuyerBot
 from bots.buyer_bot.buyer_routes import router, init_buyer_bot
 
@@ -31,9 +33,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS middleware for browser-based clients
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins if hasattr(settings, 'cors_origins') else ["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(router)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("bots.buyer_bot.main:app", host="0.0.0.0", port=8003, reload=True)
+    uvicorn.run("bots.buyer_bot.main:app", host="0.0.0.0", port=8003, reload=settings.debug)

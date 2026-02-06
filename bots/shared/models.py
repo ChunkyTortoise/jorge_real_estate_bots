@@ -4,8 +4,9 @@ Shared data models for Jorge's Real Estate Bots.
 Contains dataclasses and Pydantic models used across the system.
 """
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
+from pydantic import BaseModel, Field
 
 
 @dataclass
@@ -36,4 +37,31 @@ class PerformanceMetrics:
             "cache_hit": self.cache_hit,
             "analysis_type": self.analysis_type,
             "five_minute_rule_compliant": self.five_minute_rule_compliant
+        }
+
+
+class ProcessMessageRequest(BaseModel):
+    """
+    Request model for bot message processing endpoints.
+    
+    Used by seller_bot and buyer_bot /process endpoints to validate
+    incoming message data with Pydantic.
+    """
+    contact_id: str = Field(..., description="GHL contact ID")
+    location_id: str = Field(..., description="GHL location ID")
+    message: str = Field(..., description="User message content")
+    contact_info: Optional[Dict[str, Any]] = Field(None, description="Additional contact information")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "contact_id": "abc123",
+                "location_id": "loc456",
+                "message": "I'm interested in selling my house",
+                "contact_info": {
+                    "name": "John Doe",
+                    "email": "john@example.com",
+                    "phone": "+1234567890"
+                }
+            }
         }
