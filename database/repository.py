@@ -3,7 +3,7 @@ Database repository helpers for common upsert and query operations.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 from sqlalchemy import select, update, func
@@ -20,7 +20,7 @@ from database.models import (
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 async def upsert_contact(

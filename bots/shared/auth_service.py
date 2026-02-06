@@ -15,7 +15,7 @@ import secrets
 import jwt
 import hashlib
 from passlib.context import CryptContext
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -207,12 +207,12 @@ class AuthService:
                 return None
             
             # Update last login
-            user.last_login = datetime.utcnow()
+            user.last_login = datetime.now(timezone.utc)
             await self._store_user(user)
             
             # Generate tokens
             tokens = await self._generate_tokens(user)
-            refresh_expires = datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
+            refresh_expires = datetime.now(timezone.utc) + timedelta(days=self.refresh_token_expire_days)
             await self._store_session(user.user_id, tokens.refresh_token, refresh_expires)
             
             logger.info(f"User authenticated successfully: {user.email}")
@@ -341,7 +341,7 @@ class AuthService:
             
             # Generate new tokens
             tokens = await self._generate_tokens(user)
-            refresh_expires = datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
+            refresh_expires = datetime.now(timezone.utc) + timedelta(days=self.refresh_token_expire_days)
             await self._store_session(user.user_id, tokens.refresh_token, refresh_expires)
             return tokens
             
@@ -445,7 +445,7 @@ class AuthService:
                     existing.last_login = user.last_login
                     existing.must_change_password = user.must_change_password
                     if hasattr(existing, "updated_at"):
-                        existing.updated_at = datetime.utcnow()
+                        existing.updated_at = datetime.now(timezone.utc)
                 else:
                     session.add(
                         UserModel(
@@ -458,7 +458,7 @@ class AuthService:
                             must_change_password=user.must_change_password,
                             created_at=user.created_at,
                             last_login=user.last_login,
-                            updated_at=datetime.utcnow(),
+                            updated_at=datetime.now(timezone.utc),
                         )
                     )
                 await session.commit()
@@ -543,7 +543,7 @@ class AuthService:
             session_row = result.scalars().first()
             if not session_row:
                 return False
-            if session_row.expires_at < datetime.utcnow():
+            if session_row.expires_at < datetime.now(timezone.utc):
                 await session.delete(session_row)
                 await session.commit()
                 return False
@@ -562,7 +562,7 @@ class AuthService:
                 model.password_hash = new_hash
                 model.must_change_password = False
                 if hasattr(model, "updated_at"):
-                    model.updated_at = datetime.utcnow()
+                    model.updated_at = datetime.now(timezone.utc)
                 await session.commit()
             # Refresh cache
             user = await self.get_user_by_id(user_id, include_password=True)
@@ -575,7 +575,7 @@ class AuthService:
 
     async def _generate_tokens(self, user: User) -> AuthToken:
         """Generate JWT access and refresh tokens."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Access token payload
         access_payload = {

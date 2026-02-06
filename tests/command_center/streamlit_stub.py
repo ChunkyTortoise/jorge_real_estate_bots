@@ -146,6 +146,7 @@ def build_streamlit_stub():
     for name in [
         "markdown",
         "write",
+        "title",
         "header",
         "subheader",
         "caption",
