@@ -1,0 +1,78 @@
+I'm continuing Phase 3B implementation for the Jorge Real Estate AI dashboard.
+
+**Context**: Phase 3B Priority 2 features - Advanced analytics dashboard with real data integration.
+
+**Progress So Far**:
+✅ Phase 1 Foundation (COMPLETED):
+  - Created bots/shared/dashboard_models.py with 12 dataclasses
+  - Created bots/shared/performance_tracker.py for metrics tracking
+  - All tests passing (42 tests total)
+
+⏳ Phase 2 Service Layer (NEXT - 2 hours):
+  - Build bots/shared/metrics_service.py
+  - Build bots/shared/dashboard_data_service.py
+  - Add Redis persistence to seller bot
+  - Write comprehensive tests
+
+**What I Need You To Do**:
+Start Phase 2 (Service Layer) - Build the orchestration and data aggregation services:
+
+1. **MetricsService** (`bots/shared/metrics_service.py`):
+   - Aggregate performance metrics from PerformanceTracker
+   - Methods: get_performance_metrics(), get_cache_statistics(), get_cost_savings()
+   - Cache results with appropriate TTLs (30s/5min/1hr)
+   - Integration with existing PerformanceTracker
+
+2. **DashboardDataService** (`bots/shared/dashboard_data_service.py`):
+   - Orchestrate data from multiple sources (cache, seller bot, lead intelligence)
+   - Methods: get_dashboard_overview(), get_budget_distribution(), get_timeline_distribution(), get_active_conversations(), get_commission_metrics()
+   - Handle errors gracefully with fallbacks
+   - Pagination support for conversations table
+
+3. **Seller Bot Persistence** (enhance `bots/seller_bot/jorge_seller_bot.py`):
+   - Replace in-memory dict with Redis-backed persistence
+   - Use CacheService for seller conversation states
+   - TTL: 7 days for active conversations
+   - Key pattern: "seller:state:{contact_id}"
+
+4. **Comprehensive Tests**:
+   - tests/shared/test_metrics_service.py
+   - tests/shared/test_dashboard_data_service.py
+   - tests/seller_bot/test_persistence.py
+   - Aim for 80%+ coverage, all async
+
+**Critical Files to Read First** (in order):
+1. PHASE3B_PHASE2_HANDOFF.md - Complete Phase 2 architecture
+2. bots/shared/dashboard_models.py - Data models (already built)
+3. bots/shared/performance_tracker.py - Metrics tracking (already built)
+4. bots/shared/cache_service.py - Caching patterns (lines 138-374)
+5. bots/seller_bot/jorge_seller_bot.py - Current seller bot (line 198: in-memory storage)
+6. bots/shared/lead_intelligence_optimized.py - Lead scoring (lines 200-266)
+7. bots/shared/business_rules.py - Commission logic (lines 160-173)
+
+**Key Patterns to Follow**:
+- Async/await throughout
+- Use CacheService.cached_computation() for caching
+- Try-except with fallback data on errors
+- Follow existing patterns from cache_service.py
+- TDD: Write tests first (RED-GREEN-REFACTOR)
+
+**Environment**:
+```bash
+cd ~/Documents/GitHub/jorge_real_estate_bots
+source venv/bin/activate
+```
+
+**Testing**:
+```bash
+# Run specific tests
+pytest tests/shared/test_metrics_service.py -v
+
+# Run all Phase 3B tests
+pytest tests/shared/test_dashboard_models.py tests/shared/test_performance_tracker.py tests/shared/test_metrics_service.py -v
+
+# Coverage
+pytest tests/ --cov=bots.shared --cov-report=html
+```
+
+Start with creating `bots/shared/metrics_service.py` following TDD workflow.
