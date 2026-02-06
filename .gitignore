@@ -42,5 +42,8 @@ build/
 # Docker
 docker-compose.override.yml
 
+# Demo mode
+.demo_data/
+
 # Serena
 .serena/
