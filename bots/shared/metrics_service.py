@@ -28,6 +28,9 @@ from bots.shared.dashboard_models import (
     CommissionMetrics,
     Timeline,
 )
+from sqlalchemy import select, func
+from database.session import AsyncSessionFactory
+from database.models import LeadModel, DealModel
 
 logger = get_logger(__name__)
 
@@ -348,10 +351,7 @@ class MetricsService:
             # We'll use the direct class for data analysis
             from bots.shared.lead_intelligence_optimized import PredictiveLeadScorerV2Optimized
             
-            # TODO: Replace with actual database/GHL query
-            # For now, simulate realistic lead data based on actual patterns
-            
-            # Simulate lead data with realistic distribution
+            # Fetch lead data from PostgreSQL for budget analysis
             lead_data = await self._fetch_lead_data_for_budget_analysis()
             
             if not lead_data:
@@ -455,50 +455,27 @@ class MetricsService:
             List of lead records with budget and scoring data
         """
         try:
-            # TODO: Replace with actual database/GHL query
-            # For now, simulate realistic lead data based on Dallas market
-            
-            # This would typically be:
-            # return await self.database_service.get_leads_with_budget_data()
-            # or
-            # return await self.ghl_client.get_leads_with_custom_fields(['budget_min', 'budget_max', 'lead_score'])
-            
-            import random
-            from datetime import datetime, timedelta
-            
-            # Simulate 60 leads with realistic Dallas market distribution
-            simulated_leads = []
-            dallas_budget_ranges = [
-                (250000, 350000, 25),  # Entry level - 25%
-                (350000, 450000, 35),  # Mid-range - 35% 
-                (450000, 600000, 25),  # Upper-mid - 25%
-                (600000, 1200000, 15) # Luxury - 15%
-            ]
-            
-            lead_id = 1
-            for budget_min, budget_max, percentage in dallas_budget_ranges:
-                count = int(60 * percentage / 100)
-                for _ in range(count):
-                    # Generate realistic budget within range
-                    actual_min = random.randint(budget_min, budget_min + 50000)
-                    actual_max = random.randint(budget_max - 50000, budget_max)
-                    
-                    # Generate lead score based on budget range (higher budget = higher score)
-                    base_score = 6.5 + (actual_max - 250000) / 100000
-                    lead_score = max(1.0, min(10.0, base_score + random.uniform(-1.0, 1.0)))
-                    
-                    simulated_leads.append({
-                        'lead_id': f'lead_{lead_id:03d}',
-                        'budget_min': actual_min,
-                        'budget_max': actual_max,
-                        'lead_score': round(lead_score, 1),
-                        'created_at': datetime.now() - timedelta(days=random.randint(0, 30)),
-                        'service_area_match': random.choice([True, True, True, False])  # 75% in service area
+            async with AsyncSessionFactory() as session:
+                stmt = select(
+                    LeadModel.contact_id,
+                    LeadModel.budget_min,
+                    LeadModel.budget_max,
+                    LeadModel.score,
+                    LeadModel.created_at,
+                    LeadModel.service_area_match,
+                )
+                result = await session.execute(stmt)
+                leads = []
+                for row in result.all():
+                    leads.append({
+                        'lead_id': row[0],
+                        'budget_min': row[1],
+                        'budget_max': row[2],
+                        'lead_score': row[3] or 0,
+                        'created_at': row[4],
+                        'service_area_match': row[5],
                     })
-                    lead_id += 1
-            
-            logger.info(f"Generated {len(simulated_leads)} simulated leads for budget analysis")
-            return simulated_leads
+                return leads
             
         except Exception as e:
             logger.exception(f"Error fetching lead data: {e}")
@@ -616,49 +593,38 @@ class MetricsService:
             List of lead records with timeline data
         """
         try:
-            # TODO: Replace with actual database/GHL query
-            # This would typically be:
-            # return await self.database_service.get_leads_with_timeline_data()
-            
-            import random
-            
-            # Get base lead data
-            base_leads = await self._fetch_lead_data_for_budget_analysis()
-            
-            # Enhance with realistic timeline data
-            timeline_options = [
-                ('immediate', 20),    # 20% immediate
-                ('short_term', 40),   # 40% short-term (1-2 months)
-                ('medium_term', 30),  # 30% medium-term (3-6 months)
-                ('long_term', 10)     # 10% long-term (6+ months)
-            ]
-            
-            enhanced_leads = []
-            for i, lead in enumerate(base_leads):
-                # Assign timeline based on realistic distribution
-                cumulative_prob = 0
-                random_val = random.random() * 100
-                timeline = 'long_term'  # default
-                
-                for timeline_type, probability in timeline_options:
-                    cumulative_prob += probability
-                    if random_val <= cumulative_prob:
-                        timeline = timeline_type
-                        break
-                
-                # Higher budget leads tend to have more urgent timelines
-                budget_max = lead.get('budget_max', 0)
-                if budget_max > 500000 and timeline == 'long_term':
-                    timeline = random.choice(['immediate', 'short_term'])
-                
-                enhanced_lead = {
-                    **lead,
-                    'timeline': timeline
-                }
-                enhanced_leads.append(enhanced_lead)
-            
-            logger.info(f"Enhanced {len(enhanced_leads)} leads with timeline data")
-            return enhanced_leads
+            async with AsyncSessionFactory() as session:
+                stmt = select(
+                    LeadModel.contact_id,
+                    LeadModel.budget_min,
+                    LeadModel.budget_max,
+                    LeadModel.score,
+                    LeadModel.created_at,
+                    LeadModel.timeline,
+                )
+                result = await session.execute(stmt)
+                leads = []
+                for row in result.all():
+                    timeline_raw = (row[5] or "unknown").lower()
+                    if "0-30" in timeline_raw or "immediate" in timeline_raw or "asap" in timeline_raw:
+                        timeline_val = "immediate"
+                    elif "30-60" in timeline_raw or "1-2" in timeline_raw or "short" in timeline_raw:
+                        timeline_val = "short_term"
+                    elif "60-90" in timeline_raw or "3-6" in timeline_raw or "medium" in timeline_raw:
+                        timeline_val = "medium_term"
+                    elif "6+" in timeline_raw or "long" in timeline_raw:
+                        timeline_val = "long_term"
+                    else:
+                        timeline_val = "long_term"
+                    leads.append({
+                        "lead_id": row[0],
+                        "budget_min": row[1],
+                        "budget_max": row[2],
+                        "lead_score": row[3] or 0,
+                        "created_at": row[4],
+                        "timeline": timeline_val,
+                    })
+                return leads
             
         except Exception as e:
             logger.exception(f"Error fetching timeline lead data: {e}")
@@ -761,43 +727,33 @@ class MetricsService:
             List of lead records with commission-relevant data
         """
         try:
-            # TODO: Replace with actual database/GHL query
-            # This would typically be:
-            # return await self.database_service.get_qualified_leads_with_commission_data()
-            
-            import random
-            from datetime import datetime, timedelta
-            
-            # Get base lead data
-            base_leads = await self._fetch_lead_data_for_budget_analysis()
-            
-            # Enhance with qualification and temperature data
-            enhanced_leads = []
-            for lead in base_leads:
-                budget_max = lead.get('budget_max', 0)
-                lead_score = lead.get('lead_score', 0)
-                
-                # Determine qualification status based on budget and score
-                is_qualified = budget_max > 300000 and lead_score > 7.5
-                
-                # Determine temperature based on score and budget
-                if lead_score >= 8.5 and budget_max > 450000:
-                    temperature = 'HOT'
-                elif lead_score >= 7.0 and budget_max > 300000:
-                    temperature = 'WARM'
-                else:
-                    temperature = 'COLD'
-                
-                enhanced_lead = {
-                    **lead,
-                    'is_qualified': is_qualified,
-                    'temperature': temperature,
-                    'qualification_date': datetime.now() - timedelta(days=random.randint(0, 14)) if is_qualified else None
-                }
-                enhanced_leads.append(enhanced_lead)
-            
-            logger.info(f"Enhanced {len(enhanced_leads)} leads with commission data")
-            return enhanced_leads
+            async with AsyncSessionFactory() as session:
+                stmt = select(
+                    LeadModel.contact_id,
+                    LeadModel.budget_min,
+                    LeadModel.budget_max,
+                    LeadModel.score,
+                    LeadModel.temperature,
+                    LeadModel.is_qualified,
+                    LeadModel.service_area_match,
+                    LeadModel.created_at,
+                    LeadModel.metadata_json,
+                )
+                result = await session.execute(stmt)
+                leads = []
+                for row in result.all():
+                    leads.append({
+                        'lead_id': row[0],
+                        'budget_min': row[1],
+                        'budget_max': row[2],
+                        'lead_score': row[3] or 0,
+                        'temperature': (row[4] or 'cold').upper(),
+                        'is_qualified': bool(row[5]) if row[5] is not None else False,
+                        'service_area_match': row[6],
+                        'qualification_date': row[7],
+                        'metadata_json': row[8] or {},
+                    })
+                return leads
             
         except Exception as e:
             logger.exception(f"Error fetching commission lead data: {e}")
@@ -806,30 +762,22 @@ class MetricsService:
     async def _generate_commission_trend_data(self) -> List[Dict[str, Any]]:
         """Generate commission trend data for the last 4 months."""
         try:
-            # TODO: Replace with actual historical commission data
-            # This would typically be:
-            # return await self.database_service.get_commission_trend_last_4_months()
-            
-            import random
-            from datetime import datetime, timedelta
-            
-            # Generate realistic trend based on seasonal patterns
-            base_amounts = [67000, 72000, 89000, 84000]  # Increasing trend
-            months = ['Jan', 'Feb', 'Mar', 'Apr']
-            
-            trend_data = []
-            for i, month in enumerate(months):
-                # Add some realistic variance
-                amount = base_amounts[i] + random.randint(-5000, 10000)
-                deals = max(1, int(amount / 15000))  # ~$15K average per deal
-                
-                trend_data.append({
-                    'month': month,
-                    'amount': amount,
-                    'deals': deals
-                })
-            
-            return trend_data
+            async with AsyncSessionFactory() as session:
+                stmt = select(
+                    func.date_trunc('month', DealModel.closed_at).label('month'),
+                    func.sum(DealModel.commission).label('amount'),
+                    func.count(DealModel.id).label('deals'),
+                ).where(DealModel.closed_at.isnot(None)).group_by('month').order_by('month').limit(4)
+                result = await session.execute(stmt)
+                trend_data = []
+                for row in result.all():
+                    month_label = row[0].strftime('%b') if row[0] else 'N/A'
+                    trend_data.append({
+                        'month': month_label,
+                        'amount': float(row[1] or 0),
+                        'deals': int(row[2] or 0),
+                    })
+                return trend_data
             
         except Exception as e:
             logger.exception(f"Error generating commission trend: {e}")

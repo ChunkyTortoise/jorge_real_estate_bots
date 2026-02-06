@@ -30,6 +30,7 @@ from bots.shared.claude_client import ClaudeClient
 from bots.shared.ghl_client import GHLClient
 from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.cache_service import get_cache_service
+from database.repository import upsert_contact, upsert_conversation
 
 logger = get_logger(__name__)
 
@@ -231,6 +232,9 @@ class JorgeSellerBot:
         if not state_dict:
             return None
 
+        # Create a copy to avoid modifying the cached object in place
+        state_dict = state_dict.copy()
+
         # Deserialize datetime fields
         if 'last_interaction' in state_dict and state_dict['last_interaction']:
             state_dict['last_interaction'] = datetime.fromisoformat(
@@ -246,7 +250,9 @@ class JorgeSellerBot:
     async def save_conversation_state(
         self,
         contact_id: str,
-        state: SellerQualificationState
+        state: SellerQualificationState,
+        temperature: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         """
         Save conversation state to Redis with 7-day TTL.
@@ -288,6 +294,22 @@ class JorgeSellerBot:
                 self.logger.warning(f"Could not add to active contacts set: {e}")
 
         self.logger.debug(f"Saved state for contact {contact_id}: stage={state.stage}, Q{state.current_question}")
+
+        # Persist to database
+        await upsert_conversation(
+            contact_id=contact_id,
+            bot_type="seller",
+            stage=state.stage,
+            temperature=temperature,
+            current_question=state.current_question,
+            questions_answered=state.questions_answered,
+            is_qualified=state.is_qualified,
+            conversation_history=state.conversation_history,
+            extracted_data=state.extracted_data,
+            last_activity=state.last_interaction,
+            conversation_started=state.conversation_started,
+            metadata_json=metadata or {},
+        )
 
     async def get_all_active_conversations(self) -> List[SellerQualificationState]:
         """
@@ -366,6 +388,15 @@ class JorgeSellerBot:
             # Get or create qualification state (now from Redis)
             state = await self._get_or_create_state(contact_id, location_id)
 
+            if contact_info:
+                await upsert_contact(
+                    contact_id=contact_id,
+                    location_id=location_id,
+                    name=contact_info.get("name") or contact_info.get("full_name"),
+                    email=contact_info.get("email"),
+                    phone=contact_info.get("phone"),
+                )
+
             # Determine current question and generate response
             response_data = await self._generate_response(
                 state=state,
@@ -388,11 +419,19 @@ class JorgeSellerBot:
                     extracted_data=response_data["extracted_data"]
                 )
 
-            # Save state to Redis after updates
-            await self.save_conversation_state(contact_id, state)
-
             # Calculate temperature
             temperature = self._calculate_temperature(state)
+
+            # Save state to Redis and DB after updates
+            await self.save_conversation_state(
+                contact_id,
+                state,
+                temperature=temperature,
+                metadata={
+                    "contact_name": contact_info.get("name") if contact_info else None,
+                    "property_address": contact_info.get("property_address") if contact_info else None,
+                },
+            )
 
             # Determine next steps
             next_steps = self._determine_next_steps(state, temperature)

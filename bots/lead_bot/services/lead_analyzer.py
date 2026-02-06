@@ -22,6 +22,8 @@ from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.models import PerformanceMetrics
 from bots.shared.config import settings
 from bots.shared.logger import get_logger
+from bots.shared.event_broker import event_broker
+from database.repository import upsert_contact, upsert_lead
 
 logger = get_logger(__name__)
 
@@ -85,6 +87,22 @@ class LeadAnalyzer:
 
         logger.info(f"🔍 Analyzing lead: {contact_id}")
 
+        # Emit lead analysis started event
+        try:
+            await event_broker.publish_lead_event(
+                "lead.analyzed",
+                contact_id=contact_id or "unknown",
+                score=0,  # Will be updated when complete
+                temperature="unknown",
+                jorge_priority="normal",
+                estimated_commission=0.0,
+                meets_jorge_criteria=False,
+                analysis_time_ms=0,
+                cache_hit=False
+            )
+        except Exception as e:
+            logger.warning(f"Failed to publish lead analysis started event: {e}")
+
         try:
             # Check performance cache first for <100ms responses
             if not force_ai:
@@ -99,6 +117,18 @@ class LeadAnalyzer:
                         cached_result.update(self._add_jorge_validation(cached_result))
 
                     logger.info(f"⚡ Cache hit - {metrics.total_time*1000:.0f}ms")
+
+                    # Emit cache hit event
+                    try:
+                        await event_broker.publish_lead_event(
+                            "lead.cache_hit",
+                            contact_id=contact_id or "unknown",
+                            cache_key=message[:100],  # Truncate for privacy
+                            response_time_ms=metrics.total_time * 1000
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to publish cache hit event: {e}")
+
                     return cached_result, metrics
 
             # Perform AI-powered analysis (existing logic)
@@ -121,11 +151,54 @@ class LeadAnalyzer:
             # Cache result for future requests
             await self.performance_cache.set(message, analysis, context)
 
+            # Persist to database
+            await self._persist_lead(contact_id, lead_data, analysis)
+
             logger.info(f"✅ Analysis complete - {metrics.analysis_type}: {metrics.total_time*1000:.0f}ms")
+
+            # Emit lead analysis complete event
+            try:
+                await event_broker.publish_lead_event(
+                    "lead.analyzed",
+                    contact_id=contact_id or "unknown",
+                    score=analysis.get("score", 0),
+                    temperature=analysis.get("temperature", "warm"),
+                    jorge_priority=analysis.get("jorge_priority", "normal"),
+                    estimated_commission=analysis.get("estimated_commission", 0.0),
+                    meets_jorge_criteria=analysis.get("meets_jorge_criteria", False),
+                    analysis_time_ms=metrics.total_time * 1000,
+                    cache_hit=False
+                )
+
+                # Emit hot lead detected event if temperature is hot
+                if analysis.get("temperature") == "hot":
+                    await event_broker.publish_lead_event(
+                        "lead.hot_detected",
+                        contact_id=contact_id or "unknown",
+                        score=analysis.get("score", 0),
+                        estimated_commission=analysis.get("estimated_commission", 0.0),
+                        hot_indicators=analysis.get("hot_indicators", ["high_score"])
+                    )
+
+            except Exception as e:
+                logger.warning(f"Failed to publish lead analysis complete event: {e}")
+
             return analysis, metrics
 
         except Exception as e:
             logger.error(f"❌ Lead analysis error: {e}")
+
+            # Emit error event
+            try:
+                await event_broker.publish_lead_event(
+                    "lead.error",
+                    contact_id=contact_id or "unknown",
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    stack_trace=None  # Could add traceback if needed
+                )
+            except Exception as event_error:
+                logger.warning(f"Failed to publish error event: {event_error}")
 
             # Fallback analysis
             fallback = self._fallback_scoring(lead_data)
@@ -136,6 +209,7 @@ class LeadAnalyzer:
             metrics.total_time = time.time() - metrics.start_time
             metrics.analysis_type = "fallback"
 
+            await self._persist_lead(contact_id, lead_data, fallback)
             return fallback, metrics
 
     def _extract_message_for_cache(self, lead_data: Dict[str, Any]) -> str:
@@ -406,16 +480,73 @@ Be concise. Focus on actionable insights for Jorge."""
                 "timeline_estimate": None
             }
 
+    async def _persist_lead(self, contact_id: Optional[str], lead_data: Dict[str, Any], analysis: Dict[str, Any]) -> None:
+        if not contact_id:
+            return
+        try:
+            await upsert_contact(
+                contact_id=contact_id,
+                location_id=lead_data.get("location_id") or lead_data.get("locationId"),
+                name=lead_data.get("name") or lead_data.get("contact", {}).get("name"),
+                email=lead_data.get("email") or lead_data.get("contact", {}).get("email"),
+                phone=lead_data.get("phone") or lead_data.get("contact", {}).get("phone"),
+            )
+            await upsert_lead(
+                contact_id=contact_id,
+                location_id=lead_data.get("location_id") or lead_data.get("locationId"),
+                score=analysis.get("score"),
+                temperature=analysis.get("temperature"),
+                budget_min=analysis.get("budget_min"),
+                budget_max=analysis.get("budget_max"),
+                timeline=analysis.get("timeline_estimate"),
+                service_area_match=analysis.get("service_area_match"),
+                is_qualified=analysis.get("meets_jorge_criteria"),
+                metadata_json={
+                    "source": lead_data.get("source"),
+                    "tags": lead_data.get("tags", []),
+                    "jorge_validation": analysis.get("jorge_validation"),
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to persist lead {contact_id}: {e}")
+
     async def _update_ghl_fields(self, contact_id: str, analysis: Dict[str, Any]):
         """Update GHL custom fields with analysis results."""
         try:
             result = await self._async_ghl_update(contact_id, analysis)
-            if result.get("success"):
+            success = result.get("success", False)
+
+            if success:
                 logger.info(f"✅ Updated GHL fields for {contact_id}")
             else:
                 logger.warning(f"⚠️ GHL update failed: {result.get('error')}")
+
+            # Emit GHL fields updated event
+            try:
+                await event_broker.publish_lead_event(
+                    "lead.ghl_updated",
+                    contact_id=contact_id,
+                    fields_updated=["ai_lead_score", "lead_temperature"],
+                    update_success=success,
+                    error_message=result.get("error") if not success else None
+                )
+            except Exception as e:
+                logger.warning(f"Failed to publish GHL update event: {e}")
+
         except Exception as e:
             logger.error(f"GHL update error: {e}")
+
+            # Emit GHL update error event
+            try:
+                await event_broker.publish_lead_event(
+                    "lead.ghl_updated",
+                    contact_id=contact_id,
+                    fields_updated=[],
+                    update_success=False,
+                    error_message=str(e)
+                )
+            except Exception as event_error:
+                logger.warning(f"Failed to publish GHL update error event: {event_error}")
 
     async def _async_ghl_update(self, contact_id: str, analysis: Dict[str, Any]) -> Dict:
         """Async wrapper for GHL update (sync library)."""
@@ -432,10 +563,37 @@ Be concise. Focus on actionable insights for Jorge."""
         try:
             temperature = analysis["temperature"]
             result = await self._async_send_followup(contact_id, temperature)
-            if result.get("success"):
+            success = result.get("success", False)
+
+            if success:
                 logger.info(f"📬 Follow-up sent for {contact_id} ({temperature})")
+
+            # Emit follow-up sent event
+            try:
+                await event_broker.publish_lead_event(
+                    "lead.followup_sent",
+                    contact_id=contact_id,
+                    temperature=temperature,
+                    message_type="sms",  # Could be dynamic based on GHL config
+                    message_sent=success
+                )
+            except Exception as e:
+                logger.warning(f"Failed to publish follow-up sent event: {e}")
+
         except Exception as e:
             logger.error(f"Follow-up error: {e}")
+
+            # Emit follow-up error event
+            try:
+                await event_broker.publish_lead_event(
+                    "lead.followup_sent",
+                    contact_id=contact_id,
+                    temperature=analysis.get("temperature", "unknown"),
+                    message_type="sms",
+                    message_sent=False
+                )
+            except Exception as event_error:
+                logger.warning(f"Failed to publish follow-up error event: {event_error}")
 
     async def _async_send_followup(self, contact_id: str, temperature: str) -> Dict:
         """Async wrapper for sending follow-up."""

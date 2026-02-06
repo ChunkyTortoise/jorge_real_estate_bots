@@ -23,6 +23,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from bots.shared.config import settings
 from bots.shared.logger import get_logger
+from bots.shared.event_broker import event_broker
 
 logger = get_logger(__name__)
 
@@ -169,16 +170,70 @@ class GHLClient:
 
     async def update_contact(self, contact_id: str, updates: Dict) -> Dict:
         """Update contact information."""
-        return await self._make_request("PUT", f"contacts/{contact_id}", data=updates)
+        try:
+            result = await self._make_request("PUT", f"contacts/{contact_id}", data=updates)
+
+            # Emit contact updated event
+            try:
+                await event_broker.publish_ghl_event(
+                    "ghl.contact_updated",
+                    contact_id=contact_id,
+                    fields_updated=updates,
+                    update_success=result.get("success", True)  # Assume success if no error
+                )
+            except Exception as e:
+                logger.warning(f"Failed to publish contact updated event: {e}")
+
+            return result
+
+        except Exception as e:
+            # Emit error event for failed update
+            try:
+                await event_broker.publish_ghl_event(
+                    "ghl.contact_updated",
+                    contact_id=contact_id,
+                    fields_updated=updates,
+                    update_success=False
+                )
+            except Exception as event_error:
+                logger.warning(f"Failed to publish contact update error event: {event_error}")
+            raise e
 
     async def add_tag(self, contact_id: str, tag: str) -> bool:
         """Add tag to contact."""
-        result = await self._make_request(
-            "POST",
-            f"contacts/{contact_id}/tags",
-            data={"tags": [tag]}
-        )
-        return result.get("success", False)
+        try:
+            result = await self._make_request(
+                "POST",
+                f"contacts/{contact_id}/tags",
+                data={"tags": [tag]}
+            )
+            success = result.get("success", False)
+
+            # Emit tag added event
+            try:
+                await event_broker.publish_ghl_event(
+                    "ghl.tag_added",
+                    contact_id=contact_id,
+                    tag=tag,
+                    tag_added=success
+                )
+            except Exception as e:
+                logger.warning(f"Failed to publish tag added event: {e}")
+
+            return success
+
+        except Exception as e:
+            # Emit tag add error event
+            try:
+                await event_broker.publish_ghl_event(
+                    "ghl.tag_added",
+                    contact_id=contact_id,
+                    tag=tag,
+                    tag_added=False
+                )
+            except Exception as event_error:
+                logger.warning(f"Failed to publish tag add error event: {event_error}")
+            raise e
 
     async def add_tag_to_contact(self, contact_id: str, tag: str) -> Dict:
         """Add tag to contact (legacy method for backwards compatibility)."""
@@ -258,12 +313,41 @@ class GHLClient:
             message: Message text
             message_type: SMS or Email
         """
-        data = {
-            "contactId": contact_id,
-            "message": message,
-            "type": message_type
-        }
-        return await self._make_request("POST", "conversations/messages", data=data)
+        try:
+            data = {
+                "contactId": contact_id,
+                "message": message,
+                "type": message_type
+            }
+            result = await self._make_request("POST", "conversations/messages", data=data)
+
+            # Emit message sent event
+            try:
+                await event_broker.publish_ghl_event(
+                    "ghl.message_sent",
+                    contact_id=contact_id,
+                    message_type=message_type.lower(),
+                    message_id=result.get("id", "unknown"),
+                    sent_success=result.get("success", True)  # Assume success if no error
+                )
+            except Exception as e:
+                logger.warning(f"Failed to publish message sent event: {e}")
+
+            return result
+
+        except Exception as e:
+            # Emit message send error event
+            try:
+                await event_broker.publish_ghl_event(
+                    "ghl.message_sent",
+                    contact_id=contact_id,
+                    message_type=message_type.lower(),
+                    message_id="failed",
+                    sent_success=False
+                )
+            except Exception as event_error:
+                logger.warning(f"Failed to publish message send error event: {event_error}")
+            raise e
 
     async def get_conversations(self, contact_id: str) -> List[Dict[str, Any]]:
         """
@@ -297,15 +381,44 @@ class GHLClient:
         Returns:
             Workflow trigger result
         """
-        data = {
-            "contactId": contact_id,
-            "workflowId": workflow_id
-        }
-        return await self._make_request(
-            "POST",
-            f"workflows/{workflow_id}/subscribe",
-            data=data
-        )
+        try:
+            data = {
+                "contactId": contact_id,
+                "workflowId": workflow_id
+            }
+            result = await self._make_request(
+                "POST",
+                f"workflows/{workflow_id}/subscribe",
+                data=data
+            )
+
+            # Emit workflow triggered event
+            try:
+                await event_broker.publish_ghl_event(
+                    "ghl.workflow_triggered",
+                    contact_id=contact_id,
+                    workflow_id=workflow_id,
+                    workflow_name=f"Workflow-{workflow_id}",  # Could fetch actual name if available
+                    trigger_success=result.get("success", True)
+                )
+            except Exception as e:
+                logger.warning(f"Failed to publish workflow triggered event: {e}")
+
+            return result
+
+        except Exception as e:
+            # Emit workflow trigger error event
+            try:
+                await event_broker.publish_ghl_event(
+                    "ghl.workflow_triggered",
+                    contact_id=contact_id,
+                    workflow_id=workflow_id,
+                    workflow_name=f"Workflow-{workflow_id}",
+                    trigger_success=False
+                )
+            except Exception as event_error:
+                logger.warning(f"Failed to publish workflow trigger error event: {event_error}")
+            raise e
 
     # ========== CALENDAR & APPOINTMENTS ==========
 

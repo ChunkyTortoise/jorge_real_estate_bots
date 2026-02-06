@@ -326,3 +326,67 @@ class CommissionMetrics:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
+
+
+@dataclass
+class HeroMetrics:
+    """
+    Hero metrics for dashboard KPI display.
+
+    Shows 4 key metrics with delta indicators for 24h change.
+    """
+    active_conversations: int
+    active_conversations_change: int
+    qualification_rate: float  # 0-1 (will be displayed as percentage)
+    qualification_rate_change: float  # Delta as decimal
+    avg_response_time_minutes: float
+    response_time_change: float  # Delta in minutes
+    hot_leads_count: int
+    hot_leads_change: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return asdict(self)
+
+
+@dataclass
+class PerformanceMetrics:
+    """
+    Performance analytics metrics for dashboard charts.
+
+    Tracks qualification, response time, and performance indicators.
+    """
+    qualification_rate: float  # 0-1
+    avg_response_time: float  # Minutes
+    budget_performance: float  # 0-1+ (1.0 = 100% of target)
+    timeline_performance: float  # 0-1+ (1.0 = on schedule)
+    commission_performance: float  # 0-1+ (1.0 = 100% of target)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return asdict(self)
+
+
+# Type alias for clarity
+ActiveConversationsResponse = PaginatedConversations
+
+
+@dataclass
+class DashboardData:
+    """
+    Complete dashboard data container.
+
+    Top-level structure returned by DashboardDataService.get_dashboard_data().
+    Contains all data needed for dashboard UI rendering.
+    """
+    hero_metrics: HeroMetrics
+    active_conversations: ActiveConversationsResponse
+    performance_metrics: PerformanceMetrics
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            'hero_metrics': self.hero_metrics.to_dict(),
+            'active_conversations': self.active_conversations.to_dict(),
+            'performance_metrics': self.performance_metrics.to_dict(),
+        }

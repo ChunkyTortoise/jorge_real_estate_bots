@@ -24,6 +24,9 @@ from bots.shared.dashboard_models import (
     ConversationStage,
     Temperature,
 )
+from sqlalchemy import select
+from database.session import AsyncSessionFactory
+from database.models import ConversationModel, ContactModel
 
 logger = get_logger(__name__)
 
@@ -104,6 +107,80 @@ class DashboardDataService:
         except Exception as e:
             logger.exception(f"Error getting complete dashboard data: {e}")
             return self._get_fallback_dashboard_data()
+
+    async def get_dashboard_data(self) -> 'DashboardData':
+        """
+        Get complete dashboard data as structured DashboardData object.
+
+        Returns:
+            DashboardData containing hero metrics, active conversations, and performance metrics
+
+        Cache TTL: 30 seconds (for UI components)
+        """
+        from bots.shared.dashboard_models import (
+            DashboardData, HeroMetrics, PerformanceMetrics, PaginatedConversations
+        )
+
+        cache_key = "dashboard:structured_data_v3"
+
+        try:
+            # Try cache first
+            cached = await self.cache_service.get(cache_key)
+            if cached:
+                logger.debug("Structured dashboard data served from cache")
+                return cached
+
+            # Fetch all data concurrently
+            hero_task = self._get_hero_metrics()
+            conversations_task = self.get_active_conversations(page=1, page_size=50)
+            performance_task = self._get_performance_metrics()
+
+            # Await all tasks
+            hero_metrics, active_conversations, performance_metrics = await asyncio.gather(
+                hero_task,
+                conversations_task,
+                performance_task,
+                return_exceptions=True
+            )
+
+            # Handle exceptions with fallback data
+            if isinstance(hero_metrics, Exception):
+                logger.error(f"Error fetching hero metrics: {hero_metrics}")
+                hero_metrics = self._get_fallback_hero_metrics_obj()
+
+            if isinstance(active_conversations, Exception):
+                logger.error(f"Error fetching conversations: {active_conversations}")
+                active_conversations = self._get_fallback_conversations()
+
+            if isinstance(performance_metrics, Exception):
+                logger.error(f"Error fetching performance metrics: {performance_metrics}")
+                performance_metrics = self._get_fallback_performance_metrics_obj()
+
+            # Build DashboardData object
+            dashboard_data = DashboardData(
+                hero_metrics=hero_metrics,
+                active_conversations=active_conversations,
+                performance_metrics=performance_metrics
+            )
+
+            # Cache for 30 seconds
+            await self.cache_service.set(
+                cache_key,
+                dashboard_data,
+                ttl=30
+            )
+
+            logger.debug("Structured dashboard data generated and cached")
+            return dashboard_data
+
+        except Exception as e:
+            logger.exception(f"Error getting dashboard data: {e}")
+            # Return fallback DashboardData
+            return DashboardData(
+                hero_metrics=self._get_fallback_hero_metrics_obj(),
+                active_conversations=self._get_fallback_conversations(),
+                performance_metrics=self._get_fallback_performance_metrics_obj()
+            )
 
     # =================================================================
     # Seller Bot Conversation Data
@@ -307,12 +384,23 @@ class DashboardDataService:
         - Real seller conversation database/storage
         """
         try:
-            # TODO: Replace with actual seller bot service/database query
-            # This would typically be:
-            # return await self.seller_bot_service.get_active_conversations(filters, page, page_size)
-            
-            # For now, generate realistic conversation data based on actual seller bot structure
-            conversations = await self._fetch_real_conversation_data()
+            conversations = []
+            async with AsyncSessionFactory() as session:
+                stmt = select(ConversationModel, ContactModel).join(
+                    ContactModel,
+                    ContactModel.contact_id == ConversationModel.contact_id,
+                    isouter=True,
+                ).where(ConversationModel.bot_type == "seller")
+
+                if filters:
+                    if filters.stage:
+                        stmt = stmt.where(ConversationModel.stage == filters.stage.value)
+                    if filters.temperature:
+                        stmt = stmt.where(ConversationModel.temperature == filters.temperature.value)
+
+                result = await session.execute(stmt)
+                for conv, contact in result.all():
+                    conversations.append(self._map_conversation_row(conv, contact))
             
             if not conversations:
                 logger.warning("No conversation data available, using fallback")
@@ -383,157 +471,51 @@ class DashboardDataService:
             logger.exception(f"Error fetching real active conversations: {e}")
             return self._get_fallback_conversations(filters, page, page_size)
 
-    async def _fetch_real_conversation_data(self) -> List[ConversationState]:
-        """
-        Fetch real seller bot conversation data.
-        
-        Integrates with actual SellerQualificationState data structure.
-        """
+    def _map_conversation_row(self, conv: ConversationModel, contact: Optional[ContactModel]) -> ConversationState:
+        stage_val = conv.stage or "Q0"
         try:
-            # TODO: Replace with actual database/storage query
-            # This would typically be:
-            # return await self.seller_bot_service.get_all_active_conversations()
-            # or
-            # return await self.database_service.get_seller_conversations_with_states()
-            
-            import random
-            from datetime import datetime, timedelta
-            
-            # Generate realistic conversations based on actual SellerQualificationState structure
-            conversations = []
-            
-            # Realistic stage distribution (based on actual funnel)
-            stage_distribution = [
-                (ConversationStage.Q1, 8),       # Most at Q1 (property condition)
-                (ConversationStage.Q2, 6),       # Some at Q2 (pricing discussion)
-                (ConversationStage.Q3, 4),       # Fewer at Q3 (motivation)
-                (ConversationStage.Q4, 3),       # Even fewer at Q4 (offer acceptance)
-                (ConversationStage.QUALIFIED, 4) # Some qualified
-            ]
-            
-            conversation_id = 1
-            for stage, count in stage_distribution:
-                for i in range(count):
-                    # Generate realistic conversation based on stage
-                    conversation = self._generate_realistic_conversation(
-                        conversation_id, 
-                        stage, 
-                        i
-                    )
-                    conversations.append(conversation)
-                    conversation_id += 1
-            
-            logger.info(f"Generated {len(conversations)} realistic seller conversations")
-            return conversations
-            
+            stage = ConversationStage(stage_val)
+        except Exception:
+            stage = ConversationStage.Q0
+
+        temp_val = (conv.temperature or "COLD").upper()
+        try:
+            temperature = Temperature(temp_val)
+        except Exception:
+            temperature = Temperature.COLD
+
+        extracted = conv.extracted_data or {}
+        metadata = conv.metadata_json or {}
+
+        return ConversationState(
+            contact_id=conv.contact_id,
+            seller_name=(contact.name if contact and contact.name else "Unknown"),
+            stage=stage,
+            temperature=temperature,
+            current_question=conv.current_question or 0,
+            questions_answered=conv.questions_answered or 0,
+            last_activity=conv.last_activity or datetime.now(),
+            conversation_started=conv.conversation_started or datetime.now(),
+            is_qualified=bool(conv.is_qualified),
+            property_address=metadata.get("property_address"),
+            condition=extracted.get("condition"),
+            price_expectation=extracted.get("price_expectation"),
+            motivation=extracted.get("motivation"),
+            urgency=extracted.get("urgency"),
+            next_action="Follow up" if not conv.is_qualified else "Schedule call",
+            cma_triggered=bool(metadata.get("cma_triggered")),
+        )
+
+    async def _fetch_real_conversation_data(self) -> List[ConversationState]:
+        """Fetch real seller bot conversation data from PostgreSQL."""
+        try:
+            result = await self._fetch_active_conversations(
+                filters=None, page=1, page_size=10000
+            )
+            return result.conversations
         except Exception as e:
             logger.exception(f"Error fetching real conversation data: {e}")
             return []
-
-    def _generate_realistic_conversation(
-        self, 
-        conversation_id: int, 
-        stage: ConversationStage, 
-        index: int
-    ) -> ConversationState:
-        """Generate a realistic conversation state based on actual seller bot patterns."""
-        import random
-        from datetime import datetime, timedelta
-        
-        # Realistic seller names
-        seller_names = [
-            "John Smith", "Maria Garcia", "David Johnson", "Sarah Wilson",
-            "Michael Brown", "Lisa Davis", "Robert Miller", "Jennifer Martinez",
-            "William Anderson", "Amanda Taylor", "James Thomas", "Jessica Moore"
-        ]
-        
-        # Dallas area addresses
-        dallas_addresses = [
-            "123 Main St, Dallas, TX", "456 Oak Ave, Plano, TX", "789 Elm Dr, Frisco, TX",
-            "321 Pine St, Allen, TX", "654 Maple Ave, McKinney, TX", "987 Cedar Ln, Richardson, TX",
-            "147 Birch St, Garland, TX", "258 Willow Dr, Mesquite, TX", "369 Walnut Ave, Irving, TX"
-        ]
-        
-        seller_name = seller_names[conversation_id % len(seller_names)]
-        
-        # Generate temperature based on stage (later stages tend to be hotter)
-        if stage == ConversationStage.QUALIFIED:
-            temperature = random.choice([Temperature.HOT, Temperature.HOT, Temperature.WARM])
-        elif stage == ConversationStage.Q4:
-            temperature = random.choice([Temperature.HOT, Temperature.WARM, Temperature.WARM])
-        elif stage == ConversationStage.Q3:
-            temperature = random.choice([Temperature.WARM, Temperature.WARM, Temperature.COLD])
-        else:
-            temperature = random.choice([Temperature.WARM, Temperature.COLD, Temperature.COLD])
-        
-        # Generate conversation timing
-        days_ago = random.randint(0, 14)  # Within last 2 weeks
-        hours_since_last = random.randint(1, 72)
-        
-        # Generate stage-specific data
-        current_question = 0
-        questions_answered = 0
-        property_address = None
-        condition = None
-        price_expectation = None
-        motivation = None
-        
-        if stage == ConversationStage.Q1:
-            current_question = 1
-            questions_answered = 0
-        elif stage == ConversationStage.Q2:
-            current_question = 2
-            questions_answered = 1
-            condition = random.choice(["Good", "Needs minor repairs", "Needs major repairs"])
-        elif stage == ConversationStage.Q3:
-            current_question = 3
-            questions_answered = 2
-            condition = random.choice(["Good", "Needs minor repairs"])
-            price_expectation = random.randint(300000, 600000)
-        elif stage == ConversationStage.Q4:
-            current_question = 4
-            questions_answered = 3
-            condition = "Good"
-            price_expectation = random.randint(350000, 650000)
-            motivation = random.choice(["Relocation", "Downsizing", "Investment", "Job change"])
-        elif stage == ConversationStage.QUALIFIED:
-            current_question = 4
-            questions_answered = 4
-            condition = "Good"
-            price_expectation = random.randint(400000, 700000)
-            motivation = random.choice(["Relocation", "Downsizing", "Job change"])
-            property_address = dallas_addresses[conversation_id % len(dallas_addresses)]
-        
-        # Determine next action based on stage and timing
-        if hours_since_last > 48:
-            next_action = "Follow up - stalled"
-        elif stage == ConversationStage.QUALIFIED:
-            next_action = "Schedule CMA appointment"
-        elif current_question > questions_answered:
-            next_action = "Wait for response"
-        else:
-            next_action = f"Send Q{current_question + 1}"
-        
-        # CMA triggered for qualified sellers
-        cma_triggered = stage == ConversationStage.QUALIFIED and random.random() < 0.7
-        
-        return ConversationState(
-            contact_id=f"contact_{conversation_id:03d}",
-            seller_name=seller_name,
-            stage=stage,
-            temperature=temperature,
-            current_question=current_question,
-            questions_answered=questions_answered,
-            last_activity=datetime.now() - timedelta(hours=hours_since_last),
-            conversation_started=datetime.now() - timedelta(days=days_ago),
-            is_qualified=stage == ConversationStage.QUALIFIED,
-            property_address=property_address,
-            condition=condition,
-            price_expectation=price_expectation,
-            motivation=motivation,
-            next_action=next_action,
-            cma_triggered=cma_triggered
-        )
 
     async def _get_fallback_conversations(
         self,
@@ -555,32 +537,67 @@ class DashboardDataService:
 
     async def _calculate_conversation_summary(self) -> Dict[str, Any]:
         """Calculate conversation summary statistics."""
-        # TODO: Integrate with actual seller bot data
+        try:
+            async with AsyncSessionFactory() as session:
+                total_stmt = select(ConversationModel).where(ConversationModel.bot_type == "seller")
+                total_result = await session.execute(total_stmt)
+                total_active = len(total_result.scalars().all())
 
-        # Mock summary data
-        summary = {
-            'total_active': 25,
-            'by_stage': {
-                'Q0': 5,
-                'Q1': 8,
-                'Q2': 6,
-                'Q3': 4,
-                'Q4': 2,
-                'QUALIFIED': 0,
-                'STALLED': 0
-            },
-            'by_temperature': {
-                'HOT': 8,
-                'WARM': 12,
-                'COLD': 5
-            },
-            'avg_response_time_hours': 4.2,
-            'cma_requests_today': 3,
-            'qualified_this_week': 5,
-            'stalled_conversations': 2
-        }
+            by_stage = await self._count_by_stage()
+            by_temperature = await self._count_by_temperature()
 
-        return summary
+            stalled_cutoff = datetime.now() - timedelta(hours=48)
+            stalled_count = 0
+            async with AsyncSessionFactory() as session:
+                stmt = select(ConversationModel).where(
+                    ConversationModel.bot_type == "seller",
+                    ConversationModel.last_activity.isnot(None),
+                    ConversationModel.last_activity < stalled_cutoff,
+                )
+                result = await session.execute(stmt)
+                stalled_count = len(result.scalars().all())
+
+            summary = {
+                'total_active': total_active,
+                'by_stage': by_stage,
+                'by_temperature': by_temperature,
+                'avg_response_time_hours': 4.2,
+                'cma_requests_today': 0,
+                'qualified_this_week': by_stage.get('QUALIFIED', 0),
+                'stalled_conversations': stalled_count
+            }
+            return summary
+        except Exception as e:
+            logger.exception(f"Error calculating conversation summary: {e}")
+            return {
+                'total_active': 0,
+                'by_stage': {},
+                'by_temperature': {},
+                'avg_response_time_hours': 0.0,
+                'cma_requests_today': 0,
+                'qualified_this_week': 0,
+                'stalled_conversations': 0
+            }
+
+    async def _count_by_stage(self) -> Dict[str, int]:
+        async with AsyncSessionFactory() as session:
+            stmt = select(ConversationModel.stage)
+            result = await session.execute(stmt)
+            counts: Dict[str, int] = {}
+            for row in result.scalars().all():
+                stage = row or "Q0"
+                counts[stage] = counts.get(stage, 0) + 1
+            return counts
+
+    async def _count_by_temperature(self) -> Dict[str, int]:
+        async with AsyncSessionFactory() as session:
+            stmt = select(ConversationModel.temperature)
+            result = await session.execute(stmt)
+            counts: Dict[str, int] = {}
+            for row in result.scalars().all():
+                temp = (row or "COLD").upper()
+                counts[temp] = counts.get(temp, 0) + 1
+            return counts
 
     async def _get_hero_dashboard_data(self) -> Dict[str, Any]:
         """
@@ -594,7 +611,8 @@ class DashboardDataService:
         try:
             # Get real lead data
             lead_data = await self._fetch_lead_data_for_hero_metrics()
-            conversation_data = await self._fetch_real_conversation_data()
+            conversation_page = await self._fetch_active_conversations(None, page=1, page_size=1000)
+            conversation_data = conversation_page.conversations
             
             if not lead_data:
                 logger.warning("No hero data available, using fallback")
@@ -679,53 +697,64 @@ class DashboardDataService:
             return []
 
     async def _calculate_real_lead_source_roi(self, lead_data: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Calculate ROI for different lead sources from actual data."""
+        """Calculate ROI for different lead sources from actual lead data."""
         try:
-            # TODO: Replace with actual lead source tracking
-            # This would typically be:
-            # return await self.lead_source_service.calculate_roi_by_source()
-            
-            import random
-            
-            # Simulate realistic lead source distribution
-            total_leads = len(lead_data)
-            
-            # Realistic source distribution based on real estate patterns
-            source_distribution = {
-                'referrals': int(total_leads * 0.25),      # 25% referrals
-                'google_ads': int(total_leads * 0.35),     # 35% Google Ads
-                'facebook': int(total_leads * 0.25),       # 25% Facebook
-                'zillow': int(total_leads * 0.15)          # 15% Zillow
+            from bots.shared.business_rules import JorgeBusinessRules
+
+            # Deterministic industry-average cost per lead by source
+            cost_per_lead = {
+                "referrals": 0,
+                "google_ads": 65,
+                "facebook": 45,
+                "zillow": 125,
             }
-            
-            # Calculate realistic costs and ROI
-            lead_source_roi = {}
-            
-            for source, lead_count in source_distribution.items():
-                if source == 'referrals':
-                    cost = 0  # Referrals are free
-                    roi = 'infinite'
-                elif source == 'google_ads':
-                    cost = lead_count * random.randint(50, 80)  # $50-80 per lead
-                    revenue = lead_count * 15000 * 0.03  # 3% conversion at $15K commission
+
+            # Group leads by source from metadata_json
+            source_buckets: Dict[str, List[Dict[str, Any]]] = {
+                src: [] for src in cost_per_lead
+            }
+            for lead in lead_data:
+                meta = lead.get("metadata_json") or {}
+                source = meta.get("lead_source", "unknown").lower()
+                if source in source_buckets:
+                    source_buckets[source].append(lead)
+                else:
+                    source_buckets.setdefault("unknown", []).append(lead)
+
+            lead_source_roi: Dict[str, Any] = {}
+            for source, leads in source_buckets.items():
+                if source == "unknown":
+                    continue
+                lead_count = len(leads)
+                cost = lead_count * cost_per_lead.get(source, 0)
+
+                # Revenue from qualified leads using actual commission calc
+                revenue = 0.0
+                for ld in leads:
+                    if ld.get("is_qualified"):
+                        budget = ld.get("budget_max") or ld.get("budget_min") or 0
+                        if budget > 0:
+                            revenue += JorgeBusinessRules.calculate_commission(budget)
+
+                if source == "referrals":
+                    roi = "infinite" if revenue > 0 else 0
+                else:
                     roi = round(revenue / cost, 1) if cost > 0 else 0
-                elif source == 'facebook':
-                    cost = lead_count * random.randint(35, 60)  # $35-60 per lead
-                    revenue = lead_count * 15000 * 0.025  # 2.5% conversion
-                    roi = round(revenue / cost, 1) if cost > 0 else 0
-                elif source == 'zillow':
-                    cost = lead_count * random.randint(100, 150)  # $100-150 per lead
-                    revenue = lead_count * 15000 * 0.015  # 1.5% conversion
-                    roi = round(revenue / cost, 1) if cost > 0 else 0
-                
+
                 lead_source_roi[source] = {
-                    'roi': roi,
-                    'leads': lead_count,
-                    'cost': cost
+                    "roi": roi,
+                    "leads": lead_count,
+                    "cost": cost,
                 }
-            
+
+            # Ensure standard 4 sources always present for backward compat
+            for src in cost_per_lead:
+                if src not in lead_source_roi:
+                    roi_val = "infinite" if src == "referrals" else 0
+                    lead_source_roi[src] = {"roi": roi_val, "leads": 0, "cost": 0}
+
             return lead_source_roi
-            
+
         except Exception as e:
             logger.exception(f"Error calculating lead source ROI: {e}")
             return {
@@ -823,6 +852,88 @@ class DashboardDataService:
             'generated_at': datetime.now().isoformat(),
             'error': 'Performance data temporarily unavailable'
         }
+
+    # =================================================================
+    # Structured Data Methods (Phase 3)
+    # =================================================================
+
+    async def _get_hero_metrics(self) -> 'HeroMetrics':
+        """Get hero metrics as structured HeroMetrics object."""
+        from bots.shared.dashboard_models import HeroMetrics
+
+        try:
+            # Get current conversation summary
+            summary = await self._calculate_conversation_summary()
+
+            # Calculate 24h deltas (simplified - in production, compare with historical data)
+            active_count = summary.get('active_count', 0)
+            qualified_count = summary.get('qualified_count', 0)
+            total_count = summary.get('total_count', 1)
+
+            qualification_rate = qualified_count / total_count if total_count > 0 else 0.0
+
+            # Mock delta calculations (in production, fetch from PerformanceTracker)
+            return HeroMetrics(
+                active_conversations=active_count,
+                active_conversations_change=2,  # Mock: +2 from yesterday
+                qualification_rate=qualification_rate,
+                qualification_rate_change=0.05,  # Mock: +5% from yesterday
+                avg_response_time_minutes=12.5,
+                response_time_change=-1.2,  # Mock: -1.2m improvement
+                hot_leads_count=summary.get('hot_count', 0),
+                hot_leads_change=1  # Mock: +1 hot lead
+            )
+
+        except Exception as e:
+            logger.exception(f"Error calculating hero metrics: {e}")
+            return self._get_fallback_hero_metrics_obj()
+
+    async def _get_performance_metrics(self) -> 'PerformanceMetrics':
+        """Get performance metrics as structured PerformanceMetrics object."""
+        from bots.shared.dashboard_models import PerformanceMetrics
+
+        try:
+            # Get performance data from metrics service
+            metrics = await self.metrics_service.get_performance_metrics()
+
+            return PerformanceMetrics(
+                qualification_rate=metrics.get('qualification_rate', 0.65),
+                avg_response_time=metrics.get('avg_response_time_minutes', 12.5),
+                budget_performance=metrics.get('budget_performance', 1.1),
+                timeline_performance=metrics.get('timeline_performance', 0.95),
+                commission_performance=metrics.get('commission_performance', 1.05)
+            )
+
+        except Exception as e:
+            logger.exception(f"Error calculating performance metrics: {e}")
+            return self._get_fallback_performance_metrics_obj()
+
+    def _get_fallback_hero_metrics_obj(self) -> 'HeroMetrics':
+        """Return fallback HeroMetrics when errors occur."""
+        from bots.shared.dashboard_models import HeroMetrics
+
+        return HeroMetrics(
+            active_conversations=0,
+            active_conversations_change=0,
+            qualification_rate=0.0,
+            qualification_rate_change=0.0,
+            avg_response_time_minutes=0.0,
+            response_time_change=0.0,
+            hot_leads_count=0,
+            hot_leads_change=0
+        )
+
+    def _get_fallback_performance_metrics_obj(self) -> 'PerformanceMetrics':
+        """Return fallback PerformanceMetrics when errors occur."""
+        from bots.shared.dashboard_models import PerformanceMetrics
+
+        return PerformanceMetrics(
+            qualification_rate=0.0,
+            avg_response_time=0.0,
+            budget_performance=0.0,
+            timeline_performance=0.0,
+            commission_performance=0.0
+        )
 
 
 # Global dashboard data service instance
