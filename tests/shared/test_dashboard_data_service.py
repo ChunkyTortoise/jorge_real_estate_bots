@@ -448,9 +448,10 @@ class TestDashboardDataServiceFallbacks:
         assert result['status'] == 'error'
         assert 'error' in result
 
-    def test_fallback_conversations(self, dashboard_service):
+    @pytest.mark.asyncio
+    async def test_fallback_conversations(self, dashboard_service):
         """Test fallback conversations structure."""
-        result = dashboard_service._get_fallback_conversations()
+        result = await dashboard_service._get_fallback_conversations()
 
         assert isinstance(result, PaginatedConversations)
         assert result.total_count == 0

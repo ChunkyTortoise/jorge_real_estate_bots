@@ -150,7 +150,7 @@ class DashboardDataService:
 
             if isinstance(active_conversations, Exception):
                 logger.error(f"Error fetching conversations: {active_conversations}")
-                active_conversations = self._get_fallback_conversations()
+                active_conversations = await self._get_fallback_conversations()
 
             if isinstance(performance_metrics, Exception):
                 logger.error(f"Error fetching performance metrics: {performance_metrics}")
@@ -178,7 +178,7 @@ class DashboardDataService:
             # Return fallback DashboardData
             return DashboardData(
                 hero_metrics=self._get_fallback_hero_metrics_obj(),
-                active_conversations=self._get_fallback_conversations(),
+                active_conversations=await self._get_fallback_conversations(),
                 performance_metrics=self._get_fallback_performance_metrics_obj()
             )
 
@@ -234,7 +234,7 @@ class DashboardDataService:
 
         except Exception as e:
             logger.exception(f"Error getting active conversations: {e}")
-            return self._get_fallback_conversations()
+            return await self._get_fallback_conversations()
 
     async def get_conversation_summary(self) -> Dict[str, Any]:
         """
@@ -404,8 +404,8 @@ class DashboardDataService:
             
             if not conversations:
                 logger.warning("No conversation data available, using fallback")
-                return self._get_fallback_conversations(filters, page, page_size)
-            
+                return await self._get_fallback_conversations(filters, page, page_size)
+
             # Apply filters
             filtered_conversations = conversations
             if filters:
@@ -469,7 +469,7 @@ class DashboardDataService:
             
         except Exception as e:
             logger.exception(f"Error fetching real active conversations: {e}")
-            return self._get_fallback_conversations(filters, page, page_size)
+            return await self._get_fallback_conversations(filters, page, page_size)
 
     def _map_conversation_row(self, conv: ConversationModel, contact: Optional[ContactModel]) -> ConversationState:
         stage_val = conv.stage or "Q0"
@@ -519,12 +519,11 @@ class DashboardDataService:
 
     async def _get_fallback_conversations(
         self,
-        filters: Optional[ConversationFilters],
-        page: int,
-        page_size: int
+        filters: Optional[ConversationFilters] = None,
+        page: int = 1,
+        page_size: int = 20,
     ) -> PaginatedConversations:
         """Fallback conversation data when real data is unavailable."""
-        # Return minimal fallback data
         return PaginatedConversations(
             conversations=[],
             total_count=0,
@@ -800,18 +799,6 @@ class DashboardDataService:
             'status': 'error',
             'error': 'Dashboard data temporarily unavailable'
         }
-
-    def _get_fallback_conversations(self) -> PaginatedConversations:
-        """Return fallback conversations when errors occur."""
-        return PaginatedConversations(
-            conversations=[],
-            total_count=0,
-            page=1,
-            page_size=20,
-            total_pages=0,
-            has_next=False,
-            has_prev=False
-        )
 
     def _get_fallback_conversation_summary(self) -> Dict[str, Any]:
         """Return fallback conversation summary when errors occur."""
