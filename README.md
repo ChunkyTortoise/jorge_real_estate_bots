@@ -7,8 +7,6 @@
 [![Tests](https://img.shields.io/badge/tests-279_passing-brightgreen)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
-![Demo](assets/demo.gif)
-
 ## What This Solves
 
 - **Missed leads** -- Bots respond within seconds, not minutes. The Lead Bot enforces the 5-minute SLA and auto-qualifies prospects while human agents are busy
