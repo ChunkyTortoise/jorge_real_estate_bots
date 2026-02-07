@@ -22,11 +22,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     ghl_api_key: str
     ghl_location_id: str
-    zillow_api_key: str
-    twilio_account_sid: str
-    twilio_auth_token: str
-    twilio_phone_number: str
-    sendgrid_api_key: str
+    zillow_api_key: str = ""
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_phone_number: str = ""
+    sendgrid_api_key: str = ""
 
     # ========== CLAUDE AI CONFIGURATION ==========
     claude_model: str = "claude-3-5-sonnet-20241022"
