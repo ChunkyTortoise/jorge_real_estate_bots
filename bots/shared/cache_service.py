@@ -179,14 +179,24 @@ class CacheService:
             logger.info("Using MemoryCache (no Redis configured)")
 
     async def get(self, key: str) -> Optional[Any]:
-        """Get value from cache."""
+        """Get value from cache.
+
+        Checks the primary backend first.  When it returns None (cache miss
+        **or** an internally-caught error such as a Redis connection failure)
+        the fallback backend is also consulted so that data written through
+        ``set()`` — which always saves to both backends — is still reachable.
+        """
         try:
-            return await self.backend.get(key)
+            result = await self.backend.get(key)
+            if result is not None:
+                return result
         except Exception as e:
             logger.error(f"Cache get error: {e}")
-            if self.fallback_backend != self.backend:
-                return await self.fallback_backend.get(key)
-            return None
+
+        # Fallback: MemoryCache keeps a copy of every value written via set()
+        if self.fallback_backend != self.backend:
+            return await self.fallback_backend.get(key)
+        return None
 
     async def set(self, key: str, value: Any, ttl: int = 300) -> bool:
         """Set value in cache."""
