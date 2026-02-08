@@ -6,7 +6,7 @@ Contains dataclasses and Pydantic models used across the system.
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 @dataclass
@@ -52,16 +52,19 @@ class ProcessMessageRequest(BaseModel):
     message: str = Field(..., description="User message content")
     contact_info: Optional[Dict[str, Any]] = Field(None, description="Additional contact information")
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "contact_id": "abc123",
-                "location_id": "loc456",
-                "message": "I'm interested in selling my house",
-                "contact_info": {
-                    "name": "John Doe",
-                    "email": "john@example.com",
-                    "phone": "+1234567890"
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "contact_id": "abc123",
+                    "location_id": "loc456",
+                    "message": "I'm interested in selling my house",
+                    "contact_info": {
+                        "name": "John Doe",
+                        "email": "john@example.com",
+                        "phone": "+1234567890",
+                    },
                 }
-            }
+            ]
         }
+    )
