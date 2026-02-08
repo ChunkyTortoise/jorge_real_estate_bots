@@ -130,7 +130,7 @@ pytest tests/command_center/ -v     # Dashboard components
 - [insight-engine](https://github.com/ChunkyTortoise/insight-engine) -- Upload CSV/Excel, get instant dashboards, predictive models, and reports
 - [docqa-engine](https://github.com/ChunkyTortoise/docqa-engine) -- RAG document Q&A with hybrid retrieval and prompt engineering lab
 - [scrape-and-serve](https://github.com/ChunkyTortoise/scrape-and-serve) -- Web scraping, price monitoring, Excel-to-web apps, and SEO tools
-- [Portfolio](https://chunkytortoise.github.io)
+- [Portfolio](https://chunkytortoise.github.io) -- Project showcase and services
 
 ## License
 
