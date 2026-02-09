@@ -249,9 +249,7 @@ class TestEnhancedHeroMetrics:
     @pytest.fixture
     def enhanced_metrics(self):
         """Create EnhancedHeroMetrics instance with mocked dependencies"""
-        with patch('command_center.components.enhanced_hero_metrics.get_enhanced_lead_intelligence'), \
-             patch('command_center.components.enhanced_hero_metrics.create_seller_bot'), \
-             patch('command_center.components.enhanced_hero_metrics.GHLClient'):
+        with patch('command_center.components.enhanced_hero_metrics.GHLClient'):
             return EnhancedHeroMetrics()
 
     @pytest.mark.asyncio
