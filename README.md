@@ -6,7 +6,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-279_passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-356_passing-brightgreen)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
 ## What This Solves
@@ -19,7 +19,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Tests | **279 passing** |
+| Tests | **356 passing** |
 | Bots | 3 specialized (Lead, Buyer, Seller) |
 | Cross-Bot Handoff | 0.7 confidence threshold, circular prevention, rate limiting |
 | CRM Integration | GoHighLevel real-time sync |
@@ -140,7 +140,7 @@ streamlit run command_center/dashboard_v3.py
 | Database | PostgreSQL, SQLAlchemy (async), Alembic |
 | Cache | Redis with in-memory fallback |
 | CRM | GoHighLevel (webhooks, custom fields, workflows) |
-| Testing | pytest, pytest-asyncio (279 tests) |
+| Testing | pytest, pytest-asyncio (356 tests) |
 
 ## Project Structure
 
@@ -153,20 +153,41 @@ jorge_real_estate_bots/
 │   └── buyer_bot/        # Buyer qualification + property matching
 ├── database/             # SQLAlchemy models, async session, repository
 ├── command_center/       # Streamlit dashboard + monitoring components
-├── tests/                # 279 tests
+├── benchmarks/           # Performance benchmarks (bot response, handoff)
+├── tests/                # 356 tests
 ├── jorge_launcher.py     # Single-command startup for all services
 └── docker-compose.yml
+```
+
+## Architecture Decisions
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [ADR-0001](docs/adr/0001-three-bot-separation.md) | Three Separate Bots Instead of One Unified Bot | Accepted |
+| [ADR-0002](docs/adr/0002-confidence-threshold-handoff.md) | 0.7 Confidence Threshold for Cross-Bot Handoff | Accepted |
+| [ADR-0003](docs/adr/0003-temperature-tag-publishing.md) | Lead Temperature Scoring and GHL Tag Automation | Accepted |
+
+## Benchmarks
+
+See [BENCHMARKS.md](BENCHMARKS.md) for performance methodology and results. Run locally:
+
+```bash
+python benchmarks/run_all.py
 ```
 
 ## Testing
 
 ```bash
-pytest tests/ -v                    # Full suite (279 tests)
+pytest tests/ -v                    # Full suite (356 tests)
 pytest tests/shared/ -v             # Shared services
 pytest tests/seller_bot/ -v         # Seller qualification
 pytest tests/buyer_bot/ -v          # Buyer qualification
 pytest tests/command_center/ -v     # Dashboard components
 ```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Related Projects
 
