@@ -20,29 +20,24 @@ Created: 2026-01-23 (Phase 3C - Production Testing)
 
 import asyncio
 import json
-import time
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Dict, List, Any
-import tempfile
-import os
+from typing import Any, Dict
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Test imports
-from bots.shared.event_models import (
-    LeadAnalyzedEvent, GHLContactUpdatedEvent, CacheSetEvent,
-    SystemHealthEvent, WebSocketConnectedEvent, WebSocketDisconnectedEvent
-)
-from bots.shared.event_broker import EventBroker
 from bots.lead_bot.websocket_manager import WebSocketManager
-from command_center.event_client import SyncEventClient
-from command_center.components.global_filters import GlobalFilters
-from command_center.components.export_manager import ExportManager
-from command_center.utils.theme_manager import ThemeManager
+from bots.shared.event_broker import EventBroker
+from bots.shared.event_models import CacheSetEvent, LeadAnalyzedEvent, SystemHealthEvent
 from bots.shared.logger import get_logger
+from command_center.components.export_manager import ExportManager
+from command_center.components.global_filters import GlobalFilters
+from command_center.event_client import SyncEventClient
+from command_center.utils.theme_manager import ThemeManager
 
 logger = get_logger(__name__)
 

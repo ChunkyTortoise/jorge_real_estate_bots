@@ -4,10 +4,9 @@ Configuration module for Jorge's Real Estate AI Bots.
 Manages environment variables and application settings using Pydantic.
 Adapted from EnterpriseHub for Jorge's specific requirements.
 """
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
 from typing import Optional
-import os
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):

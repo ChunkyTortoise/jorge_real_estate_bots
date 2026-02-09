@@ -12,8 +12,9 @@ Events follow a standard schema with validation, serialization, and type safety.
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Any, Optional, Literal, Union
+from typing import Any, Dict, Literal, Optional, Union
 from uuid import uuid4
+
 from pydantic import BaseModel, ConfigDict, Field
 
 

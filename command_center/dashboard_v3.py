@@ -2,62 +2,61 @@
 Jorge Real Estate AI - Dashboard V3
 Consolidated command center with navigation and auth gating.
 """
+import asyncio
+import os
 from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
 from typing import Any
-import asyncio
-import os
 
 import streamlit as st
 
 from bots.shared.dashboard_data_service import DashboardDataService
+from command_center.components.active_conversations import ActiveConversationsComponent
+from command_center.components.active_conversations_table import render_active_conversations
+from command_center.components.activity_feed import ActivityFeed
 from command_center.components.auth_component import (
     check_authentication,
-    render_login_form,
-    render_user_menu,
-    render_password_change_form,
-    require_permission,
     create_user_management_interface,
+    render_login_form,
+    render_password_change_form,
+    render_user_menu,
+    require_permission,
 )
-from command_center.components.hero_metrics_card import render_hero_metrics
-from command_center.components.active_conversations_table import render_active_conversations
-from command_center.components.performance_chart import render_performance_chart
-from command_center.components.active_conversations import ActiveConversationsComponent
-from command_center.components.activity_feed import ActivityFeed
-from command_center.components.seller_bot_pipeline import SellerBotPipelineViz
-from command_center.components.performance_analytics import PerformanceAnalyticsComponent
 from command_center.components.commission_tracking import CommissionTrackingComponent
-from command_center.components.lead_intelligence_dashboard import LeadIntelligenceDashboard
-from command_center.components.hero_metrics_ui import HeroMetricsUI
+from command_center.components.export_manager import ExportManager
+from command_center.components.field_access_dashboard import create_field_access_dashboard, get_sample_sync_queue
+from command_center.components.ghl_integration_status import create_ghl_integration_status
 from command_center.components.ghl_status_ui import GHLStatusUI
 from command_center.components.global_filters import GlobalFilters
-from command_center.components.export_manager import ExportManager
+from command_center.components.hero_metrics_card import render_hero_metrics
+from command_center.components.hero_metrics_ui import HeroMetricsUI
+from command_center.components.lead_intelligence_dashboard import LeadIntelligenceDashboard
 from command_center.components.mobile_dashboard_integration import (
-    get_sample_real_estate_data,
     get_jorge_ai_branding_css,
+    get_sample_real_estate_data,
     render_mobile_dashboard_tab,
 )
-from command_center.components.mobile_metrics_cards import render_mobile_metrics_cards, get_sample_metrics
+from command_center.components.mobile_metrics_cards import get_sample_metrics, render_mobile_metrics_cards
 from command_center.components.mobile_navigation import create_mobile_navigation_component, demo_mobile_navigation
 from command_center.components.mobile_responsive_layout import (
     apply_responsive_layout_system,
+    create_responsive_card,
     create_responsive_container,
     create_responsive_grid,
-    create_responsive_card,
 )
-from command_center.components.touch_optimized_charts import ChartConfig, ChartType, render_touch_optimized_chart
 from command_center.components.offline_indicator import (
-    create_offline_indicator,
     ConnectionStatus,
+    NetworkMetrics,
     SyncItem,
     SyncItemStatus,
     SyncPriority,
-    NetworkMetrics,
+    create_offline_indicator,
 )
-from command_center.components.field_access_dashboard import create_field_access_dashboard, get_sample_sync_queue
-from command_center.components.ghl_integration_status import create_ghl_integration_status
-
+from command_center.components.performance_analytics import PerformanceAnalyticsComponent
+from command_center.components.performance_chart import render_performance_chart
+from command_center.components.seller_bot_pipeline import SellerBotPipelineViz
+from command_center.components.touch_optimized_charts import ChartConfig, ChartType, render_touch_optimized_chart
 
 # Page config
 st.set_page_config(

@@ -6,23 +6,22 @@ Q0 Greeting -> Q1 Preferences -> Q2 Pre-approval -> Q3 Timeline -> Q4 Motivation
 """
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
-from bots.shared.logger import get_logger
-from bots.shared.claude_client import ClaudeClient
-from bots.shared.ghl_client import GHLClient
-from bots.shared.cache_service import get_cache_service
-from bots.shared.config import settings
-from bots.shared.business_rules import JorgeBusinessRules
 from bots.buyer_bot.buyer_prompts import BUYER_QUESTIONS, JORGE_BUYER_PHRASES, build_buyer_prompt
+from bots.shared.business_rules import JorgeBusinessRules
+from bots.shared.cache_service import get_cache_service
+from bots.shared.claude_client import ClaudeClient
+from bots.shared.config import settings
+from bots.shared.ghl_client import GHLClient
+from bots.shared.logger import get_logger
 from database.repository import (
+    fetch_properties,
+    upsert_buyer_preferences,
     upsert_contact,
     upsert_conversation,
-    upsert_buyer_preferences,
-    fetch_properties,
 )
 
 logger = get_logger(__name__)

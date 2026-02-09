@@ -12,17 +12,16 @@ Mobile-responsive Streamlit interface for GHL integration monitoring:
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
-import streamlit as st
 import asyncio
-from datetime import datetime, timedelta
-from typing import List
+from datetime import datetime
+
+import streamlit as st
 
 from .ghl_integration_status import (
-    GHLIntegrationStatusComponent,
-    GHLIntegrationData,
-    ConnectionStatus,
     AutomationStatus,
-    create_ghl_integration_status
+    ConnectionStatus,
+    GHLIntegrationData,
+    create_ghl_integration_status,
 )
 
 

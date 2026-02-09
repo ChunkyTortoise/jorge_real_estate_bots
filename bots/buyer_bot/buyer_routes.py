@@ -1,10 +1,11 @@
 """FastAPI routes for Buyer Bot."""
-from fastapi import APIRouter, HTTPException, Request, Query, Depends
 from datetime import datetime
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+
 from bots.buyer_bot.buyer_bot import JorgeBuyerBot
-from bots.shared.models import ProcessMessageRequest
 from bots.shared.auth_middleware import get_current_active_user
+from bots.shared.models import ProcessMessageRequest
 
 router = APIRouter()
 

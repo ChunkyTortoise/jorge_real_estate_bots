@@ -8,10 +8,11 @@ Author: Claude Code Assistant
 Created: 2026-01-23
 """
 import pytest
+
 from bots.shared.lead_intelligence_optimized import (
-    PredictiveLeadScorerV2Optimized,
     EnhancedLeadProfile,
-    get_enhanced_lead_intelligence
+    PredictiveLeadScorerV2Optimized,
+    get_enhanced_lead_intelligence,
 )
 
 

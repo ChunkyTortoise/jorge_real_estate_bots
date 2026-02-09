@@ -11,21 +11,17 @@ Advanced hero metrics with Business Intelligence features:
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
-import asyncio
-import streamlit as st
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional, Tuple
-import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from bots.shared.lead_intelligence_optimized import get_enhanced_lead_intelligence
-from bots.seller_bot.jorge_seller_bot import create_seller_bot, SellerStatus
-from bots.shared.ghl_client import GHLClient
 from bots.shared.cache_service import MemoryCache
+from bots.shared.ghl_client import GHLClient
 from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)

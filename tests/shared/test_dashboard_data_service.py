@@ -3,17 +3,17 @@ Unit tests for DashboardDataService.
 
 Tests data orchestration, pagination, and conversation management functionality.
 """
-import pytest
-import asyncio
-from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from bots.shared.dashboard_data_service import DashboardDataService, get_dashboard_data_service
 from bots.shared.dashboard_models import (
-    ConversationState,
     ConversationFilters,
-    PaginatedConversations,
     ConversationStage,
+    ConversationState,
+    PaginatedConversations,
     Temperature,
 )
 
@@ -269,9 +269,9 @@ class TestDashboardDataService:
 
         # Mock metrics service methods with actual dataclass instances
         from bots.shared.dashboard_models import (
-            PerformanceDashboardMetrics,
             CacheStatistics,
             CostSavingsMetrics,
+            PerformanceDashboardMetrics,
         )
 
         mock_metrics_service.get_performance_metrics.return_value = PerformanceDashboardMetrics(

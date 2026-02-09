@@ -1,18 +1,18 @@
-import pytest
-from datetime import datetime, timezone
+from datetime import timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from fastapi.testclient import TestClient
+
 from bots.buyer_bot.buyer_bot import (
     BuyerQualificationState,
-    JorgeBuyerBot,
     BuyerStatus,
+    JorgeBuyerBot,
 )
-from bots.shared.auth_service import User, UserRole
-from bots.shared.auth_middleware import auth_middleware
-from bots.buyer_bot.buyer_routes import init_buyer_bot
 from bots.buyer_bot.main import app
-from fastapi.testclient import TestClient
+from bots.shared.auth_middleware import auth_middleware
+from bots.shared.auth_service import User, UserRole
 
 
 class DummyCache:
@@ -105,6 +105,7 @@ async def test_process_message_flow(dummy_cache):
 
 def test_buyer_routes():
     from datetime import datetime
+
     from bots.buyer_bot import buyer_routes
 
     dummy_user = User(

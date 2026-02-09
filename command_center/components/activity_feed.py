@@ -9,16 +9,16 @@ Provides live streaming of all system events with:
 - Connection status monitoring
 """
 
+import time
+from datetime import datetime, timedelta
+from io import StringIO
+from typing import Dict, List
+from urllib.parse import quote
+
+import pandas as pd
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
-import requests
-import json
-import pandas as pd
-from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
-import time
-from io import StringIO
-from urllib.parse import quote
 
 from bots.shared.logger import get_logger
 

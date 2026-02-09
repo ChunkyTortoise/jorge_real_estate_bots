@@ -13,12 +13,12 @@ Features:
 - Professional Jorge's Real Estate AI styling
 """
 
-import streamlit as st
-from typing import Dict, List, Optional, Any, Callable
-from datetime import datetime, timedelta
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
-import json
+from typing import List, Optional
+
+import streamlit as st
 
 
 class ConnectionStatus(Enum):

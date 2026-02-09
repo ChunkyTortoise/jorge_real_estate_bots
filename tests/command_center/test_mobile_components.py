@@ -6,7 +6,6 @@ import pandas as pd
 
 from tests.command_center.streamlit_stub import install_streamlit_stub
 
-
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))

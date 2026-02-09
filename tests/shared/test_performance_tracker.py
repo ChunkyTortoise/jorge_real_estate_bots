@@ -9,15 +9,16 @@ Tests performance metrics tracking including:
 - Cost savings calculation
 - Snapshot persistence and restoration
 """
+from unittest.mock import AsyncMock
+
 import pytest
-import time
-from unittest.mock import AsyncMock, patch, MagicMock
-from bots.shared.performance_tracker import PerformanceTracker, get_performance_tracker
+
 from bots.shared.dashboard_models import (
-    PerformanceDashboardMetrics,
     CacheStatistics,
     CostSavingsMetrics,
+    PerformanceDashboardMetrics,
 )
+from bots.shared.performance_tracker import PerformanceTracker, get_performance_tracker
 
 
 @pytest.fixture

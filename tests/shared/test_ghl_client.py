@@ -12,14 +12,12 @@ Tests all GHL API methods with mocked responses:
 - Health monitoring
 - Error handling and retries
 """
-import pytest
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
 import httpx
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
-from datetime import datetime
-from typing import Dict
+import pytest
 
-from bots.shared.ghl_client import GHLClient, get_ghl_client, create_ghl_client
-
+from bots.shared.ghl_client import GHLClient, create_ghl_client, get_ghl_client
 
 # ========== FIXTURES ==========
 

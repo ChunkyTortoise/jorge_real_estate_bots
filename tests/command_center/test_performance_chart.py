@@ -1,8 +1,10 @@
 """
 Tests for PerformanceChart component.
 """
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+
 from bots.shared.dashboard_models import PerformanceMetrics
 from command_center.components.performance_chart import render_performance_chart
 

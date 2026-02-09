@@ -13,13 +13,12 @@ Features:
 - Touch-optimized UI for outdoor/gloved use
 """
 
-import streamlit as st
-from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime, timedelta
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
-import json
-import uuid
+from typing import Any, Dict, List, Optional, Tuple
+
+import streamlit as st
 
 
 class FieldActionType(Enum):

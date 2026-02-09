@@ -7,10 +7,10 @@ Usage:
     python jorge_launcher.py          # Production mode (requires .env)
     python jorge_launcher.py --demo   # Demo mode (zero config, SQLite, seeded data)
 """
-import subprocess
-import time
-import sys
 import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -42,7 +42,6 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from bots.shared.logger import get_logger
-from bots.shared.config import settings
 
 logger = get_logger(__name__)
 

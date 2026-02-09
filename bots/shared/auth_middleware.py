@@ -3,12 +3,12 @@ Authentication middleware for FastAPI applications.
 
 Provides JWT-based authentication for API endpoints and dashboard access.
 """
-from fastapi import HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import Optional, Callable, Any
-import functools
+from typing import Callable, Optional
 
-from bots.shared.auth_service import get_auth_service, User, UserRole
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from bots.shared.auth_service import User, UserRole, get_auth_service
 from bots.shared.config import settings
 from bots.shared.logger import get_logger
 

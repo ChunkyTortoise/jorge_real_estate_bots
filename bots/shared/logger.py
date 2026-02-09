@@ -5,11 +5,11 @@ Provides structured logging with correlation tracking for distributed tracing.
 Adapted from EnterpriseHub.
 """
 import logging
-import sys
 import re
-from typing import Optional
-from contextvars import ContextVar
+import sys
 import uuid
+from contextvars import ContextVar
+from typing import Optional
 
 from bots.shared.config import settings
 

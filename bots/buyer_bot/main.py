@@ -1,14 +1,15 @@
 """
 Buyer Bot FastAPI Application.
 """
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from bots.shared.logger import get_logger
-from bots.shared.config import settings
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from bots.buyer_bot.buyer_bot import JorgeBuyerBot
-from bots.buyer_bot.buyer_routes import router, init_buyer_bot
+from bots.buyer_bot.buyer_routes import init_buyer_bot, router
+from bots.shared.config import settings
+from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
 

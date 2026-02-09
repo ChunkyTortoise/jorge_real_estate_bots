@@ -10,27 +10,28 @@ Aggregates performance metrics from multiple sources:
 Provides high-level dashboard data with caching and error handling.
 """
 import asyncio
-from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime, timedelta
 from dataclasses import asdict
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from bots.shared.logger import get_logger
+from sqlalchemy import func, select
+
 from bots.shared.cache_service import get_cache_service
-from bots.shared.performance_tracker import get_performance_tracker
 from bots.shared.dashboard_models import (
-    PerformanceDashboardMetrics,
-    CacheStatistics,
-    CostSavingsMetrics,
-    BudgetRange,
     BudgetDistribution,
+    BudgetRange,
+    CacheStatistics,
+    CommissionMetrics,
+    CostSavingsMetrics,
+    PerformanceDashboardMetrics,
+    Timeline,
     TimelineClassification,
     TimelineDistribution,
-    CommissionMetrics,
-    Timeline,
 )
-from sqlalchemy import select, func
+from bots.shared.logger import get_logger
+from bots.shared.performance_tracker import get_performance_tracker
+from database.models import DealModel, LeadModel
 from database.session import AsyncSessionFactory
-from database.models import LeadModel, DealModel
 
 logger = get_logger(__name__)
 
@@ -349,7 +350,6 @@ class MetricsService:
             # Import lead intelligence service
             # Note: get_enhanced_lead_intelligence() requires a message parameter
             # We'll use the direct class for data analysis
-            from bots.shared.lead_intelligence_optimized import PredictiveLeadScorerV2Optimized
             
             # Fetch lead data from PostgreSQL for budget analysis
             lead_data = await self._fetch_lead_data_for_budget_analysis()

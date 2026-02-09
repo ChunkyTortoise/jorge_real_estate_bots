@@ -11,7 +11,8 @@ Contains Jorge's specific business logic for:
 Extracted from jorge_deployment_package/jorge_claude_intelligence.py
 """
 from dataclasses import dataclass
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)

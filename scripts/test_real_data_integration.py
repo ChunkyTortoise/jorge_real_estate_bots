@@ -2,12 +2,13 @@
 """Test script for real data integration validation."""
 
 import asyncio
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(__file__))
 
-from bots.shared.metrics_service import MetricsService
 from bots.shared.dashboard_data_service import DashboardDataService
+from bots.shared.metrics_service import MetricsService
 
 
 async def test_metrics_service():

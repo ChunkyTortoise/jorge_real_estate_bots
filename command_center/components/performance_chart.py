@@ -3,10 +3,12 @@ Performance Chart Component for Jorge Real Estate AI Dashboard.
 
 Displays time-series chart of qualification metrics.
 """
-import streamlit as st
-import plotly.graph_objects as go
-from bots.shared.dashboard_models import PerformanceMetrics
 from datetime import datetime, timedelta
+
+import plotly.graph_objects as go
+import streamlit as st
+
+from bots.shared.dashboard_models import PerformanceMetrics
 
 
 def render_performance_chart(performance: PerformanceMetrics) -> None:

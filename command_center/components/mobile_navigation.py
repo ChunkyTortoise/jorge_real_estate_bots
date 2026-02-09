@@ -13,9 +13,9 @@ Features:
 - Professional Jorge's Real Estate AI branding
 """
 
+from typing import Dict, Optional
+
 import streamlit as st
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime
 
 
 def get_mobile_navigation_css() -> str:

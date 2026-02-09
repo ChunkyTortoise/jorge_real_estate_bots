@@ -20,19 +20,28 @@ Features:
 - Real estate workflow optimization
 """
 
-import streamlit as st
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
-import pandas as pd
+from datetime import datetime
+from typing import Any, Dict, List
+
 import numpy as np
+import pandas as pd
+import streamlit as st
+from field_access_dashboard import create_field_access_dashboard
+from field_access_dashboard import get_sample_sync_queue as get_field_sync_queue
+from mobile_metrics_cards import MetricCard, MetricState, render_mobile_metrics_cards
 
 # Import all mobile components
-from mobile_navigation import create_mobile_navigation_component, update_navigation_badges
-from mobile_metrics_cards import render_mobile_metrics_cards, MetricCard, MetricState
-from touch_optimized_charts import render_touch_optimized_chart, ChartConfig, ChartType
-from field_access_dashboard import create_field_access_dashboard, get_sample_sync_queue as get_field_sync_queue
-from mobile_responsive_layout import apply_responsive_layout_system, create_responsive_container, create_responsive_grid, create_responsive_card
-from offline_indicator import create_offline_indicator, ConnectionStatus, SyncItem, SyncItemStatus, SyncPriority, NetworkMetrics
+from mobile_navigation import create_mobile_navigation_component
+from mobile_responsive_layout import (
+    apply_responsive_layout_system,
+    create_responsive_card,
+)
+from offline_indicator import (
+    ConnectionStatus,
+    NetworkMetrics,
+    create_offline_indicator,
+)
+from touch_optimized_charts import ChartConfig, ChartType, render_touch_optimized_chart
 
 
 def get_jorge_ai_branding_css() -> str:

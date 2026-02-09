@@ -2,11 +2,12 @@
 """Test script for authentication system validation."""
 
 import asyncio
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(__file__))
 
-from bots.shared.auth_service import get_auth_service, UserRole
+from bots.shared.auth_service import UserRole, get_auth_service
 
 
 async def test_authentication_system():

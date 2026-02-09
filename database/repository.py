@@ -4,19 +4,18 @@ Database repository helpers for common upsert and query operations.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select, update, func
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import func, select
 
-from database.session import AsyncSessionFactory
 from database.models import (
+    BuyerPreferenceModel,
     ContactModel,
     ConversationModel,
     LeadModel,
-    BuyerPreferenceModel,
     PropertyModel,
 )
+from database.session import AsyncSessionFactory
 
 
 def _now() -> datetime:

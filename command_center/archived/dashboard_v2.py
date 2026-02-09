@@ -10,37 +10,37 @@ Advanced analytics dashboard with:
 
 Features comprehensive business intelligence with mobile-responsive design.
 """
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
 import asyncio
 import sys
+from datetime import datetime
 from pathlib import Path
+
+import streamlit as st
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import Phase 3A components (existing)
+from bots.shared.dashboard_data_service import get_dashboard_data_service
+
+# Import services
+from bots.shared.logger import get_logger
+from command_center.components.active_conversations import render_active_conversations
+
+# Import authentication
+from command_center.components.auth_component import (
+    check_authentication,
+    create_user_management_interface,
+    render_login_form,
+    render_user_menu,
+    require_permission,
+)
+from command_center.components.commission_tracking import render_commission_tracking
 from command_center.components.enhanced_hero_metrics import render_enhanced_hero_metrics
 from command_center.components.ghl_integration_status import render_ghl_integration_status
 
 # Import Phase 3B components (new)
 from command_center.components.performance_analytics import render_performance_analytics
-from command_center.components.active_conversations import render_active_conversations
-from command_center.components.commission_tracking import render_commission_tracking
-
-# Import authentication
-from command_center.components.auth_component import (
-    check_authentication, render_login_form, render_user_menu, 
-    require_permission, create_user_management_interface
-)
-
-# Import services
-from bots.shared.logger import get_logger
-from bots.shared.dashboard_data_service import get_dashboard_data_service
 
 logger = get_logger(__name__)
 

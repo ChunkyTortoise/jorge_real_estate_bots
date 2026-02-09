@@ -13,10 +13,11 @@ Features:
 - Performance-optimized CSS with minimal footprint
 """
 
-import streamlit as st
-from typing import Dict, List, Optional, Any, Union
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List, Optional
+
+import streamlit as st
 
 
 class BreakpointSize(Enum):

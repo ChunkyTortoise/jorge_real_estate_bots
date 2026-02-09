@@ -15,15 +15,15 @@ Features:
 - Batch operations
 - Health monitoring
 """
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 import httpx
-import asyncio
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from bots.shared.config import settings
-from bots.shared.logger import get_logger
 from bots.shared.event_broker import event_broker
+from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
 

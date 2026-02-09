@@ -14,11 +14,11 @@ Features:
 - Performance optimized rendering
 """
 
-import streamlit as st
-from typing import Dict, List, Optional, Any, Union
-from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
+from typing import List, Optional, Union
+
+import streamlit as st
 
 
 class MetricState(Enum):
