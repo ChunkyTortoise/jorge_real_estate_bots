@@ -15,40 +15,84 @@
 - **Manual qualification is slow** -- Structured Q0-Q4 question flows extract budget, timeline, pre-approval status, and motivation without agent involvement
 - **No pipeline visibility** -- A Streamlit command center shows lead flow, bot performance, conversation health, and commission tracking across all three bots
 
+## Key Metrics
+
+| Metric | Value |
+|--------|-------|
+| Tests | **279 passing** |
+| Bots | 3 specialized (Lead, Buyer, Seller) |
+| Cross-Bot Handoff | 0.7 confidence threshold, circular prevention, rate limiting |
+| CRM Integration | GoHighLevel real-time sync |
+| Temperature Scoring | Hot/Warm/Cold with automated tag publishing |
+| AI Routing | Claude Haiku/Sonnet model selection |
+| Docker | Full compose stack (Postgres, Redis, 3 bots, dashboard) |
+
 ## Architecture
 
 ```mermaid
-flowchart LR
-  subgraph Bots
-    Lead["Lead Bot :8001"]
-    Seller["Seller Bot :8002"]
-    Buyer["Buyer Bot :8003"]
+flowchart TB
+  subgraph Incoming["Incoming Leads"]
+    Web["Web Forms"]
+    GHLHook["GHL Webhooks"]
+    API["REST API"]
   end
 
-  CommandCenter["Command Center :8501"]
-  Postgres[(PostgreSQL)]
-  Redis[(Redis)]
-  Claude["Claude AI"]
-  GHL["GoHighLevel"]
+  subgraph BotLayer["Bot Layer"]
+    Lead["Lead Bot :8001\n5-min SLA enforcement\nQ0-Q4 qualification"]
+    Buyer["Buyer Bot :8003\nFinancial readiness\nPre-approval check\nProperty matching"]
+    Seller["Seller Bot :8002\nFRS/PCS scoring\nCMA analysis\nPricing strategy"]
+  end
 
-  Lead --> Redis
-  Seller --> Redis
-  Buyer --> Redis
+  subgraph Intelligence["AI & Decision Engine"]
+    Intent["Intent Decoder\nRegex + semantic analysis"]
+    Temp["Temperature Scoring\nHot ≥80 | Warm 40-79 | Cold <40"]
+    Claude["Claude AI\nHaiku/Sonnet routing"]
+    Handoff["Handoff Service\n0.7 confidence threshold\nCircular prevention\nRate limit: 3/hr, 10/day"]
+  end
 
+  subgraph Infra["Infrastructure"]
+    FastAPI["FastAPI Routes"]
+    Postgres[(PostgreSQL)]
+    Redis[(Redis Cache)]
+    GHL["GoHighLevel CRM\nTag publishing\nWorkflow triggers"]
+  end
+
+  subgraph Dashboard["Monitoring"]
+    CC["Command Center :8501\nStreamlit dashboard"]
+  end
+
+  Web --> FastAPI
+  GHLHook --> FastAPI
+  API --> FastAPI
+
+  FastAPI --> Lead
+  FastAPI --> Buyer
+  FastAPI --> Seller
+
+  Lead --> Intent
+  Buyer --> Intent
+  Seller --> Intent
+
+  Intent --> Temp
+  Intent --> Claude
+
+  Lead <-->|"buyer signals"| Handoff
+  Buyer <-->|"seller signals"| Handoff
+  Seller <-->|"lead signals"| Handoff
+  Handoff --> Lead
+  Handoff --> Buyer
+  Handoff --> Seller
+
+  Temp --> GHL
   Lead --> Postgres
-  Seller --> Postgres
   Buyer --> Postgres
+  Seller --> Postgres
+  Lead --> Redis
+  Buyer --> Redis
+  Seller --> Redis
 
-  CommandCenter --> Postgres
-  CommandCenter --> Redis
-
-  Lead --> Claude
-  Seller --> Claude
-  Buyer --> Claude
-
-  Lead --> GHL
-  Seller --> GHL
-  Buyer --> GHL
+  CC --> Postgres
+  CC --> Redis
 ```
 
 ## Quick Start
