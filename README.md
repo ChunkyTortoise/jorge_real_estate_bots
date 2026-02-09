@@ -6,7 +6,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-356_passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-350%2B_passing-brightgreen)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
 ## What This Solves
@@ -19,7 +19,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Tests | **356 passing** |
+| Tests | **350+ passing** |
 | Bots | 3 specialized (Lead, Buyer, Seller) |
 | Cross-Bot Handoff | 0.7 confidence threshold, circular prevention, rate limiting |
 | CRM Integration | GoHighLevel real-time sync |
@@ -140,7 +140,7 @@ streamlit run command_center/dashboard_v3.py
 | Database | PostgreSQL, SQLAlchemy (async), Alembic |
 | Cache | Redis with in-memory fallback |
 | CRM | GoHighLevel (webhooks, custom fields, workflows) |
-| Testing | pytest, pytest-asyncio (356 tests) |
+| Testing | pytest, pytest-asyncio (350+ tests) |
 
 ## Project Structure
 
@@ -154,7 +154,7 @@ jorge_real_estate_bots/
 ├── database/             # SQLAlchemy models, async session, repository
 ├── command_center/       # Streamlit dashboard + monitoring components
 ├── benchmarks/           # Performance benchmarks (bot response, handoff)
-├── tests/                # 356 tests
+├── tests/                # 350+ tests
 ├── jorge_launcher.py     # Single-command startup for all services
 └── docker-compose.yml
 ```
@@ -178,7 +178,7 @@ python benchmarks/run_all.py
 ## Testing
 
 ```bash
-pytest tests/ -v                    # Full suite (356 tests)
+pytest tests/ -v                    # Full suite (350+ tests)
 pytest tests/shared/ -v             # Shared services
 pytest tests/seller_bot/ -v         # Seller qualification
 pytest tests/buyer_bot/ -v          # Buyer qualification
