@@ -10,22 +10,22 @@ Features:
 - User management
 - Security validation
 """
+import hashlib
 import os
 import secrets
-import jwt
-import hashlib
-from passlib.context import CryptContext
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Any, Union
-from dataclasses import dataclass, asdict
 from enum import Enum
+from typing import List, Optional
 
+import jwt
+from passlib.context import CryptContext
 from sqlalchemy import select
 
-from bots.shared.logger import get_logger
 from bots.shared.cache_service import get_cache_service
+from bots.shared.logger import get_logger
+from database.models import SessionModel, UserModel
 from database.session import AsyncSessionFactory
-from database.models import UserModel, SessionModel
 
 logger = get_logger(__name__)
 

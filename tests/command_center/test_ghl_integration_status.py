@@ -11,20 +11,20 @@ Tests the core functionality of the GHL integration monitoring system:
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
-import pytest
-import asyncio
 from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import patch
+
+import pytest
 
 from command_center.components.ghl_integration_status import (
-    GHLIntegrationStatusComponent,
-    GHLIntegrationData,
-    GHLConnectionMetrics,
-    WebhookMetrics,
     AutomationMetrics,
-    ConnectionStatus,
     AutomationStatus,
-    create_ghl_integration_status
+    ConnectionStatus,
+    GHLConnectionMetrics,
+    GHLIntegrationData,
+    GHLIntegrationStatusComponent,
+    WebhookMetrics,
+    create_ghl_integration_status,
 )
 
 

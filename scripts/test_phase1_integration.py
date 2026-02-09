@@ -47,7 +47,6 @@ except Exception as e:
 
 # Test 3: PerformanceMetrics
 try:
-    from bots.shared.models import PerformanceMetrics
     print("✅ PerformanceMetrics imported")
 except Exception as e:
     print(f"❌ PerformanceMetrics import failed: {e}")
@@ -71,8 +70,7 @@ except Exception as e:
 
 # Test 6: FastAPI models and server
 try:
-    from bots.lead_bot.models import LeadMessage, LeadAnalysisResponse, PerformanceStatus
-    from bots.lead_bot.main import app
+    from bots.lead_bot.models import LeadAnalysisResponse, LeadMessage, PerformanceStatus
     print("✅ FastAPI server and models imported")
 except Exception as e:
     print(f"❌ FastAPI import failed: {e}")

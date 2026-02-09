@@ -10,22 +10,22 @@ Displays real-time seller bot conversation states with:
 
 Features mobile-responsive design and real-time updates.
 """
-import streamlit as st
+import asyncio
+from datetime import datetime
+from typing import List, Optional
+
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-import asyncio
+import streamlit as st
 
-from bots.shared.logger import get_logger
 from bots.shared.dashboard_data_service import get_dashboard_data_service
 from bots.shared.dashboard_models import (
-    ConversationState,
     ConversationFilters,
     ConversationStage,
+    ConversationState,
     Temperature,
 )
+from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
 

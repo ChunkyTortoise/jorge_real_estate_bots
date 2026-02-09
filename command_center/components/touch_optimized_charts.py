@@ -13,16 +13,15 @@ Features:
 - Real estate-specific chart types and styling
 """
 
-import streamlit as st
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-import pandas as pd
-from typing import Dict, List, Optional, Any, Union, Tuple
-from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
 import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
 
 
 class ChartType(Enum):

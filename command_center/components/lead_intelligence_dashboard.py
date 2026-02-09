@@ -12,20 +12,20 @@ Enhanced lead intelligence with predictive analytics:
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
-import streamlit as st
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List
+
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import streamlit as st
 from plotly.subplots import make_subplots
-import pandas as pd
-from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
-import sys
-from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from bots.shared.lead_intelligence_optimized import get_enhanced_lead_intelligence
 from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)

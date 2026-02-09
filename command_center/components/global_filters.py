@@ -11,10 +11,11 @@ Provides advanced filtering and search capabilities across the dashboard:
 - Clear all filters functionality
 """
 
-import streamlit as st
-from datetime import date, timedelta, datetime
-from typing import Dict, List, Any, Optional
 import json
+from datetime import date, datetime, timedelta
+from typing import Any, Dict
+
+import streamlit as st
 
 from bots.shared.logger import get_logger
 

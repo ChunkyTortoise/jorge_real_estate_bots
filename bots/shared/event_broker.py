@@ -12,17 +12,16 @@ Features:
 
 import asyncio
 import json
-import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set
-from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 from redis.asyncio import ConnectionPool
 
 from bots.shared.config import settings
+from bots.shared.event_models import BaseEvent, create_event, get_event_channel, get_event_stream
 from bots.shared.logger import get_logger
-from bots.shared.event_models import BaseEvent, EventType, create_event, get_event_channel, get_event_stream
 
 logger = get_logger(__name__)
 

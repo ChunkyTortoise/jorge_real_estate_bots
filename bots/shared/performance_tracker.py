@@ -9,19 +9,18 @@ Tracks and aggregates performance metrics across:
 Provides real-time and historical performance data for dashboard visualization.
 """
 import time
-import asyncio
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
-from collections import deque, defaultdict
+from collections import defaultdict, deque
 from dataclasses import asdict
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from bots.shared.logger import get_logger
 from bots.shared.cache_service import get_cache_service
 from bots.shared.dashboard_models import (
-    PerformanceDashboardMetrics,
     CacheStatistics,
     CostSavingsMetrics,
+    PerformanceDashboardMetrics,
 )
+from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
 

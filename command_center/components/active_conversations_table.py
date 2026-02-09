@@ -3,10 +3,12 @@ Active Conversations Table Component for Jorge Real Estate AI Dashboard.
 
 Displays paginated, filterable list of active seller conversations.
 """
-import streamlit as st
-from typing import List
-from bots.shared.dashboard_models import ConversationState, Temperature
 from datetime import datetime
+from typing import List
+
+import streamlit as st
+
+from bots.shared.dashboard_models import ConversationState, Temperature
 
 
 def render_active_conversations(

@@ -47,3 +47,10 @@ docker-compose.override.yml
 
 # Serena
 .serena/
+
+# Added by deep clean
+*.egg
+.hypothesis/
+coverage.xml
+.ruff_cache/
+.env.*.local

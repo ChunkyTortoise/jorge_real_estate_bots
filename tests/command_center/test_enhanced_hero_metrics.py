@@ -10,21 +10,22 @@ Tests the enhanced hero metrics with:
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
-import pytest
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, Mock, patch
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from command_center.components.enhanced_hero_metrics import (
+    CMAAnalyzer,
     EnhancedHeroMetrics,
     HeroMetricData,
     LeadSourceROI,
     RevenueForecaster,
-    CMAAnalyzer
 )
 
 

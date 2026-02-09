@@ -1,10 +1,11 @@
-from locust import HttpUser, User, task, between
 import base64
 import hashlib
 import hmac
 import json
 import os
 import random
+
+from locust import HttpUser, User, between, task
 
 try:
     from websocket import create_connection

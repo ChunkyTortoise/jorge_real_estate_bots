@@ -1,8 +1,10 @@
 """
 Tests for HeroMetricsCard component.
 """
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+
 from bots.shared.dashboard_models import HeroMetrics
 from command_center.components.hero_metrics_card import render_hero_metrics
 

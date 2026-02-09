@@ -5,7 +5,6 @@ Quick verification script for GHL Client integration.
 This script demonstrates that the production GHL client is properly
 integrated and all features work correctly.
 """
-import asyncio
 import sys
 from pathlib import Path
 
@@ -19,7 +18,7 @@ print("=" * 70)
 # Test 1: Import GHL Client
 print("\n✅ Test 1: Import GHL Client")
 try:
-    from bots.shared.ghl_client import GHLClient, get_ghl_client, create_ghl_client
+    from bots.shared.ghl_client import GHLClient
     print("   ✅ All imports successful")
 except Exception as e:
     print(f"   ❌ Import failed: {e}")
@@ -104,6 +103,7 @@ else:
 # Test 6: Run actual tests
 print("\n✅ Test 6: Run Comprehensive Test Suite")
 import subprocess
+
 result = subprocess.run(
     ["python", "-m", "pytest", "tests/shared/test_ghl_client.py", "-v", "--tb=line"],
     cwd=Path(__file__).parent,

@@ -17,23 +17,23 @@ Tests all 12 dataclasses:
 Ensures to_dict() serialization works correctly and
 data integrity is maintained.
 """
-import pytest
 from datetime import datetime, timedelta
+
 from bots.shared.dashboard_models import (
-    PerformanceDashboardMetrics,
-    CacheStatistics,
-    CostSavingsMetrics,
-    ConversationState,
-    ConversationFilters,
-    PaginatedConversations,
-    BudgetRange,
     BudgetDistribution,
+    BudgetRange,
+    CacheStatistics,
+    CommissionMetrics,
+    ConversationFilters,
+    ConversationStage,
+    ConversationState,
+    CostSavingsMetrics,
+    PaginatedConversations,
+    PerformanceDashboardMetrics,
+    Temperature,
+    Timeline,
     TimelineClassification,
     TimelineDistribution,
-    CommissionMetrics,
-    Temperature,
-    ConversationStage,
-    Timeline,
 )
 
 

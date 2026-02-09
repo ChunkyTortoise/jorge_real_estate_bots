@@ -3,11 +3,12 @@ Authentication component for Streamlit dashboard.
 
 Provides login/logout functionality and session management.
 """
-import streamlit as st
 import asyncio
 from typing import Optional
 
-from bots.shared.auth_service import get_auth_service, User, UserRole
+import streamlit as st
+
+from bots.shared.auth_service import User, UserRole, get_auth_service
 from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)

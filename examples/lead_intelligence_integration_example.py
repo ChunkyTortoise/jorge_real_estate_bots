@@ -7,7 +7,6 @@ as a fallback when AI is unavailable or for ultra-fast scoring.
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
-import asyncio
 from bots.shared.lead_intelligence_optimized import get_enhanced_lead_intelligence
 
 

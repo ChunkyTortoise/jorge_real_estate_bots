@@ -4,14 +4,14 @@ Cache Service for Jorge's Real Estate Bots.
 Provides Redis-backed caching with memory fallback for <500ms performance.
 Simplified version from EnterpriseHub focused on Jorge's needs.
 """
-import time
 import pickle
-from typing import Any, Optional, Dict
+import time
 from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
 
 from bots.shared.config import settings
-from bots.shared.logger import get_logger
 from bots.shared.event_broker import event_broker
+from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
 

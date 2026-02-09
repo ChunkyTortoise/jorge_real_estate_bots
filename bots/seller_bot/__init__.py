@@ -10,10 +10,10 @@ Exports:
 """
 from bots.seller_bot.jorge_seller_bot import (
     JorgeSellerBot,
-    SellerStatus,
-    SellerResult,
     SellerQualificationState,
-    create_seller_bot
+    SellerResult,
+    SellerStatus,
+    create_seller_bot,
 )
 
 __all__ = [

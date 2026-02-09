@@ -5,8 +5,8 @@ Simplified version of EnterpriseHub's LLM client, focused on Claude only.
 Provides intelligent routing, prompt caching, and async support.
 """
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any, AsyncGenerator
 from enum import Enum
+from typing import AsyncGenerator, Dict, List, Optional
 
 from bots.shared.config import settings
 from bots.shared.logger import get_logger

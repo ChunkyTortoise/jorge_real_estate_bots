@@ -10,19 +10,19 @@ Production enhancements from jorge_deployment_package:
 - Hybrid pattern + AI analysis approach
 - Jorge's business rules validation integration
 """
-from typing import Dict, Any, Optional, Tuple
 import json
-import time
 import re
+import time
+from typing import Any, Dict, Optional, Tuple
 
-from bots.shared.claude_client import ClaudeClient, TaskComplexity
-from bots.shared.ghl_client import GHLClient
-from bots.shared.cache_service import CacheService, PerformanceCache
 from bots.shared.business_rules import JorgeBusinessRules
-from bots.shared.models import PerformanceMetrics
+from bots.shared.cache_service import CacheService, PerformanceCache
+from bots.shared.claude_client import ClaudeClient, TaskComplexity
 from bots.shared.config import settings
-from bots.shared.logger import get_logger
 from bots.shared.event_broker import event_broker
+from bots.shared.ghl_client import GHLClient
+from bots.shared.logger import get_logger
+from bots.shared.models import PerformanceMetrics
 from database.repository import upsert_contact, upsert_lead
 
 logger = get_logger(__name__)

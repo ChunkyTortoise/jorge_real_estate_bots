@@ -1,13 +1,13 @@
 """
 Tests for ActiveConversationsTable component.
 """
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime, timedelta
-from bots.shared.dashboard_models import ConversationState, Temperature, ConversationStage
-from command_center.components.active_conversations_table import (
-    render_active_conversations, _format_temperature
-)
+from unittest.mock import Mock, patch
+
+import pytest
+
+from bots.shared.dashboard_models import ConversationStage, ConversationState, Temperature
+from command_center.components.active_conversations_table import _format_temperature, render_active_conversations
 
 
 @pytest.fixture

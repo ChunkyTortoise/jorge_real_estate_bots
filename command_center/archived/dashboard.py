@@ -17,25 +17,26 @@ Created: 2026-01-23
 Updated: 2026-01-23 (Phase 3C - Production Polish)
 """
 
-import streamlit as st
+import sys
+import traceback
+from datetime import datetime
+from pathlib import Path
+from typing import Dict
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
-import sys
-import traceback
-from pathlib import Path
+import streamlit as st
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import components
 from command_center.components.activity_feed import ActivityFeed
-from command_center.components.global_filters import GlobalFilters
 from command_center.components.export_manager import ExportManager
-from command_center.utils.theme_manager import ThemeManager
+from command_center.components.global_filters import GlobalFilters
 from command_center.event_client import SyncEventClient
+from command_center.utils.theme_manager import ThemeManager
 
 # Configure Streamlit page with production settings
 st.set_page_config(

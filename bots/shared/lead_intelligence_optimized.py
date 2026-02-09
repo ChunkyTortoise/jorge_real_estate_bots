@@ -10,11 +10,10 @@ Integrated into jorge_real_estate_bots MVP.
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
-import re
 import logging
-from typing import Dict, List, Optional, Any
+import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

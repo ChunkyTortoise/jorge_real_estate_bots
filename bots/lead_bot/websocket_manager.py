@@ -12,18 +12,17 @@ Features:
 
 import asyncio
 import json
-import logging
 from datetime import datetime, timedelta
-from typing import Dict, Set, Optional, List
+from typing import Dict, Optional
 from uuid import uuid4
 
-from fastapi import WebSocket, WebSocketDisconnect
 import redis.asyncio as redis
+from fastapi import WebSocket, WebSocketDisconnect
 
 from bots.shared.config import settings
-from bots.shared.logger import get_logger
 from bots.shared.event_broker import event_broker
-from bots.shared.event_models import BaseEvent, EventType, create_event
+from bots.shared.event_models import BaseEvent, create_event
+from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
 

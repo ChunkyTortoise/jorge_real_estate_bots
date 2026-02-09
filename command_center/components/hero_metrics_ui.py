@@ -11,12 +11,12 @@ Renders Jorge's enhanced hero metrics with superior UX:
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
-import streamlit as st
 import asyncio
 from typing import List
-from datetime import datetime
 
-from .enhanced_hero_metrics import EnhancedHeroMetrics, HeroMetricData, create_enhanced_hero_metrics
+import streamlit as st
+
+from .enhanced_hero_metrics import HeroMetricData, create_enhanced_hero_metrics
 
 
 class HeroMetricsUI:

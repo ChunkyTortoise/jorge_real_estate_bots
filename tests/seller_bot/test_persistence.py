@@ -4,10 +4,11 @@ Tests for Seller Bot Redis Persistence.
 Tests the Redis-backed state management for seller bot conversations,
 including save, load, and active conversations listing.
 """
-import pytest
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
-from datetime import datetime
 from dataclasses import asdict
+from datetime import datetime
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from bots.seller_bot.jorge_seller_bot import SellerBotService, SellerQualificationState
 

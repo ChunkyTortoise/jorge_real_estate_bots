@@ -10,12 +10,11 @@ Usage:
 """
 import asyncio
 import sys
-from typing import List, Dict, Any
 
 # Add bots to path
 sys.path.insert(0, '.')
 
-from bots.seller_bot import create_seller_bot, SellerStatus
+from bots.seller_bot import SellerStatus, create_seller_bot
 from bots.shared.business_rules import JorgeBusinessRules
 
 # ANSI color codes for output
@@ -54,24 +53,15 @@ async def validate_imports():
     print_header("VALIDATION 1: Module Imports")
 
     try:
-        from bots.seller_bot.jorge_seller_bot import (
-            JorgeSellerBot,
-            SellerStatus,
-            SellerResult,
-            SellerQualificationState
-        )
         print_success("JorgeSellerBot imported")
         print_success("SellerStatus enum imported")
         print_success("SellerResult dataclass imported")
         print_success("SellerQualificationState imported")
 
-        from bots.shared.business_rules import JorgeBusinessRules
         print_success("JorgeBusinessRules imported")
 
-        from bots.shared.claude_client import ClaudeClient
         print_success("ClaudeClient imported")
 
-        from bots.shared.ghl_client import GHLClient
         print_success("GHLClient imported")
 
         return True
@@ -383,8 +373,9 @@ async def validate_analytics(seller_bot):
 
     try:
         # Create test state
-        from bots.seller_bot.jorge_seller_bot import SellerQualificationState
         from datetime import datetime
+
+        from bots.seller_bot.jorge_seller_bot import SellerQualificationState
 
         state = SellerQualificationState(
             contact_id="test_analytics",

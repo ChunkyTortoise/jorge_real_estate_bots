@@ -18,18 +18,16 @@ Temperature Scoring:
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
-import asyncio
-import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Any
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
-from bots.shared.logger import get_logger
-from bots.shared.claude_client import ClaudeClient
-from bots.shared.ghl_client import GHLClient
 from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.cache_service import get_cache_service
+from bots.shared.claude_client import ClaudeClient
+from bots.shared.ghl_client import GHLClient
+from bots.shared.logger import get_logger
 from database.repository import upsert_contact, upsert_conversation
 
 logger = get_logger(__name__)

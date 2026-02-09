@@ -3,20 +3,20 @@ Unit tests for MetricsService.
 
 Tests metrics aggregation, caching, and error handling functionality.
 """
-import pytest
-import asyncio
-from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime
+from unittest.mock import AsyncMock, Mock, patch
 
-from bots.shared.metrics_service import MetricsService, get_metrics_service
+import pytest
+
 from bots.shared.dashboard_models import (
-    PerformanceDashboardMetrics,
-    CacheStatistics,
-    CostSavingsMetrics,
     BudgetDistribution,
-    TimelineDistribution,
+    CacheStatistics,
     CommissionMetrics,
+    CostSavingsMetrics,
+    PerformanceDashboardMetrics,
+    TimelineDistribution,
 )
+from bots.shared.metrics_service import MetricsService, get_metrics_service
 
 
 class TestMetricsService:

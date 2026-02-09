@@ -9,10 +9,10 @@ Contains dataclasses for:
 
 All models follow the project pattern with to_dict() methods for JSON serialization.
 """
-from dataclasses import dataclass, field, asdict
-from typing import Optional, List, Dict, Any
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class Temperature(str, Enum):

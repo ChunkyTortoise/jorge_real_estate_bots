@@ -5,11 +5,12 @@ HTTP client for fetching recent events and performance metrics.
 Provides polling fallback when WebSocket connection is not available.
 """
 
-import httpx
 import asyncio
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import httpx
 
 from bots.shared.logger import get_logger
 

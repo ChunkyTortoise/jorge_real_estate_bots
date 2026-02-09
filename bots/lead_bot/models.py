@@ -4,8 +4,9 @@ Pydantic Models for Lead Bot API.
 Request/response validation models for FastAPI endpoints.
 Extracted from: jorge_deployment_package/jorge_fastapi_lead_bot.py
 """
+from typing import Any, Dict, Optional
+
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Any
 
 
 class LeadMessage(BaseModel):

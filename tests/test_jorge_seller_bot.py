@@ -13,14 +13,11 @@ Author: Claude Code Assistant
 Created: 2026-01-23
 """
 import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from bots.seller_bot.jorge_seller_bot import (
-    JorgeSellerBot,
-    SellerStatus,
-    SellerResult,
-    SellerQualificationState
-)
+
+from bots.seller_bot.jorge_seller_bot import JorgeSellerBot, SellerQualificationState, SellerResult, SellerStatus
 from bots.shared.business_rules import JorgeBusinessRules
 
 

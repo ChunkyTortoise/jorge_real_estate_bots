@@ -10,23 +10,24 @@ Orchestrates data from multiple sources for dashboard display:
 Provides unified data access with consistent caching and error handling.
 """
 import asyncio
-from typing import Dict, List, Optional, Any, Union
-from datetime import datetime, timedelta
 from dataclasses import asdict
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
-from bots.shared.logger import get_logger
+from sqlalchemy import Date, cast, func, select
+
 from bots.shared.cache_service import get_cache_service
-from bots.shared.metrics_service import get_metrics_service
 from bots.shared.dashboard_models import (
-    ConversationState,
     ConversationFilters,
-    PaginatedConversations,
     ConversationStage,
+    ConversationState,
+    PaginatedConversations,
     Temperature,
 )
-from sqlalchemy import cast, func, select, Date
+from bots.shared.logger import get_logger
+from bots.shared.metrics_service import get_metrics_service
+from database.models import ContactModel, ConversationModel
 from database.session import AsyncSessionFactory
-from database.models import ConversationModel, ContactModel
 
 logger = get_logger(__name__)
 
@@ -117,9 +118,7 @@ class DashboardDataService:
 
         Cache TTL: 30 seconds (for UI components)
         """
-        from bots.shared.dashboard_models import (
-            DashboardData, HeroMetrics, PerformanceMetrics, PaginatedConversations
-        )
+        from bots.shared.dashboard_models import DashboardData
 
         cache_key = "dashboard:structured_data_v3"
 

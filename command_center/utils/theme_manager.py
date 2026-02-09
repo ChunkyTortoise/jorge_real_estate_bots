@@ -9,9 +9,9 @@ Provides dark/light mode support with:
 - Responsive design support
 """
 
+from typing import Any, Dict
+
 import streamlit as st
-from typing import Dict, Any
-import json
 
 
 class ThemeManager:

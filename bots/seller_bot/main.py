@@ -2,18 +2,17 @@
 Seller Bot FastAPI Application.
 Exposes Jorge's confrontational qualification system via REST API.
 """
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Query, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-from bots.shared.logger import get_logger, set_correlation_id
-from bots.shared.config import settings
-from bots.shared.models import ProcessMessageRequest
-from bots.seller_bot.jorge_seller_bot import JorgeSellerBot, SellerQualificationState
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+
+from bots.seller_bot.jorge_seller_bot import JorgeSellerBot
 from bots.shared.auth_middleware import get_current_active_user
+from bots.shared.config import settings
+from bots.shared.logger import get_logger
+from bots.shared.models import ProcessMessageRequest
 
 logger = get_logger(__name__)
 

@@ -9,33 +9,27 @@ Production enhancements from jorge_deployment_package/jorge_fastapi_lead_bot.py:
 - Background task processing
 - Additional analysis endpoints
 """
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Query, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
-import time
-from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
-import json
 import base64
-import hmac
 import hashlib
+import hmac
+import json
+import time
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from typing import Dict, Optional
 
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from bots.shared.logger import get_logger, set_correlation_id
-from bots.shared.config import settings
-from bots.shared.event_broker import event_broker
+from bots.lead_bot.models import LeadAnalysisResponse, LeadMessage, PerformanceStatus
 from bots.lead_bot.services.lead_analyzer import LeadAnalyzer
 from bots.lead_bot.websocket_manager import websocket_manager
 from bots.shared.auth_middleware import get_current_active_user
 from bots.shared.auth_service import get_auth_service
-from bots.lead_bot.models import (
-    LeadMessage,
-    GHLWebhook,
-    LeadAnalysisResponse,
-    PerformanceStatus
-)
+from bots.shared.config import settings
+from bots.shared.event_broker import event_broker
+from bots.shared.logger import get_logger, set_correlation_id
 
 logger = get_logger(__name__)
 
@@ -229,7 +223,7 @@ async def health_check():
 async def aggregate_health():
     """Check all bots, Redis, and Postgres. Returns unified status JSON."""
     import httpx
-    from bots.shared.config import settings as _s
+
 
     results: Dict[str, str] = {}
 

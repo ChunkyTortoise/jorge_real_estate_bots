@@ -10,17 +10,16 @@ Displays commission tracking and forecasting including:
 
 Features real-time updates and business rule integration.
 """
-import streamlit as st
+import asyncio
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-import asyncio
+import streamlit as st
 
 from bots.shared.logger import get_logger
 from bots.shared.metrics_service import get_metrics_service
-from bots.shared.dashboard_models import CommissionMetrics
 
 logger = get_logger(__name__)
 

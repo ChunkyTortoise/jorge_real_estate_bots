@@ -9,25 +9,23 @@ Provides comprehensive export functionality:
 - Multiple export formats and customization
 """
 
-import streamlit as st
+import io
+import json
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import plotly.io as pio
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
-import io
-import json
-import base64
-from pathlib import Path
+import streamlit as st
 
 # PDF generation (install: pip install reportlab)
 try:
-    from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.pagesizes import A4, letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
+    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
