@@ -12,8 +12,6 @@ from bots.shared.funnel_attribution import (
     FUNNEL_STAGES,
     STAGE_AWARENESS,
     STAGE_CONSIDERATION,
-    STAGE_EVALUATION,
-    STAGE_INTENT,
     STAGE_INTEREST,
     STAGE_PURCHASE,
     AttributionModel,
