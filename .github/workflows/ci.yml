@@ -49,6 +49,60 @@ jobs:
       - name: Run tests
         run: pytest -v --tb=short
 
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    # GitHub does not expose secrets to PRs from forks.
+    if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.fork == false }}
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: jorge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/jorge_test
+      RUN_INTEGRATION_TESTS: "1"
+      DEMO_MODE: "true"
+      ENVIRONMENT: test
+      JWT_SECRET: test-secret-key
+      ADMIN_PASSWORD: test-admin-password
+      ANTHROPIC_API_KEY: sk-test-not-real
+      GHL_API_KEY: test-key
+      GHL_LOCATION_ID: test-location
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Verify integration secrets
+        run: |
+          if [ -z "${STRIPE_SECRET_KEY}" ]; then
+            echo "::error::Missing required secret: STRIPE_SECRET_KEY"
+            exit 1
+          fi
+
+      - name: Run integration tests
+        run: pytest -m integration -v --tb=short
+
   type-check:
     name: Type Checking
     runs-on: ubuntu-latest
