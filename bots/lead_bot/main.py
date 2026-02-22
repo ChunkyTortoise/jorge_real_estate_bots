@@ -22,13 +22,16 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Req
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from bots.buyer_bot.buyer_bot import JorgeBuyerBot
 from bots.lead_bot.models import LeadAnalysisResponse, LeadMessage, PerformanceStatus
 from bots.lead_bot.services.lead_analyzer import LeadAnalyzer
 from bots.lead_bot.websocket_manager import websocket_manager
+from bots.seller_bot.jorge_seller_bot import JorgeSellerBot
 from bots.shared.auth_middleware import get_current_active_user
 from bots.shared.auth_service import get_auth_service
 from bots.shared.config import settings
 from bots.shared.event_broker import event_broker
+from bots.shared.ghl_client import GHLClient
 from bots.shared.logger import get_logger, set_correlation_id
 
 logger = get_logger(__name__)
@@ -43,12 +46,15 @@ performance_stats = {
 
 # Initialize services on startup
 lead_analyzer = None
+seller_bot_instance: Optional[JorgeSellerBot] = None
+buyer_bot_instance: Optional[JorgeBuyerBot] = None
+_ghl_client: Optional[GHLClient] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle management for FastAPI app."""
-    global lead_analyzer
+    global lead_analyzer, seller_bot_instance, buyer_bot_instance, _ghl_client
 
     logger.info("🔥 Starting Lead Bot...")
     logger.info(f"Environment: {settings.environment}")
@@ -56,6 +62,14 @@ async def lifespan(app: FastAPI):
 
     # Initialize services
     lead_analyzer = LeadAnalyzer()
+
+    try:
+        seller_bot_instance = JorgeSellerBot()
+        buyer_bot_instance = JorgeBuyerBot()
+        _ghl_client = GHLClient()
+        logger.info("✅ Seller Bot, Buyer Bot, and GHL client initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize seller/buyer bots: {e}")
 
     # Initialize event broker and WebSocket manager
     try:
@@ -335,6 +349,145 @@ async def handle_new_lead(request: Request):
     except Exception as e:
         logger.error(f"❌ Error processing new lead: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ghl/webhook")
+async def unified_ghl_webhook(request: Request):
+    """
+    Unified GHL webhook dispatcher.
+
+    GHL workflow '5. Process Message - Which Bot?' fires this endpoint for all bots.
+    Reads Bot Type from the payload's customData or fetches it from the GHL contact,
+    then routes to the appropriate bot (Lead / Seller / Buyer).
+
+    Always returns HTTP 200 so GHL does not retry the webhook.
+    """
+    try:
+        payload_bytes = await request.body()
+        payload = json.loads(payload_bytes.decode("utf-8"))
+
+        contact_id = payload.get("contactId") or payload.get("contact_id") or payload.get("id")
+        location_id = (
+            payload.get("locationId")
+            or payload.get("location_id")
+            or settings.ghl_location_id
+        )
+        message_body = payload.get("body") or payload.get("message") or ""
+
+        if not contact_id:
+            logger.error("Unified webhook: missing contactId in payload")
+            return {"status": "error", "detail": "missing contactId"}
+
+        if not message_body.strip():
+            logger.info(f"Unified webhook: empty message for {contact_id}, skipping")
+            return {"status": "skipped", "reason": "empty message"}
+
+        # --- Determine bot type ---
+        # GHL workflow branches add customData; fall back to GHL API contact lookup.
+        custom_data: Dict = payload.get("customData") or {}
+        bot_type: str = (
+            custom_data.get("bot_type")
+            or custom_data.get("Bot Type")
+            or payload.get("bot_type")
+            or ""
+        )
+
+        if not bot_type and _ghl_client:
+            try:
+                contact_resp = await _ghl_client.get_contact(contact_id)
+                custom_fields = (
+                    contact_resp.get("contact", contact_resp).get("customFields", [])
+                )
+                for cf in custom_fields:
+                    key = (cf.get("fieldKey") or cf.get("name") or "").lower().replace(" ", "_")
+                    if key in ("bot_type", "bot type"):
+                        bot_type = cf.get("value") or ""
+                        break
+            except Exception as e:
+                logger.warning(f"Could not fetch contact for bot_type lookup: {e}")
+
+        bot_type_lower = (bot_type or "lead").lower()
+
+        contact_info = {
+            "name": payload.get("fullName") or custom_data.get("name"),
+            "email": payload.get("email") or custom_data.get("email"),
+            "phone": payload.get("phone") or custom_data.get("phone"),
+        }
+
+        logger.info(
+            f"Unified webhook: contact={contact_id}, bot_type={bot_type_lower!r}, "
+            f"msg={message_body[:60]!r}"
+        )
+
+        # --- Route to bot ---
+        response_message: Optional[str] = None
+        result_meta: Dict = {"bot_type": bot_type_lower}
+
+        if "seller" in bot_type_lower:
+            if not seller_bot_instance:
+                logger.error("Seller bot not initialized")
+                return {"status": "error", "detail": "seller bot unavailable"}
+            result = await seller_bot_instance.process_seller_message(
+                contact_id=contact_id,
+                location_id=location_id,
+                message=message_body,
+                contact_info=contact_info,
+            )
+            response_message = result.response_message
+            result_meta.update(
+                {
+                    "temperature": result.seller_temperature,
+                    "questions_answered": result.questions_answered,
+                    "qualification_complete": result.qualification_complete,
+                }
+            )
+
+        elif "buyer" in bot_type_lower:
+            if not buyer_bot_instance:
+                logger.error("Buyer bot not initialized")
+                return {"status": "error", "detail": "buyer bot unavailable"}
+            result = await buyer_bot_instance.process_buyer_message(
+                contact_id=contact_id,
+                location_id=location_id,
+                message=message_body,
+                contact_info=contact_info,
+            )
+            response_message = result.response_message
+            result_meta.update(
+                {
+                    "temperature": result.buyer_temperature,
+                    "questions_answered": result.questions_answered,
+                    "qualification_complete": result.qualification_complete,
+                }
+            )
+
+        else:
+            # Default: Lead bot analysis (no direct SMS reply — GHL workflows handle follow-up)
+            lead_data = {"id": contact_id, "message": message_body, **contact_info}
+            analysis, metrics = await lead_analyzer.analyze_lead(lead_data)
+            result_meta.update(
+                {
+                    "score": analysis.get("score", 0),
+                    "temperature": analysis.get("temperature", "warm"),
+                    "jorge_priority": analysis.get("jorge_priority", "normal"),
+                }
+            )
+            return {"status": "processed", **result_meta}
+
+        # --- Send reply via GHL SMS (seller / buyer bots) ---
+        if response_message and _ghl_client:
+            try:
+                await _ghl_client.send_message(contact_id, response_message, "SMS")
+                logger.info(f"Reply sent to {contact_id} via GHL SMS")
+            except Exception as e:
+                logger.error(f"Failed to send GHL reply to {contact_id}: {e}")
+
+        return {"status": "processed", **result_meta}
+
+    except Exception as e:
+        logger.error(f"Unified webhook unhandled error: {e}", exc_info=True)
+        # Return 200 so GHL does not retry
+        return {"status": "error", "detail": str(e)}
 
 
 @app.post("/analyze-lead", response_model=LeadAnalysisResponse)
