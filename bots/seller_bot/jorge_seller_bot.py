@@ -18,6 +18,7 @@ Temperature Scoring:
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -589,9 +590,9 @@ class JorgeSellerBot:
         next_question_text = self.QUALIFICATION_QUESTIONS.get(next_q, "")
 
         # Calculate offer amount for Q4 if needed
-        if next_q == 4 and state.price_expectation:
+        if next_q == 4:
             # Jorge's formula: 70-80% of asking price for cash offer
-            offer_amount = int(state.price_expectation * 0.75)
+            offer_amount = int((state.price_expectation or 300000) * 0.75)
             next_question_text = next_question_text.format(
                 offer_amount=f"${offer_amount:,}"
             )
@@ -822,7 +823,7 @@ RESPONSE (keep under 100 words):"""
         if temperature == SellerStatus.HOT.value:
             actions.append({
                 "type": "trigger_workflow",
-                "workflow_id": "cma_automation",
+                "workflow_id": os.environ.get("HOT_SELLER_WORKFLOW_ID", "577d56c4-28af-4668-8d84-80f5db234f48"),
                 "workflow_name": "CMA Report Generation"
             })
 
@@ -858,13 +859,11 @@ RESPONSE (keep under 100 words):"""
                     )
 
                 elif action_type == "trigger_workflow":
-                    # Trigger workflow in GHL
                     self.logger.info(
                         f"Triggering workflow: {action.get('workflow_name', 'Unknown')} "
                         f"for contact {contact_id}"
                     )
-                    # Note: Actual GHL workflow triggering would go here
-                    # await self.ghl_client.trigger_workflow(contact_id, action["workflow_id"])
+                    await self.ghl_client.trigger_workflow(contact_id, action["workflow_id"])
 
             except Exception as e:
                 self.logger.error(f"Failed to apply action {action_type}: {e}")

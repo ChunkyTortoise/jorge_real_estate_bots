@@ -394,14 +394,10 @@ class GHLClient:
             Workflow trigger result
         """
         try:
-            data = {
-                "contactId": contact_id,
-                "workflowId": workflow_id
-            }
             result = await self._make_request(
                 "POST",
-                f"workflows/{workflow_id}/subscribe",
-                data=data
+                f"contacts/{contact_id}/workflow/{workflow_id}",
+                data={}
             )
 
             # Emit workflow triggered event
