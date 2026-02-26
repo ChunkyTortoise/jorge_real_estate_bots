@@ -305,21 +305,24 @@ class JorgeSellerBot:
 
         self.logger.debug(f"Saved state for contact {contact_id}: stage={state.stage}, Q{state.current_question}")
 
-        # Persist to database
-        await upsert_conversation(
-            contact_id=contact_id,
-            bot_type="seller",
-            stage=state.stage,
-            temperature=temperature,
-            current_question=state.current_question,
-            questions_answered=state.questions_answered,
-            is_qualified=state.is_qualified,
-            conversation_history=state.conversation_history,
-            extracted_data=state.extracted_data,
-            last_activity=state.last_interaction,
-            conversation_started=state.conversation_started,
-            metadata_json=metadata or {},
-        )
+        # Persist to database (best-effort — schema may not be initialized yet)
+        try:
+            await upsert_conversation(
+                contact_id=contact_id,
+                bot_type="seller",
+                stage=state.stage,
+                temperature=temperature,
+                current_question=state.current_question,
+                questions_answered=state.questions_answered,
+                is_qualified=state.is_qualified,
+                conversation_history=state.conversation_history,
+                extracted_data=state.extracted_data,
+                last_activity=state.last_interaction,
+                conversation_started=state.conversation_started,
+                metadata_json=metadata or {},
+            )
+        except Exception as db_err:
+            self.logger.warning(f"DB upsert_conversation skipped (schema not ready?): {db_err}")
 
     async def get_all_active_conversations(self) -> List[SellerQualificationState]:
         """
@@ -404,13 +407,16 @@ class JorgeSellerBot:
             state = await self._get_or_create_state(contact_id, location_id)
 
             if contact_info:
-                await upsert_contact(
-                    contact_id=contact_id,
-                    location_id=location_id,
-                    name=contact_info.get("name") or contact_info.get("full_name"),
-                    email=contact_info.get("email"),
-                    phone=contact_info.get("phone"),
-                )
+                try:
+                    await upsert_contact(
+                        contact_id=contact_id,
+                        location_id=location_id,
+                        name=contact_info.get("name") or contact_info.get("full_name"),
+                        email=contact_info.get("email"),
+                        phone=contact_info.get("phone"),
+                    )
+                except Exception as db_err:
+                    self.logger.warning(f"DB upsert_contact skipped (schema not ready?): {db_err}")
 
             # Determine current question and generate response
             response_data = await self._generate_response(
