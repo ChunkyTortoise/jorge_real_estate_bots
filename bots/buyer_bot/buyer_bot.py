@@ -127,13 +127,16 @@ class JorgeBuyerBot:
         state = await self._get_or_create_state(contact_id, location_id)
 
         if contact_info:
-            await upsert_contact(
-                contact_id=contact_id,
-                location_id=location_id,
-                name=contact_info.get("name") or contact_info.get("full_name"),
-                email=contact_info.get("email"),
-                phone=contact_info.get("phone"),
-            )
+            try:
+                await upsert_contact(
+                    contact_id=contact_id,
+                    location_id=location_id,
+                    name=contact_info.get("name") or contact_info.get("full_name"),
+                    email=contact_info.get("email"),
+                    phone=contact_info.get("phone"),
+                )
+            except Exception as db_err:
+                self.logger.warning(f"DB upsert_contact skipped (schema not ready?): {db_err}")
 
         response = await self._generate_response(state, message)
 
@@ -213,46 +216,48 @@ class JorgeBuyerBot:
         if hasattr(self.cache, "sadd"):
             await self.cache.sadd("buyer:active_contacts", contact_id, ttl=604800)
 
-        # Persist to database
-        await upsert_conversation(
-            contact_id=contact_id,
-            bot_type="buyer",
-            stage=state.stage,
-            temperature=temperature,
-            current_question=state.current_question,
-            questions_answered=state.questions_answered,
-            is_qualified=state.is_qualified,
-            conversation_history=state.conversation_history,
-            extracted_data=state.extracted_data,
-            last_activity=state.last_interaction,
-            conversation_started=state.conversation_started,
-            metadata_json={
-                "preferred_location": state.preferred_location,
-            },
-        )
-
-        await upsert_buyer_preferences(
-            contact_id=contact_id,
-            location_id=state.location_id,
-            beds_min=state.beds_min,
-            baths_min=state.baths_min,
-            sqft_min=state.sqft_min,
-            price_min=state.price_min,
-            price_max=state.price_max,
-            preapproved=state.preapproved,
-            timeline_days=state.timeline_days,
-            motivation=state.motivation,
-            temperature=temperature,
-            preferences_json={
-                "beds_min": state.beds_min,
-                "baths_min": state.baths_min,
-                "sqft_min": state.sqft_min,
-                "price_min": state.price_min,
-                "price_max": state.price_max,
-                "preferred_location": state.preferred_location,
-            },
-            matches_json=state.matches,
-        )
+        # Persist to database (best-effort — schema may not be initialized yet)
+        try:
+            await upsert_conversation(
+                contact_id=contact_id,
+                bot_type="buyer",
+                stage=state.stage,
+                temperature=temperature,
+                current_question=state.current_question,
+                questions_answered=state.questions_answered,
+                is_qualified=state.is_qualified,
+                conversation_history=state.conversation_history,
+                extracted_data=state.extracted_data,
+                last_activity=state.last_interaction,
+                conversation_started=state.conversation_started,
+                metadata_json={
+                    "preferred_location": state.preferred_location,
+                },
+            )
+            await upsert_buyer_preferences(
+                contact_id=contact_id,
+                location_id=state.location_id,
+                beds_min=state.beds_min,
+                baths_min=state.baths_min,
+                sqft_min=state.sqft_min,
+                price_min=state.price_min,
+                price_max=state.price_max,
+                preapproved=state.preapproved,
+                timeline_days=state.timeline_days,
+                motivation=state.motivation,
+                temperature=temperature,
+                preferences_json={
+                    "beds_min": state.beds_min,
+                    "baths_min": state.baths_min,
+                    "sqft_min": state.sqft_min,
+                    "price_min": state.price_min,
+                    "price_max": state.price_max,
+                    "preferred_location": state.preferred_location,
+                },
+                matches_json=state.matches,
+            )
+        except Exception as db_err:
+            self.logger.warning(f"DB persist skipped (schema not ready?): {db_err}")
 
     async def _generate_response(self, state: BuyerQualificationState, user_message: str) -> Dict[str, Any]:
         if state.current_question == 0:
