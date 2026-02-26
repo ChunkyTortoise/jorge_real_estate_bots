@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from bots.buyer_bot.buyer_prompts import BUYER_QUESTIONS, JORGE_BUYER_PHRASES, build_buyer_prompt
+from bots.buyer_bot.buyer_prompts import BUYER_QUESTIONS, BUYER_SYSTEM_PROMPT, JORGE_BUYER_PHRASES, build_buyer_prompt
 from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.cache_service import get_cache_service
 from bots.shared.claude_client import ClaudeClient
@@ -210,6 +210,8 @@ class JorgeBuyerBot:
             "conversation_started": state.conversation_started.isoformat() if state.conversation_started else None,
         }
         await self.cache.set(key, state_dict, ttl=604800)
+        if hasattr(self.cache, "sadd"):
+            await self.cache.sadd("buyer:active_contacts", contact_id, ttl=604800)
 
         # Persist to database
         await upsert_conversation(
@@ -266,7 +268,11 @@ class JorgeBuyerBot:
         prompt = build_buyer_prompt(current_q, user_message, next_question_text)
 
         try:
-            llm_response = await self.claude_client.agenerate(prompt=prompt, max_tokens=400)
+            llm_response = await self.claude_client.agenerate(
+                prompt=prompt,
+                system_prompt=BUYER_SYSTEM_PROMPT,
+                max_tokens=400,
+            )
             ai_message = llm_response.content
         except Exception as e:
             self.logger.error(f"Claude API error: {e}")
@@ -529,8 +535,23 @@ class JorgeBuyerBot:
         return state.matches
 
     async def get_all_active_conversations(self) -> List[BuyerQualificationState]:
-        # Redis set is not implemented in CacheService; return empty for now
-        return []
+        states: List[BuyerQualificationState] = []
+        if not hasattr(self.cache, "smembers"):
+            return []
+        contact_ids = await self.cache.smembers("buyer:active_contacts")
+
+        for contact_id in contact_ids:
+            state_dict = await self.cache.get(f"buyer:state:{contact_id}")
+            if not state_dict:
+                continue
+            state_data = state_dict.copy()
+            if state_data.get("last_interaction"):
+                state_data["last_interaction"] = datetime.fromisoformat(state_data["last_interaction"])
+            if state_data.get("conversation_started"):
+                state_data["conversation_started"] = datetime.fromisoformat(state_data["conversation_started"])
+            states.append(BuyerQualificationState(**state_data))
+
+        return states
 
 
 def create_buyer_bot(ghl_client: Optional[GHLClient] = None) -> JorgeBuyerBot:

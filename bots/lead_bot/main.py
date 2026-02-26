@@ -9,6 +9,7 @@ Production enhancements from jorge_deployment_package/jorge_fastapi_lead_bot.py:
 - Background task processing
 - Additional analysis endpoints
 """
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -21,6 +22,7 @@ from typing import Dict, Optional
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from api.routes.billing import router as billing_router, webhook_router as billing_webhook_router
 
 from bots.buyer_bot.buyer_bot import JorgeBuyerBot
 from bots.lead_bot.models import LeadAnalysisResponse, LeadMessage, PerformanceStatus
@@ -29,6 +31,7 @@ from bots.lead_bot.websocket_manager import websocket_manager
 from bots.seller_bot.jorge_seller_bot import JorgeSellerBot
 from bots.shared.auth_middleware import get_current_active_user
 from bots.shared.auth_service import get_auth_service
+from bots.shared.cache_service import get_cache_service
 from bots.shared.config import settings
 from bots.shared.event_broker import event_broker
 from bots.shared.ghl_client import GHLClient
@@ -49,12 +52,13 @@ lead_analyzer = None
 seller_bot_instance: Optional[JorgeSellerBot] = None
 buyer_bot_instance: Optional[JorgeBuyerBot] = None
 _ghl_client: Optional[GHLClient] = None
+_webhook_cache = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle management for FastAPI app."""
-    global lead_analyzer, seller_bot_instance, buyer_bot_instance, _ghl_client
+    global lead_analyzer, seller_bot_instance, buyer_bot_instance, _ghl_client, _webhook_cache
 
     logger.info("🔥 Starting Lead Bot...")
     logger.info(f"Environment: {settings.environment}")
@@ -62,6 +66,8 @@ async def lifespan(app: FastAPI):
 
     # Initialize services
     lead_analyzer = LeadAnalyzer()
+    _webhook_cache = get_cache_service()
+    logger.info("✅ Webhook cache initialized")
 
     try:
         seller_bot_instance = JorgeSellerBot()
@@ -113,13 +119,17 @@ app = FastAPI(
 )
 
 # CORS middleware for browser-based clients
+cors_origins = settings.cors_origins or []
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins if hasattr(settings, 'cors_origins') else ["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials="*" not in cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(billing_router)
+app.include_router(billing_webhook_router)
 
 
 def verify_ghl_signature(payload: bytes, signature: Optional[str]) -> bool:
@@ -364,6 +374,9 @@ async def unified_ghl_webhook(request: Request):
     """
     try:
         payload_bytes = await request.body()
+        signature = request.headers.get("x-wh-signature") or request.headers.get("X-HighLevel-Signature")
+        if not verify_ghl_signature(payload_bytes, signature):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
         payload = json.loads(payload_bytes.decode("utf-8"))
 
         contact_id = payload.get("contactId") or payload.get("contact_id") or payload.get("id")
@@ -382,108 +395,152 @@ async def unified_ghl_webhook(request: Request):
             logger.info(f"Unified webhook: empty message for {contact_id}, skipping")
             return {"status": "skipped", "reason": "empty message"}
 
-        # --- Determine bot type ---
-        # GHL workflow branches add customData; fall back to GHL API contact lookup.
-        custom_data: Dict = payload.get("customData") or {}
-        bot_type: str = (
-            custom_data.get("bot_type")
-            or custom_data.get("Bot Type")
-            or payload.get("bot_type")
-            or ""
-        )
+        # 2C: Input length cap — SMS is 160 chars; anything >2000 is abuse or email forwarding
+        if len(message_body) > 2000:
+            logger.warning(f"Long message truncated: contact={contact_id}, original_len={len(message_body)}")
+            message_body = message_body[:2000]
 
-        if not bot_type and _ghl_client:
-            try:
-                contact_resp = await _ghl_client.get_contact(contact_id)
-                custom_fields = (
-                    contact_resp.get("contact", contact_resp).get("customFields", [])
+        # 3D: Per-minute rate limiting
+        if _webhook_cache:
+            rate_key = f"rate:webhook:{datetime.now().strftime('%Y%m%d%H%M')}"
+            rate_val = await _webhook_cache.get(rate_key)
+            count = int(rate_val) if rate_val is not None else 0
+            if count >= settings.rate_limit_per_minute:
+                logger.warning(f"Webhook rate limit exceeded: {count} req/min for contact={contact_id}")
+                return {"status": "throttled", "reason": "rate_limit"}
+            await _webhook_cache.set(rate_key, str(count + 1), ttl=60)
+
+        # 2A: Message deduplication (5-minute TTL)
+        if _webhook_cache:
+            dedup_key = f"dedup:{contact_id}:{hashlib.md5(message_body.encode()).hexdigest()}"
+            if await _webhook_cache.get(dedup_key):
+                logger.info(f"Duplicate message skipped: contact={contact_id}")
+                return {"status": "skipped", "reason": "duplicate"}
+            await _webhook_cache.set(dedup_key, "1", ttl=300)
+
+        # 2B: Per-contact processing lock (30s TTL, wait up to 10s before throttling)
+        _lock_acquired = False
+        lock_key = f"lock:{contact_id}"
+        if _webhook_cache:
+            for _ in range(10):
+                if not await _webhook_cache.get(lock_key):
+                    break
+                await asyncio.sleep(1)
+            else:
+                logger.warning(f"Processing lock held for contact={contact_id}, throttling")
+                return {"status": "throttled", "reason": "processing_lock"}
+            await _webhook_cache.set(lock_key, "1", ttl=30)
+            _lock_acquired = True
+
+        try:
+            # --- Determine bot type ---
+            # GHL workflow branches add customData; fall back to GHL API contact lookup.
+            custom_data: Dict = payload.get("customData") or {}
+            bot_type: str = (
+                custom_data.get("bot_type")
+                or custom_data.get("Bot Type")
+                or payload.get("bot_type")
+                or ""
+            )
+
+            if not bot_type and _ghl_client:
+                try:
+                    contact_resp = await _ghl_client.get_contact(contact_id)
+                    custom_fields = (
+                        contact_resp.get("contact", contact_resp).get("customFields", [])
+                    )
+                    for cf in custom_fields:
+                        key = (cf.get("fieldKey") or cf.get("name") or "").lower().replace(" ", "_")
+                        if key in ("bot_type", "bot type"):
+                            bot_type = cf.get("value") or ""
+                            break
+                except Exception as e:
+                    logger.warning(f"Could not fetch contact for bot_type lookup: {e}")
+
+            bot_type_lower = (bot_type or "lead").lower()
+
+            contact_info = {
+                "name": payload.get("fullName") or custom_data.get("name"),
+                "email": payload.get("email") or custom_data.get("email"),
+                "phone": payload.get("phone") or custom_data.get("phone"),
+            }
+
+            logger.info(
+                f"Unified webhook: contact={contact_id}, bot_type={bot_type_lower!r}, "
+                f"msg={message_body[:60]!r}"
+            )
+
+            # --- Route to bot ---
+            response_message: Optional[str] = None
+            result_meta: Dict = {"bot_type": bot_type_lower}
+
+            if "seller" in bot_type_lower:
+                if not seller_bot_instance:
+                    logger.error("Seller bot not initialized")
+                    return {"status": "error", "detail": "seller bot unavailable"}
+                result = await seller_bot_instance.process_seller_message(
+                    contact_id=contact_id,
+                    location_id=location_id,
+                    message=message_body,
+                    contact_info=contact_info,
                 )
-                for cf in custom_fields:
-                    key = (cf.get("fieldKey") or cf.get("name") or "").lower().replace(" ", "_")
-                    if key in ("bot_type", "bot type"):
-                        bot_type = cf.get("value") or ""
-                        break
-            except Exception as e:
-                logger.warning(f"Could not fetch contact for bot_type lookup: {e}")
+                response_message = result.response_message
+                result_meta.update(
+                    {
+                        "temperature": result.seller_temperature,
+                        "questions_answered": result.questions_answered,
+                        "qualification_complete": result.qualification_complete,
+                    }
+                )
 
-        bot_type_lower = (bot_type or "lead").lower()
+            elif "buyer" in bot_type_lower:
+                if not buyer_bot_instance:
+                    logger.error("Buyer bot not initialized")
+                    return {"status": "error", "detail": "buyer bot unavailable"}
+                result = await buyer_bot_instance.process_buyer_message(
+                    contact_id=contact_id,
+                    location_id=location_id,
+                    message=message_body,
+                    contact_info=contact_info,
+                )
+                response_message = result.response_message
+                result_meta.update(
+                    {
+                        "temperature": result.buyer_temperature,
+                        "questions_answered": result.questions_answered,
+                        "qualification_complete": result.qualification_complete,
+                    }
+                )
 
-        contact_info = {
-            "name": payload.get("fullName") or custom_data.get("name"),
-            "email": payload.get("email") or custom_data.get("email"),
-            "phone": payload.get("phone") or custom_data.get("phone"),
-        }
+            else:
+                # Default: Lead bot analysis (no direct SMS reply — GHL workflows handle follow-up)
+                lead_data = {"id": contact_id, "message": message_body, **contact_info}
+                analysis, metrics = await lead_analyzer.analyze_lead(lead_data)
+                result_meta.update(
+                    {
+                        "score": analysis.get("score", 0),
+                        "temperature": analysis.get("temperature", "warm"),
+                        "jorge_priority": analysis.get("jorge_priority", "normal"),
+                    }
+                )
+                return {"status": "processed", **result_meta}
 
-        logger.info(
-            f"Unified webhook: contact={contact_id}, bot_type={bot_type_lower!r}, "
-            f"msg={message_body[:60]!r}"
-        )
+            # --- Send reply via GHL SMS (seller / buyer bots) ---
+            if response_message and _ghl_client:
+                try:
+                    await _ghl_client.send_message(contact_id, response_message, "SMS")
+                    logger.info(f"Reply sent to {contact_id} via GHL SMS")
+                except Exception as e:
+                    logger.error(f"Failed to send GHL reply to {contact_id}: {e}")
 
-        # --- Route to bot ---
-        response_message: Optional[str] = None
-        result_meta: Dict = {"bot_type": bot_type_lower}
-
-        if "seller" in bot_type_lower:
-            if not seller_bot_instance:
-                logger.error("Seller bot not initialized")
-                return {"status": "error", "detail": "seller bot unavailable"}
-            result = await seller_bot_instance.process_seller_message(
-                contact_id=contact_id,
-                location_id=location_id,
-                message=message_body,
-                contact_info=contact_info,
-            )
-            response_message = result.response_message
-            result_meta.update(
-                {
-                    "temperature": result.seller_temperature,
-                    "questions_answered": result.questions_answered,
-                    "qualification_complete": result.qualification_complete,
-                }
-            )
-
-        elif "buyer" in bot_type_lower:
-            if not buyer_bot_instance:
-                logger.error("Buyer bot not initialized")
-                return {"status": "error", "detail": "buyer bot unavailable"}
-            result = await buyer_bot_instance.process_buyer_message(
-                contact_id=contact_id,
-                location_id=location_id,
-                message=message_body,
-                contact_info=contact_info,
-            )
-            response_message = result.response_message
-            result_meta.update(
-                {
-                    "temperature": result.buyer_temperature,
-                    "questions_answered": result.questions_answered,
-                    "qualification_complete": result.qualification_complete,
-                }
-            )
-
-        else:
-            # Default: Lead bot analysis (no direct SMS reply — GHL workflows handle follow-up)
-            lead_data = {"id": contact_id, "message": message_body, **contact_info}
-            analysis, metrics = await lead_analyzer.analyze_lead(lead_data)
-            result_meta.update(
-                {
-                    "score": analysis.get("score", 0),
-                    "temperature": analysis.get("temperature", "warm"),
-                    "jorge_priority": analysis.get("jorge_priority", "normal"),
-                }
-            )
             return {"status": "processed", **result_meta}
 
-        # --- Send reply via GHL SMS (seller / buyer bots) ---
-        if response_message and _ghl_client:
-            try:
-                await _ghl_client.send_message(contact_id, response_message, "SMS")
-                logger.info(f"Reply sent to {contact_id} via GHL SMS")
-            except Exception as e:
-                logger.error(f"Failed to send GHL reply to {contact_id}: {e}")
+        finally:
+            if _lock_acquired and _webhook_cache:
+                await _webhook_cache.delete(lock_key)
 
-        return {"status": "processed", **result_meta}
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Unified webhook unhandled error: {e}", exc_info=True)
         # Return 200 so GHL does not retry
