@@ -45,12 +45,14 @@ from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
 
+_LEAD_PORT = os.environ.get("PORT", "8001")
+
 SERVICES = [
     {
         "name": "Lead Bot",
-        "command": ["python", "-m", "uvicorn", "bots.lead_bot.main:app", "--host", "0.0.0.0", "--port", "8001"],
-        "port": 8001,
-        "health_url": "http://localhost:8001/health",
+        "command": ["python", "-m", "uvicorn", "bots.lead_bot.main:app", "--host", "0.0.0.0", "--port", _LEAD_PORT],
+        "port": int(_LEAD_PORT),
+        "health_url": f"http://localhost:{_LEAD_PORT}/health",
         "enabled": True
     },
     {
