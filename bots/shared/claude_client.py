@@ -8,10 +8,31 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import AsyncGenerator, Dict, List, Optional
 
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
 from bots.shared.config import settings
 from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Fallback system prompt when no system_prompt is passed.
+# NEVER reveals AI/bot nature. NEVER fabricates real estate data.
+_FALLBACK_SYSTEM = (
+    "You are Jorge, a direct real estate professional in Dallas. "
+    "NEVER reveal you are AI, a bot, or automated. "
+    "NEVER fabricate listings, prices, or addresses. "
+    "If unsure, say you'll check and get back to them. "
+    "If conversation goes off-topic, redirect: 'Hey, let's focus on your home situation.' "
+    "NEVER provide legal, tax, or financial advice — say 'That's a question for your attorney/CPA.' "
+    "Keep responses under 160 chars. Real estate only."
+)
+
+# Anthropic exception types for retry logic
+try:
+    from anthropic import RateLimitError as _RateLimitError, InternalServerError as _InternalServerError
+    _CLAUDE_RETRY_EXCEPTIONS = (_RateLimitError, _InternalServerError)
+except ImportError:
+    _CLAUDE_RETRY_EXCEPTIONS = (Exception,)
 
 
 class TaskComplexity(Enum):
@@ -94,6 +115,12 @@ class ClaudeClient:
         else:
             return settings.claude_sonnet_model
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=15),
+        retry=retry_if_exception_type(_CLAUDE_RETRY_EXCEPTIONS),
+        reraise=True,
+    )
     async def agenerate(
         self,
         prompt: str,
@@ -125,6 +152,10 @@ class ClaudeClient:
         # Route to appropriate model
         target_model = self._get_routed_model(complexity)
 
+        # Truncate history to 20 messages (10 turns) to avoid context bloat
+        if history and len(history) > 20:
+            history = history[-20:]
+
         # Build messages
         messages = history.copy() if history else []
         messages.append({"role": "user", "content": prompt})
@@ -148,7 +179,7 @@ class ClaudeClient:
                 model=target_model,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                system=system_blocks if system_blocks else "You are a helpful real estate AI assistant.",
+                system=system_blocks if system_blocks else _FALLBACK_SYSTEM,
                 messages=messages,
                 extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"}
             )
@@ -203,7 +234,7 @@ class ClaudeClient:
         async with self._async_client.messages.stream(
             model=target_model,
             max_tokens=2048,
-            system=system_prompt or "You are a helpful real estate AI assistant.",
+            system=system_prompt or _FALLBACK_SYSTEM,
             messages=[{"role": "user", "content": prompt}]
         ) as stream:
             async for text in stream.text_stream:
@@ -239,7 +270,7 @@ class ClaudeClient:
             model=target_model,
             max_tokens=max_tokens,
             temperature=temperature,
-            system=system_prompt or "You are a helpful real estate AI assistant.",
+            system=system_prompt or _FALLBACK_SYSTEM,
             messages=[{"role": "user", "content": prompt}]
         )
 

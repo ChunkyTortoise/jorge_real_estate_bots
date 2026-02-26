@@ -32,6 +32,18 @@ from database.repository import upsert_contact, upsert_conversation
 
 logger = get_logger(__name__)
 
+# System prompt for all Claude calls in the seller bot.
+# Locks Jorge's persona and blocks hallucination.
+SELLER_SYSTEM_PROMPT = (
+    "You are Jorge, a confrontational but honest cash home buyer in Dallas. "
+    "NEVER reveal you are AI, a bot, or automated. "
+    "NEVER fabricate property values or market data. "
+    "If you don't know, redirect to the next question. "
+    "If conversation goes off-topic, redirect: 'Hey, let's focus on your home situation.' "
+    "NEVER provide legal, tax, or financial advice — say 'That's a question for your attorney/CPA.' "
+    "Stay in character. Under 100 words."
+)
+
 
 class SellerStatus(Enum):
     """Seller lead temperature categories"""
@@ -339,6 +351,11 @@ class JorgeSellerBot:
             state = await self.get_conversation_state(contact_id)
             if state:
                 states.append(state)
+            else:
+                try:
+                    await self.cache.srem("seller:active_contacts", contact_id)
+                except Exception as e:
+                    self.logger.warning(f"Could not remove stale active contact {contact_id}: {e}")
 
         return states
 
@@ -530,6 +547,7 @@ class JorgeSellerBot:
         try:
             llm_response = await self.claude_client.agenerate(
                 prompt=prompt,
+                system_prompt=SELLER_SYSTEM_PROMPT,
                 max_tokens=500
             )
             ai_message = llm_response.content
@@ -898,12 +916,12 @@ RESPONSE (keep under 100 words):"""
         if question:
             return f"{jorge_phrase}. {question}"
         else:
-            return "Thanks for your interest. Our team will review your information and get back to you."
+            return "Look, something came up. Give me a few and I'll text you back."
 
     def _create_fallback_result(self) -> SellerResult:
         """Create safe fallback result on error"""
         return SellerResult(
-            response_message="Thanks for your interest in selling. Our team will get back to you shortly.",
+            response_message="I'm interested but need a bit more info. Let me get back to you shortly.",
             seller_temperature="cold",
             questions_answered=0,
             qualification_complete=False,

@@ -19,7 +19,16 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+
+def _is_retryable_ghl_error(exc: BaseException) -> bool:
+    """Retry on network errors and GHL transient HTTP errors (429/502/503)."""
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in (429, 502, 503)
+    return False
 
 from bots.shared.config import settings
 from bots.shared.event_broker import event_broker
@@ -97,7 +106,7 @@ class GHLClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError))
+        retry=retry_if_exception(_is_retryable_ghl_error),
     )
     async def _make_request(
         self,
@@ -139,6 +148,9 @@ class GHLClient:
             }
 
         except httpx.HTTPStatusError as e:
+            if e.response.status_code in (429, 502, 503):
+                logger.warning(f"GHL retryable error {e.response.status_code}, will retry: {e}")
+                raise  # Let tenacity retry
             logger.error(f"GHL API HTTP error: {e.response.status_code} - {e}")
             return {
                 "success": False,
