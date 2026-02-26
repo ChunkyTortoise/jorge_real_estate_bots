@@ -4,6 +4,8 @@ Cache Service for Jorge's Real Estate Bots.
 Provides Redis-backed caching with memory fallback for <500ms performance.
 Simplified version from EnterpriseHub focused on Jorge's needs.
 """
+from __future__ import annotations
+
 import pickle
 import time
 from abc import ABC, abstractmethod
@@ -32,6 +34,21 @@ class AbstractCache(ABC):
     @abstractmethod
     async def delete(self, key: str) -> bool:
         """Delete value from cache."""
+        pass
+
+    @abstractmethod
+    async def sadd(self, key: str, *values: str, ttl: Optional[int] = None) -> int:
+        """Add one or more values to a set."""
+        pass
+
+    @abstractmethod
+    async def smembers(self, key: str) -> set[str]:
+        """Get all members from a set."""
+        pass
+
+    @abstractmethod
+    async def srem(self, key: str, *values: str) -> int:
+        """Remove one or more values from a set."""
         pass
 
 
@@ -64,6 +81,54 @@ class MemoryCache(AbstractCache):
             del self._expiry[key]
             return True
         return False
+
+    async def sadd(self, key: str, *values: str, ttl: Optional[int] = None) -> int:
+        if not values:
+            return 0
+
+        current = self._cache.get(key)
+        if not isinstance(current, set):
+            current = set()
+
+        before_count = len(current)
+        current.update(values)
+        self._cache[key] = current
+        if ttl:
+            self._expiry[key] = time.time() + ttl
+        elif key not in self._expiry:
+            self._expiry[key] = time.time() + 86400
+        return len(current) - before_count
+
+    async def smembers(self, key: str) -> set[str]:
+        if time.time() > self._expiry.get(key, 0):
+            await self.delete(key)
+            return set()
+
+        value = self._cache.get(key)
+        if isinstance(value, set):
+            return set(value)
+        return set()
+
+    async def srem(self, key: str, *values: str) -> int:
+        if not values:
+            return 0
+
+        current = self._cache.get(key)
+        if not isinstance(current, set):
+            return 0
+
+        removed = 0
+        for value in values:
+            if value in current:
+                current.remove(value)
+                removed += 1
+
+        if current:
+            self._cache[key] = current
+        else:
+            await self.delete(key)
+
+        return removed
 
 
 class RedisCache(AbstractCache):
@@ -136,6 +201,41 @@ class RedisCache(AbstractCache):
             return value
         except Exception as e:
             logger.error(f"Redis increment error for key {key}: {e}")
+            return 0
+
+    async def sadd(self, key: str, *values: str, ttl: Optional[int] = None) -> int:
+        if not self.enabled or not values:
+            return 0
+        try:
+            added = await self.redis.sadd(key, *values)
+            if ttl:
+                await self.redis.expire(key, ttl)
+            return int(added)
+        except Exception as e:
+            logger.error(f"Redis sadd error for key {key}: {e}")
+            return 0
+
+    async def smembers(self, key: str) -> set[str]:
+        if not self.enabled:
+            return set()
+        try:
+            members = await self.redis.smembers(key)
+            return {
+                m.decode("utf-8") if isinstance(m, bytes) else str(m)
+                for m in members
+            }
+        except Exception as e:
+            logger.error(f"Redis smembers error for key {key}: {e}")
+            return set()
+
+    async def srem(self, key: str, *values: str) -> int:
+        if not self.enabled or not values:
+            return 0
+        try:
+            removed = await self.redis.srem(key, *values)
+            return int(removed)
+        except Exception as e:
+            logger.error(f"Redis srem error for key {key}: {e}")
             return 0
 
 
@@ -231,6 +331,29 @@ class CacheService:
         new_value = int(current) + amount
         await self.set(key, new_value, ttl or 300)
         return new_value
+
+    async def sadd(self, key: str, *values: str, ttl: Optional[int] = None) -> int:
+        """Add one or more values to a set in cache backends."""
+        added = await self.backend.sadd(key, *values, ttl=ttl)
+        if self.fallback_backend != self.backend:
+            await self.fallback_backend.sadd(key, *values, ttl=ttl)
+        return added
+
+    async def smembers(self, key: str) -> set[str]:
+        """Get all members from a set in cache backends."""
+        members = await self.backend.smembers(key)
+        if members:
+            return members
+        if self.fallback_backend != self.backend:
+            return await self.fallback_backend.smembers(key)
+        return set()
+
+    async def srem(self, key: str, *values: str) -> int:
+        """Remove one or more values from a set in cache backends."""
+        removed = await self.backend.srem(key, *values)
+        if self.fallback_backend != self.backend:
+            await self.fallback_backend.srem(key, *values)
+        return removed
 
     async def cached_computation(
         self,
