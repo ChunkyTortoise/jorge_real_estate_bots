@@ -22,8 +22,6 @@ from typing import Dict, Optional
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
-from api.routes.billing import router as billing_router, webhook_router as billing_webhook_router
-
 from bots.buyer_bot.buyer_bot import JorgeBuyerBot
 from bots.lead_bot.models import LeadAnalysisResponse, LeadMessage, PerformanceStatus
 from bots.lead_bot.services.lead_analyzer import LeadAnalyzer
@@ -127,10 +125,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.include_router(billing_router)
-app.include_router(billing_webhook_router)
-
 
 def verify_ghl_signature(payload: bytes, signature: Optional[str]) -> bool:
     if not signature:
