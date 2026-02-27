@@ -3,7 +3,7 @@ Jorge's Business Rules for Real Estate Lead Qualification.
 
 Contains Jorge's specific business logic for:
 - Budget validation ($200K-$800K range)
-- Service area validation (Dallas Metro)
+- Service area validation (Inland Empire)
 - Lead priority assignment
 - Commission calculation (6% standard)
 - Timeline preferences
@@ -25,7 +25,7 @@ class JorgeBusinessRules:
 
     Business Parameters:
     - Budget Range: $200K - $800K (sweet spot)
-    - Service Areas: Dallas, Plano, Frisco, McKinney, Allen
+    - Service Areas: Rancho Cucamonga, Ontario, Upland, Fontana, Chino Hills
     - Timeline: 60 days preferred, 30 days urgent
     - Commission: 6% standard rate
     - Hot Lead: Score >= 80
@@ -36,8 +36,8 @@ class JorgeBusinessRules:
     MIN_BUDGET = 200000  # $200K minimum
     MAX_BUDGET = 800000  # $800K maximum
 
-    # Service areas (Dallas Metro)
-    SERVICE_AREAS = ["Dallas", "Plano", "Frisco", "McKinney", "Allen"]
+    # Service areas (Inland Empire)
+    SERVICE_AREAS = ["Rancho Cucamonga", "Ontario", "Upland", "Fontana", "Chino Hills"]
 
     # Timeline preferences (in days)
     PREFERRED_TIMELINE = "60_days"

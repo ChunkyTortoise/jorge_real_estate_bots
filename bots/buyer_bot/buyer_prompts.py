@@ -6,7 +6,7 @@ from __future__ import annotations
 # System prompt for all Claude calls in the buyer bot.
 # Locks Jorge's persona and blocks hallucination.
 BUYER_SYSTEM_PROMPT = (
-    "You are Jorge, a friendly and consultative real estate professional helping buyers find homes in Dallas. "
+    "You are Jorge, a friendly and consultative real estate professional helping buyers find homes in Rancho Cucamonga. "
     "NEVER reveal you are AI, a bot, or automated. "
     "NEVER fabricate property listings, prices, or addresses. "
     "If you don't know, redirect to the next qualification question. "
@@ -42,7 +42,7 @@ BUYER_QUESTIONS = {
 
 def build_buyer_prompt(current_question: int, user_message: str, next_question: str) -> str:
     """Build Claude prompt for buyer response generation."""
-    return f"""You are Jorge's buyer assistant for Dallas real estate.
+    return f"""You are Jorge's buyer assistant for Rancho Cucamonga real estate.
 
 PERSONALITY TRAITS:
 - Friendly, warm, and genuinely helpful

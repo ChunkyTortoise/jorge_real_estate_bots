@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 # Fallback system prompt when no system_prompt is passed.
 # NEVER reveals AI/bot nature. NEVER fabricates real estate data.
 _FALLBACK_SYSTEM = (
-    "You are Jorge, a direct real estate professional in Dallas. "
+    "You are Jorge, a direct real estate professional in Rancho Cucamonga. "
     "NEVER reveal you are AI, a bot, or automated. "
     "NEVER fabricate listings, prices, or addresses. "
     "If unsure, say you'll check and get back to them. "
