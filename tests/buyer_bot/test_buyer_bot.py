@@ -250,3 +250,65 @@ class TestBuyerBotBugFixes:
         assert f"buyer_{BuyerStatus.COLD}" in remove_tags
         add_tags = {a["tag"] for a in actions if a.get("type") == "add_tag"}
         assert f"buyer_{BuyerStatus.HOT}" in add_tags
+
+
+class TestBuyerBotEvalFixes:
+    """Tests for evaluation-identified fixes: Q1 sqft, Q2 ambiguous, opportunity dedup."""
+
+    @pytest.fixture
+    def bot(self):
+        return JorgeBuyerBot()
+
+    # --- Fix: Buyer Q1 sqft_min advances ---
+
+    @pytest.mark.asyncio
+    async def test_q1_sqft_only_advances(self, bot):
+        """'I want 2000 sqft' should advance Q1 (sqft_min counts)."""
+        extracted = await bot._extract_qualification_data("I want 2000 sqft", 1)
+        assert extracted.get("sqft_min") == 2000
+        assert bot._should_advance_question(extracted, 1) is True
+
+    # --- Fix: Buyer Q2 ambiguous financing advances ---
+
+    @pytest.mark.asyncio
+    async def test_q2_ambiguous_financing_defaults_false_and_advances(self, bot):
+        """'still figuring it out' sets preapproved=False so Q2 always advances."""
+        extracted = await bot._extract_qualification_data("still figuring it out", 2)
+        assert "preapproved" in extracted
+        assert extracted["preapproved"] is False
+        assert bot._should_advance_question(extracted, 2) is True
+
+    @pytest.mark.asyncio
+    async def test_q2_working_on_loan_defaults_false(self, bot):
+        """'working on my loan' sets preapproved=False (does not stall)."""
+        extracted = await bot._extract_qualification_data("working on my loan", 2)
+        assert extracted.get("preapproved") is False
+
+    # --- Fix: Opportunity created only once ---
+
+    @pytest.mark.asyncio
+    async def test_opportunity_not_created_twice(self, bot):
+        """Second call to _generate_actions does not add upsert_opportunity if already created."""
+        state = BuyerQualificationState(contact_id="c1", location_id="loc1")
+        state.opportunity_created = True
+        from unittest.mock import patch, AsyncMock
+        from bots.shared.config import settings
+        with patch.object(settings, "buyer_pipeline_id", "pipe-123"):
+            actions = await bot._generate_actions("c1", "loc1", state, "hot")
+        opp_actions = [a for a in actions if a.get("type") == "upsert_opportunity"]
+        assert len(opp_actions) == 0
+
+    @pytest.mark.asyncio
+    async def test_opportunity_created_on_first_call(self, bot):
+        """First call with pipeline_id set creates exactly one opportunity."""
+        state = BuyerQualificationState(contact_id="c1", location_id="loc1")
+        state.preapproved = True
+        state.timeline_days = 20
+        assert state.opportunity_created is False
+        from unittest.mock import patch
+        from bots.shared.config import settings
+        with patch.object(settings, "buyer_pipeline_id", "pipe-123"):
+            actions = await bot._generate_actions("c1", "loc1", state, "hot")
+        opp_actions = [a for a in actions if a.get("type") == "upsert_opportunity"]
+        assert len(opp_actions) == 1
+        assert state.opportunity_created is True

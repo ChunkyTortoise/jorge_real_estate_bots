@@ -762,3 +762,44 @@ class TestSellerBotEdgeCases:
         # All should be processed independently
         assert len(results) == 3
         assert all(r is not None for r in results)
+
+
+class TestSellerBotEvalFixes:
+    """Tests for evaluation-identified fixes: Q2 price fallback, history format."""
+
+    @pytest.fixture
+    def bot(self):
+        return JorgeSellerBot()
+
+    # --- Fix: Seller Q2 text-only price advances ---
+
+    @pytest.mark.asyncio
+    async def test_q2_numeric_price_still_works(self, bot):
+        """$350k still extracts correctly via regex fast path."""
+        extracted = await bot._extract_qualification_data("I think it's worth $350k", 2)
+        assert extracted.get("price_expectation") == 350000
+
+    @pytest.mark.asyncio
+    async def test_q2_text_price_sets_default_on_haiku_failure(self, bot):
+        """When Haiku fails, Q2 defaults to 300000 so conversation always advances."""
+        from unittest.mock import AsyncMock, patch
+        with patch.object(bot.claude_client, "agenerate", side_effect=Exception("API down")):
+            extracted = await bot._extract_qualification_data("around three fifty", 2)
+        assert "price_expectation" in extracted
+        assert extracted["price_expectation"] == 300000
+
+    @pytest.mark.asyncio
+    async def test_q2_should_advance_with_default_price(self, bot):
+        """_should_advance_question returns True when price_expectation set to default."""
+        extracted = {"price_expectation": 300000}
+        assert bot._should_advance_question(extracted, 2) is True
+
+    # --- Fix: Seller history format ---
+
+    def test_record_answer_stores_bot_response_field(self, bot):
+        """record_answer initializes bot_response as empty string."""
+        from bots.seller_bot.jorge_seller_bot import SellerQualificationState
+        state = SellerQualificationState(contact_id="c1", location_id="loc1")
+        state.record_answer(1, "needs work", {"condition": "needs_major_repairs"})
+        assert "bot_response" in state.conversation_history[-1]
+        assert state.conversation_history[-1]["bot_response"] == ""
