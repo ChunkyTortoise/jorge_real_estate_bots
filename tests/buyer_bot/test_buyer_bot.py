@@ -312,3 +312,103 @@ class TestBuyerBotEvalFixes:
         opp_actions = [a for a in actions if a.get("type") == "upsert_opportunity"]
         assert len(opp_actions) == 1
         assert state.opportunity_created is True
+
+
+# ─── Fix 1: Buyer history passed to Claude ───────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_buyer_generate_response_passes_history_to_claude(dummy_cache):
+    """_generate_response must pass conversation history to agenerate."""
+    from unittest.mock import AsyncMock, patch
+    from bots.shared.claude_client import LLMResponse
+
+    bot = JorgeBuyerBot()
+    bot.cache = dummy_cache
+
+    state = BuyerQualificationState(contact_id="c1", location_id="loc1")
+    state.current_question = 1
+    state.conversation_history = [
+        {"question": 0, "answer": "I want 3 beds", "bot_response": "Great, let me ask...", "timestamp": "t", "extracted_data": {}},
+    ]
+
+    captured_kwargs = {}
+
+    async def mock_agenerate(**kwargs):
+        captured_kwargs.update(kwargs)
+        return LLMResponse(content="Tell me about pre-approval.", model="test", usage={})
+
+    with patch.object(bot.claude_client, "agenerate", side_effect=mock_agenerate):
+        await bot._generate_response(state, "3 beds in Dallas under 400k")
+
+    assert "history" in captured_kwargs
+    assert len(captured_kwargs["history"]) >= 1
+    assert captured_kwargs["history"][0]["role"] == "user"
+
+
+# ─── Fix 2: Q0 message preserved in conversation history ─────────────────────
+
+@pytest.mark.asyncio
+async def test_buyer_q0_message_preserved_in_history(dummy_cache):
+    """Initial Q0 message is stored in conversation_history before advancing."""
+    bot = JorgeBuyerBot()
+    bot.cache = dummy_cache
+
+    state = BuyerQualificationState(contact_id="c1", location_id="loc1")
+    assert state.current_question == 0
+
+    await bot._generate_response(state, "Looking for 3 beds in Dallas under 500k")
+
+    assert len(state.conversation_history) == 1
+    assert state.conversation_history[0]["question"] == 0
+    assert "Looking for 3 beds" in state.conversation_history[0]["answer"]
+    assert state.conversation_history[0]["bot_response"] != ""
+
+
+# ─── Fix 7: Price regex doesn't corrupt zip codes or city names ───────────────
+
+@pytest.mark.asyncio
+async def test_buyer_price_mckinney_k_not_global():
+    """'McKinney' should not cause non-price numbers to be multiplied by 1000."""
+    bot = JorgeBuyerBot()
+    data = await bot._extract_qualification_data("3 beds in McKinney under 500k", 1)
+    assert data.get("price_max") == 500000
+    assert data.get("beds_min") == 3
+
+
+@pytest.mark.asyncio
+async def test_buyer_price_zip_code_not_extracted():
+    """A zip code like '75024' should not be extracted as a price."""
+    bot = JorgeBuyerBot()
+    data = await bot._extract_qualification_data("75024 area, 3 beds", 1)
+    assert "price_max" not in data
+    assert "price_min" not in data
+
+
+@pytest.mark.asyncio
+async def test_buyer_price_explicit_k_suffix():
+    """'500k' and '$300k' should be correctly parsed as prices."""
+    bot = JorgeBuyerBot()
+    data = await bot._extract_qualification_data("budget between 300k and 500k", 1)
+    assert data.get("price_min") == 300000
+    assert data.get("price_max") == 500000
+
+
+# ─── Fix 10: State deserialization guard ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_buyer_state_deserialization_ignores_unknown_keys(dummy_cache):
+    """Extra keys in cached state dict do not crash deserialization."""
+    from bots.buyer_bot.buyer_bot import BuyerQualificationState
+    state = BuyerQualificationState(contact_id="c1", location_id="loc1")
+    bot = JorgeBuyerBot()
+    bot.cache = dummy_cache
+    await bot.save_conversation_state("c1", state)
+
+    # Inject an unknown key into the cached dict
+    cached = await dummy_cache.get("buyer:state:c1")
+    cached["unknown_future_field"] = "some_value"
+    await dummy_cache.set("buyer:state:c1", cached)
+
+    # Should not raise TypeError
+    loaded = await bot._get_or_create_state("c1", "loc1")
+    assert loaded.contact_id == "c1"
