@@ -137,8 +137,10 @@ class JorgeBuyerBot:
         contact_info: Optional[Dict[str, Any]] = None,
     ) -> BuyerResult:
         # --- Jorge-Active takeover check ---
-        _tags: list = (contact_info or {}).get("tags") or []
-        if not _tags:
+        if contact_info is not None:
+            _tags: list = contact_info.get("tags") or []
+        else:
+            _tags = []
             try:
                 _contact_data = await self.ghl_client.get_contact(contact_id)
                 _tags = _contact_data.get("tags") or []

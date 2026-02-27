@@ -31,6 +31,31 @@ from bots.shared.auth_middleware import get_current_active_user
 from bots.shared.auth_service import get_auth_service
 from bots.shared.bot_settings import get_all_overrides as _settings_get_all, update_settings as _settings_update, KNOWN_BOTS as _known_bots
 from bots.shared.cache_service import get_cache_service
+
+_SETTINGS_CACHE_KEY = "admin:bot_settings"
+_SETTINGS_CACHE_TTL = 7_776_000  # 90 days
+
+
+async def _settings_load(cache) -> None:
+    """Restore bot settings overrides from cache on startup."""
+    try:
+        data = await cache.get(_SETTINGS_CACHE_KEY)
+        if data:
+            for bot, overrides in data.items():
+                if overrides:
+                    _settings_update(bot, overrides)
+            restored = [b for b, v in data.items() if v]
+            logger.info(f"Restored bot settings from cache: {restored}")
+    except Exception as e:
+        logger.warning(f"Could not restore bot settings from cache: {e}")
+
+
+async def _settings_save(cache) -> None:
+    """Persist all bot settings overrides to cache."""
+    try:
+        await cache.set(_SETTINGS_CACHE_KEY, _settings_get_all(), ttl=_SETTINGS_CACHE_TTL)
+    except Exception as e:
+        logger.warning(f"Could not persist bot settings to cache: {e}")
 from bots.shared.config import settings
 from bots.shared.event_broker import event_broker
 from bots.shared.ghl_client import GHLClient
@@ -67,6 +92,8 @@ async def lifespan(app: FastAPI):
     lead_analyzer = LeadAnalyzer()
     _webhook_cache = get_cache_service()
     logger.info("✅ Webhook cache initialized")
+    await _settings_load(_webhook_cache)
+    logger.info("✅ Bot tone settings loaded from cache")
 
     try:
         seller_bot_instance = JorgeSellerBot()
@@ -890,6 +917,7 @@ async def admin_update_settings(bot: str, request: Request):
         raise HTTPException(status_code=404, detail=f"Unknown bot: {bot}. Valid: {sorted(_known_bots)}")
     body = await request.json()
     _settings_update(bot, body)
+    await _settings_save(_webhook_cache)
     logger.info(f"Admin: updated {bot} settings — keys: {list(body)}")
     return {"status": "ok", "bot": bot, "updated_keys": list(body)}
 
