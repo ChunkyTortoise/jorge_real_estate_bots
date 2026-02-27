@@ -34,7 +34,7 @@ class LeadAnalyzer:
 
     Analyzes leads against Jorge's criteria:
     - Price range: $200K-$800K
-    - Service areas: Dallas, Plano, Frisco, McKinney, Allen
+    - Service areas: Rancho Cucamonga, Ontario, Upland, Fontana, Chino Hills
     - Timeline: Preferably <60 days
     - Buyer/Seller motivation assessment
 

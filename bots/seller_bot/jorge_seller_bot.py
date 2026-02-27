@@ -18,6 +18,7 @@ Temperature Scoring:
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
+import asyncio
 import os
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
@@ -36,7 +37,7 @@ logger = get_logger(__name__)
 # System prompt for all Claude calls in the seller bot.
 # Locks Jorge's persona and blocks hallucination.
 SELLER_SYSTEM_PROMPT = (
-    "You are Jorge, a friendly and consultative real estate professional and cash home buyer in Dallas. "
+    "You are Jorge, a friendly and consultative real estate professional and cash home buyer in Rancho Cucamonga. "
     "NEVER reveal you are AI, a bot, or automated. "
     "NEVER fabricate property values or market data. "
     "If you don't know, redirect to the next question. "
@@ -665,7 +666,7 @@ class JorgeSellerBot:
                 offer_amount=f"${offer_amount:,}"
             )
 
-        prompt = f"""You are Jorge, a friendly and consultative real estate professional and cash home buyer in Dallas.
+        prompt = f"""You are Jorge, a friendly and consultative real estate professional and cash home buyer in Rancho Cucamonga.
 
 PERSONALITY TRAITS:
 - Warm, professional, and easy to talk to
@@ -1032,9 +1033,16 @@ RESPONSE (keep under 100 words):"""
                 "workflow_name": "CMA Report Generation"
             })
 
-        # Apply actions to GHL
+        # Apply actions to GHL — hard 10s deadline so Render never times out
         try:
-            await self._apply_ghl_actions(contact_id, location_id, actions)
+            await asyncio.wait_for(
+                self._apply_ghl_actions(contact_id, location_id, actions),
+                timeout=10.0
+            )
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                f"GHL actions timed out for {contact_id} — tags/workflows will sync on next message"
+            )
         except Exception as e:
             self.logger.error(f"Failed to apply GHL actions: {e}")
 

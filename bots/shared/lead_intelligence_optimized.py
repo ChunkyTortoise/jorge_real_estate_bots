@@ -77,38 +77,38 @@ class PredictiveLeadScorerV2Optimized:
             "flexible": ["flexible", "no rush", "whenever", "someday", "maybe"]
         }
 
-        # Dallas metro area locations
+        # Inland Empire area locations
         self.location_keywords = {
             # Core cities
-            "dallas": ["dallas", "downtown dallas"],
-            "plano": ["plano"],
-            "frisco": ["frisco"],
-            "mckinney": ["mckinney"],
-            "allen": ["allen"],
+            "rancho_cucamonga": ["rancho cucamonga", "rancho", "rc"],
+            "ontario": ["ontario"],
+            "upland": ["upland"],
+            "fontana": ["fontana"],
+            "chino_hills": ["chino hills"],
 
-            # Additional Dallas metro areas
-            "richardson": ["richardson"],
-            "garland": ["garland"],
-            "irving": ["irving"],
-            "arlington": ["arlington"],
-            "fort_worth": ["fort worth", "fortworth"],
-            "mesquite": ["mesquite"],
-            "carrollton": ["carrollton"],
-            "denton": ["denton"],
-            "lewisville": ["lewisville"],
-            "flower_mound": ["flower mound"],
+            # Additional Inland Empire areas
+            "chino": ["chino"],
+            "claremont": ["claremont"],
+            "pomona": ["pomona"],
+            "montclair": ["montclair"],
+            "rialto": ["rialto"],
+            "colton": ["colton"],
+            "san_bernardino": ["san bernardino"],
+            "redlands": ["redlands"],
+            "loma_linda": ["loma linda"],
+            "highland": ["highland"],
 
             # Premium areas
-            "highland_park": ["highland park"],
-            "university_park": ["university park"],
-            "southlake": ["southlake"],
-            "colleyville": ["colleyville"],
+            "alta_loma": ["alta loma"],
+            "etiwanda": ["etiwanda"],
+            "day_creek": ["day creek"],
+            "heritage_village": ["heritage village"],
 
-            # Specific neighborhoods
-            "uptown": ["uptown", "uptown dallas"],
-            "deep_ellum": ["deep ellum"],
-            "bishop_arts": ["bishop arts"],
-            "lakewood": ["lakewood"],
+            # Neighboring areas
+            "corona": ["corona"],
+            "eastvale": ["eastvale"],
+            "norco": ["norco"],
+            "mira_loma": ["mira loma"],
         }
 
         self.financing_keywords = {
