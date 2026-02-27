@@ -192,6 +192,29 @@ async def test_remove_tag_success(ghl_client, mock_httpx_client):
     assert result is True
 
 
+@pytest.mark.asyncio
+async def test_remove_tag_uses_json_body_not_url_path(ghl_client, mock_httpx_client):
+    """remove_tag must send JSON body {tags: [tag]}, not embed the tag in the URL."""
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.content = b'{"success": true}'
+    mock_response.json.return_value = {"success": True}
+    mock_response.raise_for_status = Mock()
+
+    mock_httpx_client.request.return_value = mock_response
+    ghl_client._client = mock_httpx_client
+
+    await ghl_client.remove_tag("contact_abc", "seller_hot")
+
+    call_kwargs = mock_httpx_client.request.call_args
+    # URL must NOT contain the tag name
+    url = call_kwargs.kwargs.get("url") or call_kwargs.args[1] if len(call_kwargs.args) > 1 else ""
+    assert "seller_hot" not in url
+    # JSON body must contain the tag
+    json_body = call_kwargs.kwargs.get("json") or {}
+    assert json_body.get("tags") == ["seller_hot"]
+
+
 # ========== CUSTOM FIELD TESTS ==========
 
 @pytest.mark.asyncio

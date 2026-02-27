@@ -16,7 +16,7 @@ import hmac
 import json
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -239,21 +239,13 @@ async def health_check():
 
 @app.get("/health/aggregate")
 async def aggregate_health():
-    """Check all bots, Redis, and Postgres. Returns unified status JSON."""
-    import httpx
-
-
+    """Check bots (in-process), Redis, and Postgres. Returns unified status JSON."""
     results: Dict[str, str] = {}
 
-    # Check sibling bot health endpoints
-    bot_ports = {"lead_bot": 8001, "seller_bot": 8002, "buyer_bot": 8003}
-    async with httpx.AsyncClient(timeout=3.0) as client:
-        for name, port in bot_ports.items():
-            try:
-                resp = await client.get(f"http://localhost:{port}/health")
-                results[name] = "ok" if resp.status_code == 200 else "degraded"
-            except Exception:
-                results[name] = "down"
+    # All bots run in the same process on Render — they are healthy if this endpoint responds
+    results["lead_bot"] = "ok"
+    results["seller_bot"] = "ok"
+    results["buyer_bot"] = "ok"
 
     # Check Redis
     try:
@@ -274,8 +266,8 @@ async def aggregate_health():
     except Exception:
         results["postgres"] = "down"
 
-    overall = "healthy" if all(v == "ok" for v in results.values()) else "degraded"
-    return {"status": overall, "services": results, "timestamp": datetime.now().isoformat()}
+    overall = "healthy" if all(v in ("ok", "not_configured") for v in results.values()) else "degraded"
+    return {"status": overall, "services": results, "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.post("/ghl/webhook/new-lead")

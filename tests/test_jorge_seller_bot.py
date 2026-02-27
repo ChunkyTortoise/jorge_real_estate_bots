@@ -193,7 +193,8 @@ class TestJorgeSellerBot:
 
         assert isinstance(result, SellerResult)
         assert result.response_message is not None
-        assert result.questions_answered == 1
+        # Q0 greeting asks Q1 but no answer has been recorded yet — questions_answered stays 0
+        assert result.questions_answered == 0
         assert result.qualification_complete is False
         assert "condition" in result.response_message.lower() or "repair" in result.response_message.lower()
 
@@ -803,3 +804,148 @@ class TestSellerBotEvalFixes:
         state.record_answer(1, "needs work", {"condition": "needs_major_repairs"})
         assert "bot_response" in state.conversation_history[-1]
         assert state.conversation_history[-1]["bot_response"] == ""
+
+
+# ─── Fix 2: Q0 message preserved ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_seller_q0_message_preserved_in_history():
+    """Initial Q0 message is appended to conversation_history before advancing."""
+    from bots.shared.cache_service import get_cache_service
+
+    bot = JorgeSellerBot()
+    state = SellerQualificationState(contact_id="c1", location_id="loc1")
+    assert state.current_question == 0
+
+    await bot._generate_response(state, "I want to sell my house at 123 Elm St")
+
+    assert len(state.conversation_history) == 1
+    assert state.conversation_history[0]["question"] == 0
+    assert "123 Elm St" in state.conversation_history[0]["answer"]
+    assert state.conversation_history[0]["bot_response"] != ""
+
+
+# ─── Fix 3: Q4 fallback re-asks Q4 instead of generic punt ───────────────────
+
+def test_seller_fallback_response_q4_re_asks_q4():
+    """When Claude fails at Q4, fallback re-asks Q4, not a generic punt."""
+    bot = JorgeSellerBot()
+    state = SellerQualificationState(contact_id="c1", location_id="loc1")
+    state.price_expectation = 300000
+    response = bot._get_fallback_response(4, state)
+    # Should contain Q4 offer text, not the "Give me a few" punt
+    assert "close" in response.lower() or "offer" in response.lower() or "deal" in response.lower()
+    assert "Give me a few" not in response
+
+
+def test_seller_fallback_response_q3_asks_q4():
+    """When Claude fails at Q3, fallback asks Q4."""
+    bot = JorgeSellerBot()
+    state = SellerQualificationState(contact_id="c1", location_id="loc1")
+    state.price_expectation = 350000
+    response = bot._get_fallback_response(3, state)
+    # Q4 text has offer_amount placeholder — should be filled in
+    assert "{offer_amount}" not in response
+    assert "$" in response
+
+
+# ─── Fix 5: Urgency affects temperature scoring ───────────────────────────────
+
+def test_seller_urgency_high_tips_borderline_to_warm():
+    """High urgency at Q3 tips borderline COLD → WARM."""
+    bot = JorgeSellerBot()
+    state = SellerQualificationState(contact_id="c1", location_id="loc1")
+    state.questions_answered = 3
+    state.urgency = "high"
+    # Without urgency this would be COLD (only 3/4 answered)
+    assert bot._calculate_temperature(state) == "warm"
+
+
+def test_seller_urgency_low_tips_warm_to_cold():
+    """Low urgency tips full-qualified WARM → COLD."""
+    bot = JorgeSellerBot()
+    state = SellerQualificationState(contact_id="c1", location_id="loc1")
+    state.questions_answered = 4
+    state.price_expectation = 300000
+    state.motivation = "foreclosure"
+    state.urgency = "low"
+    assert bot._calculate_temperature(state) == "cold"
+
+
+# ─── Fix 9: Q0 doesn't inflate questions_answered ────────────────────────────
+
+@pytest.mark.asyncio
+async def test_seller_q0_does_not_set_questions_answered():
+    """After Q0 greeting, questions_answered must remain 0."""
+    bot = JorgeSellerBot()
+    state = SellerQualificationState(contact_id="c1", location_id="loc1")
+    await bot._generate_response(state, "Hi I want to sell")
+    assert state.questions_answered == 0
+
+
+# ─── Fix 10: State deserialization guard ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_seller_state_deserialization_ignores_unknown_keys():
+    """Extra keys in cached state do not crash deserialization."""
+
+    class DummyCache:
+        def __init__(self):
+            self.store = {}
+
+        async def get(self, key):
+            return self.store.get(key)
+
+        async def set(self, key, value, ttl=None):
+            self.store[key] = value
+            return True
+
+    bot = JorgeSellerBot()
+    bot.cache = DummyCache()
+    state = SellerQualificationState(contact_id="c1", location_id="loc1")
+    await bot.save_conversation_state("c1", state)
+
+    # Inject an unknown field
+    cached = await bot.cache.get("seller:state:c1")
+    cached["unknown_future_field"] = "boom"
+    await bot.cache.set("seller:state:c1", cached)
+
+    loaded = await bot.get_conversation_state("c1")
+    assert loaded is not None
+    assert loaded.contact_id == "c1"
+
+
+# ─── DB fallback — seller restores state after cache miss ────────────────────
+
+@pytest.mark.asyncio
+async def test_seller_db_fallback_restores_state():
+    """get_conversation_state falls back to DB when cache is empty."""
+    from unittest.mock import MagicMock, patch
+    from datetime import datetime, timezone
+
+    class EmptyCache:
+        async def get(self, key): return None
+        async def set(self, key, value, ttl=None): pass
+
+    bot = JorgeSellerBot()
+    bot.cache = EmptyCache()
+
+    mock_row = MagicMock()
+    mock_row.current_question = 3
+    mock_row.questions_answered = 2
+    mock_row.is_qualified = False
+    mock_row.stage = "Q3"
+    mock_row.extracted_data = {"condition": "needs_major_repairs", "price_expectation": 280000}
+    mock_row.conversation_history = []
+    mock_row.last_activity = None
+    mock_row.conversation_started = datetime.now(timezone.utc)
+    mock_row.metadata_json = {"location_id": "loc_test"}
+
+    with patch("bots.seller_bot.jorge_seller_bot.fetch_conversation", return_value=mock_row):
+        state = await bot.get_conversation_state("c1")
+
+    assert state is not None
+    assert state.current_question == 3
+    assert state.condition == "needs_major_repairs"
+    assert state.price_expectation == 280000
+    assert state.location_id == "loc_test"
