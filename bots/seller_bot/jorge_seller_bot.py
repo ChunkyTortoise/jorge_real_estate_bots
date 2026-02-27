@@ -467,8 +467,10 @@ class JorgeSellerBot:
             # If Jorge adds the "Jorge-Active" tag to a contact, the bot goes silent
             # so Jorge can handle the conversation manually.
             # Remove the tag when Jorge is done to resume the bot.
-            _tags: list = (contact_info or {}).get("tags") or []
-            if not _tags:
+            if contact_info is not None:
+                _tags: list = contact_info.get("tags") or []
+            else:
+                _tags = []
                 try:
                     _contact_data = await self.ghl_client.get_contact(contact_id)
                     _tags = _contact_data.get("tags") or []

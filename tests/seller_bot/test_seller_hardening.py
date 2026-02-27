@@ -145,8 +145,8 @@ class TestJorgeActiveTakeover:
         bot.ghl_client.get_contact.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_jorge_active_tag_fetched_from_ghl_when_not_in_contact_info(self):
-        """Bot fetches contact from GHL to check tags when contact_info lacks them."""
+    async def test_jorge_active_tag_fetched_from_ghl_when_contact_info_none(self):
+        """Bot fetches contact from GHL to check tags when contact_info is None."""
         bot = JorgeSellerBot()
         bot.cache = AsyncMock()
         bot.cache.get = AsyncMock(return_value=None)
@@ -158,7 +158,7 @@ class TestJorgeActiveTakeover:
             contact_id="test_contact",
             location_id="test_location",
             message="I want to sell",
-            contact_info={"name": "John"},  # no tags key
+            contact_info=None,  # no contact info at all → fallback to GHL API
         )
 
         assert result.response_message == ""
