@@ -59,6 +59,7 @@ class BuyerQualificationState:
     extracted_data: Dict[str, Any] = field(default_factory=dict)
     last_interaction: Optional[datetime] = None
     conversation_started: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    opportunity_created: bool = False
 
     def advance_question(self):
         if self.current_question < 4:
@@ -211,6 +212,7 @@ class JorgeBuyerBot:
             "extracted_data": state.extracted_data,
             "last_interaction": state.last_interaction.isoformat() if state.last_interaction else None,
             "conversation_started": state.conversation_started.isoformat() if state.conversation_started else None,
+            "opportunity_created": state.opportunity_created,
         }
         await self.cache.set(key, state_dict, ttl=604800)
         if hasattr(self.cache, "sadd"):
@@ -337,6 +339,10 @@ class JorgeBuyerBot:
                 extracted["preapproved"] = True
             elif any(word in msg for word in ["no", "nope"]):
                 extracted["preapproved"] = False
+            else:
+                # Ambiguous answer (e.g. "still figuring it out") — treat as not approved,
+                # but always advance so the conversation never stalls at Q2.
+                extracted["preapproved"] = False
 
         elif question_num == 3:
             import re
@@ -418,7 +424,7 @@ class JorgeBuyerBot:
 
     def _should_advance_question(self, extracted_data: Dict[str, Any], current_q: int) -> bool:
         if current_q == 1:
-            return any(k in extracted_data for k in ["beds_min", "price_max", "preferred_location"])
+            return any(k in extracted_data for k in ["beds_min", "sqft_min", "price_max", "preferred_location"])
         if current_q == 2:
             return "preapproved" in extracted_data
         if current_q == 3:
@@ -510,12 +516,13 @@ class JorgeBuyerBot:
                 "workflow_name": "Buyer Property Alert",
             })
 
-        if settings.buyer_pipeline_id:
+        if settings.buyer_pipeline_id and not state.opportunity_created:
             actions.append({
                 "type": "upsert_opportunity",
                 "pipeline_id": settings.buyer_pipeline_id,
                 "status": "qualified",
             })
+            state.opportunity_created = True
 
         await self._apply_ghl_actions(contact_id, actions)
         return actions

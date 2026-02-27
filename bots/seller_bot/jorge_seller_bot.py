@@ -114,6 +114,7 @@ class SellerQualificationState:
         self.conversation_history.append({
             "question": question_num,
             "answer": answer,
+            "bot_response": "",  # filled in by process_seller_message after Claude responds
             "timestamp": datetime.now().isoformat(),
             "extracted_data": extracted_data
         })
@@ -440,6 +441,9 @@ class JorgeSellerBot:
                     answer=message,
                     extracted_data=response_data["extracted_data"]
                 )
+                # Store the bot's response so Claude has proper alternating history next turn
+                if state.conversation_history:
+                    state.conversation_history[-1]["bot_response"] = response_data.get("message", "")
 
             # Calculate temperature
             temperature = self._calculate_temperature(state)
@@ -564,11 +568,13 @@ class JorgeSellerBot:
         # Build prompt for Claude
         prompt = self._build_claude_prompt(state, user_message, current_q)
 
-        # Build conversation history for Claude context (last 10 turns)
-        history = [
-            {"role": "user", "content": entry["answer"]}
-            for entry in state.conversation_history[-10:]
-        ]
+        # Build alternating user/assistant history for Claude (last 10 turns)
+        history = []
+        for entry in state.conversation_history[-10:]:
+            history.append({"role": "user", "content": entry["answer"]})
+            bot_reply = entry.get("bot_response", "")
+            if bot_reply:
+                history.append({"role": "assistant", "content": bot_reply})
 
         # Get AI response from Claude
         try:
@@ -734,6 +740,28 @@ RESPONSE (keep under 100 words):"""
                             price *= 1000
                         extracted["price_expectation"] = price
                     break
+
+            if "price_expectation" not in extracted:
+                # No digit found — use Haiku to extract price from text like "around three fifty"
+                try:
+                    haiku_prompt = (
+                        "Extract the home price in US dollars as a plain integer (no commas, no $, "
+                        "no text). Examples: 'around three fifty' → 350000, 'high threes' → 375000, "
+                        f"'between 300 and 400' → 350000. Message: {user_message}"
+                    )
+                    haiku_resp = await self.claude_client.agenerate(
+                        prompt=haiku_prompt,
+                        system_prompt="Reply with ONLY the integer price in dollars. Nothing else.",
+                        max_tokens=20,
+                        temperature=0.0,
+                        complexity=TaskComplexity.ROUTINE,
+                    )
+                    price = int(haiku_resp.content.strip().replace(",", "").replace("$", ""))
+                    if price < 10000:
+                        price *= 1000
+                    extracted["price_expectation"] = price
+                except Exception:
+                    extracted["price_expectation"] = 300000
 
         elif question_num == 3:
             # Q3: Motivation
