@@ -18,6 +18,7 @@ from bots.shared.config import settings
 from bots.shared.ghl_client import GHLClient
 from bots.shared.logger import get_logger
 from database.repository import (
+    fetch_conversation,
     fetch_properties,
     upsert_buyer_preferences,
     upsert_contact,
@@ -189,6 +190,39 @@ class JorgeBuyerBot:
             state_dict = {k: v for k, v in state_dict.items() if k in valid_fields}
             return BuyerQualificationState(**state_dict)
 
+        # Cache miss — try DB fallback (handles MemoryCache restart loss)
+        try:
+            row = await fetch_conversation(contact_id, "buyer")
+            if row:
+                ed = row.extracted_data or {}
+                state = BuyerQualificationState(
+                    contact_id=contact_id,
+                    location_id=row.metadata_json.get("location_id", location_id),
+                    current_question=row.current_question,
+                    questions_answered=row.questions_answered,
+                    is_qualified=row.is_qualified,
+                    stage=row.stage or "Q0",
+                    beds_min=ed.get("beds_min"),
+                    baths_min=ed.get("baths_min"),
+                    sqft_min=ed.get("sqft_min"),
+                    price_min=ed.get("price_min"),
+                    price_max=ed.get("price_max"),
+                    preferred_location=ed.get("preferred_location"),
+                    preapproved=ed.get("preapproved"),
+                    timeline_days=ed.get("timeline_days"),
+                    motivation=ed.get("motivation"),
+                    conversation_history=row.conversation_history or [],
+                    extracted_data=ed,
+                    last_interaction=row.last_activity,
+                    conversation_started=row.conversation_started or datetime.now(timezone.utc),
+                )
+                # Re-warm cache so subsequent requests skip DB
+                await self.save_conversation_state(contact_id, state)
+                self.logger.info(f"Restored buyer state for {contact_id} from DB")
+                return state
+        except Exception as db_err:
+            self.logger.warning(f"DB conversation fallback failed for {contact_id}: {db_err}")
+
         state = BuyerQualificationState(contact_id=contact_id, location_id=location_id)
         await self.save_conversation_state(contact_id, state)
         return state
@@ -245,6 +279,7 @@ class JorgeBuyerBot:
                 last_activity=state.last_interaction,
                 conversation_started=state.conversation_started,
                 metadata_json={
+                    "location_id": state.location_id,
                     "preferred_location": state.preferred_location,
                 },
             )
@@ -458,7 +493,8 @@ class JorgeBuyerBot:
 
     def _should_advance_question(self, extracted_data: Dict[str, Any], current_q: int) -> bool:
         if current_q == 1:
-            return any(k in extracted_data for k in ["beds_min", "sqft_min", "price_max", "preferred_location"])
+            # Require at least a price or bedroom/sqft count to advance — location name alone is insufficient
+            return any(k in extracted_data for k in ["beds_min", "sqft_min", "price_max", "price_min"])
         if current_q == 2:
             return "preapproved" in extracted_data
         if current_q == 3:

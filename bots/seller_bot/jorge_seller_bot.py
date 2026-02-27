@@ -29,7 +29,7 @@ from bots.shared.cache_service import get_cache_service
 from bots.shared.claude_client import ClaudeClient, TaskComplexity
 from bots.shared.ghl_client import GHLClient
 from bots.shared.logger import get_logger
-from database.repository import upsert_contact, upsert_conversation
+from database.repository import fetch_conversation, upsert_contact, upsert_conversation
 
 logger = get_logger(__name__)
 
@@ -232,7 +232,7 @@ class JorgeSellerBot:
         contact_id: str
     ) -> Optional[SellerQualificationState]:
         """
-        Load conversation state from Redis.
+        Load conversation state from cache, falling back to DB on cache miss.
 
         Args:
             contact_id: GHL contact ID
@@ -244,6 +244,35 @@ class JorgeSellerBot:
         state_dict = await self.cache.get(key)
 
         if not state_dict:
+            # Cache miss — try DB fallback (handles MemoryCache restart loss)
+            try:
+                row = await fetch_conversation(contact_id, "seller")
+                if row:
+                    ed = row.extracted_data or {}
+                    state = SellerQualificationState(
+                        contact_id=contact_id,
+                        location_id=row.metadata_json.get("location_id", ""),
+                        current_question=row.current_question,
+                        questions_answered=row.questions_answered,
+                        is_qualified=row.is_qualified,
+                        stage=row.stage or "Q0",
+                        condition=ed.get("condition"),
+                        price_expectation=ed.get("price_expectation"),
+                        motivation=ed.get("motivation"),
+                        urgency=ed.get("urgency"),
+                        offer_accepted=ed.get("offer_accepted"),
+                        timeline_acceptable=ed.get("timeline_acceptable"),
+                        conversation_history=row.conversation_history or [],
+                        extracted_data=ed,
+                        last_interaction=row.last_activity,
+                        conversation_started=row.conversation_started or datetime.now(timezone.utc),
+                    )
+                    # Re-warm cache so subsequent requests skip DB
+                    await self.save_conversation_state(contact_id, state)
+                    self.logger.info(f"Restored seller state for {contact_id} from DB")
+                    return state
+            except Exception as db_err:
+                self.logger.warning(f"DB conversation fallback failed for {contact_id}: {db_err}")
             return None
 
         # Create a copy to avoid modifying the cached object in place
@@ -313,6 +342,8 @@ class JorgeSellerBot:
 
         # Persist to database (best-effort — schema may not be initialized yet)
         try:
+            merged_metadata = {"location_id": state.location_id}
+            merged_metadata.update(metadata or {})
             await upsert_conversation(
                 contact_id=contact_id,
                 bot_type="seller",
@@ -325,7 +356,7 @@ class JorgeSellerBot:
                 extracted_data=state.extracted_data,
                 last_activity=state.last_interaction,
                 conversation_started=state.conversation_started,
-                metadata_json=metadata or {},
+                metadata_json=merged_metadata,
             )
         except Exception as db_err:
             self.logger.warning(f"DB upsert_conversation skipped (schema not ready?): {db_err}")
