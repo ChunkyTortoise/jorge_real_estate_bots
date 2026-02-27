@@ -259,7 +259,8 @@ class GHLClient:
         """Remove tag from contact."""
         result = await self._make_request(
             "DELETE",
-            f"contacts/{contact_id}/tags/{tag}"
+            f"contacts/{contact_id}/tags",
+            data={"tags": [tag]}
         )
         return result.get("success", False)
 
