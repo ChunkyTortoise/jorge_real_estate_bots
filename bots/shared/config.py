@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     # ========== WEBHOOK CONFIGURATION ==========
     base_url: str = "http://localhost:8000"
 
+    # ========== CALENDAR / SCHEDULING ==========
+    jorge_calendar_id: Optional[str] = None   # JORGE_CALENDAR_ID env var
+    jorge_user_id: Optional[str] = None       # JORGE_USER_ID env var
+
     # ========== BUYER BOT CONFIGURATION ==========
     buyer_pipeline_id: Optional[str] = None
     buyer_alert_workflow_id: Optional[str] = None

@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from bots.buyer_bot.buyer_prompts import BUYER_QUESTIONS, BUYER_SYSTEM_PROMPT, JORGE_BUYER_PHRASES, build_buyer_prompt
 from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.cache_service import get_cache_service
+from bots.shared.calendar_booking_service import FALLBACK_MESSAGE, CalendarBookingService
 from bots.shared.claude_client import ClaudeClient
 from bots.shared.config import settings
 from bots.shared.ghl_client import GHLClient
@@ -61,6 +62,11 @@ class BuyerQualificationState:
     last_interaction: Optional[datetime] = None
     conversation_started: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     opportunity_created: bool = False
+
+    # Scheduling state (calendar booking)
+    scheduling_offered: bool = False
+    appointment_booked: bool = False
+    appointment_id: Optional[str] = None
 
     def advance_question(self):
         if self.current_question < 4:
@@ -121,6 +127,7 @@ class JorgeBuyerBot:
         self.ghl_client = ghl_client or GHLClient()
         self.cache = get_cache_service()
         self.logger = get_logger(__name__)
+        self.calendar_service = CalendarBookingService(self.ghl_client)
 
     async def process_buyer_message(
         self,
@@ -130,6 +137,36 @@ class JorgeBuyerBot:
         contact_info: Optional[Dict[str, Any]] = None,
     ) -> BuyerResult:
         state = await self._get_or_create_state(contact_id, location_id)
+
+        # --- Slot selection intercept ---
+        if state.scheduling_offered and not state.appointment_booked:
+            slot_index = CalendarBookingService.detect_slot_selection(message)
+            if slot_index is not None:
+                booking = await self.calendar_service.book_appointment(
+                    contact_id, slot_index, "buyer"
+                )
+                if booking["success"]:
+                    state.appointment_booked = True
+                    appt = booking.get("appointment") or {}
+                    state.appointment_id = str(
+                        appt.get("id") or appt.get("appointmentId") or ""
+                    )
+                temperature = self._calculate_temperature(state)
+                await self.save_conversation_state(contact_id, state, temperature)
+                return BuyerResult(
+                    response_message=booking["message"],
+                    buyer_temperature=temperature,
+                    questions_answered=state.questions_answered,
+                    qualification_complete=state.questions_answered >= 4,
+                    actions_taken=[],
+                    next_steps=(
+                        "Appointment booked"
+                        if booking["success"]
+                        else "Retry slot selection"
+                    ),
+                    analytics=self._build_analytics(state, temperature),
+                    matches=state.matches,
+                )
 
         if contact_info:
             try:
@@ -163,11 +200,30 @@ class JorgeBuyerBot:
             state.matches = await self._match_properties(state)
 
         temperature = self._calculate_temperature(state)
+
+        # --- One-time scheduling offer ---
+        _offer_scheduling = not state.scheduling_offered and temperature in (
+            BuyerStatus.HOT,
+            BuyerStatus.WARM,
+        )
+        if _offer_scheduling:
+            state.scheduling_offered = True
+
         actions = await self._generate_actions(contact_id, location_id, state, temperature)
         await self.save_conversation_state(contact_id, state, temperature)
 
+        scheduling_append = ""
+        if _offer_scheduling:
+            if temperature == BuyerStatus.HOT:
+                sched = await self.calendar_service.offer_appointment_slots(
+                    contact_id, "buyer"
+                )
+            else:
+                sched = {"message": FALLBACK_MESSAGE}
+            scheduling_append = "\n\n" + sched["message"]
+
         return BuyerResult(
-            response_message=response["message"],
+            response_message=response["message"] + scheduling_append,
             buyer_temperature=temperature,
             questions_answered=state.questions_answered,
             qualification_complete=state.questions_answered >= 4,
@@ -256,6 +312,9 @@ class JorgeBuyerBot:
             "last_interaction": state.last_interaction.isoformat() if state.last_interaction else None,
             "conversation_started": state.conversation_started.isoformat() if state.conversation_started else None,
             "opportunity_created": state.opportunity_created,
+            "scheduling_offered": state.scheduling_offered,
+            "appointment_booked": state.appointment_booked,
+            "appointment_id": state.appointment_id,
         }
         await self.cache.set(key, state_dict, ttl=604800)
         if hasattr(self.cache, "sadd"):
