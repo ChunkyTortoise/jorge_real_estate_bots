@@ -545,6 +545,135 @@ class TestJorgeSellerBot:
         assert len(result.actions_taken) == 1
 
 
+class TestSellerBotBugFixes:
+    """Tests for the P0/P1 bug fixes (spec 2026-02-26)."""
+
+    @pytest.fixture
+    def mock_claude_client(self):
+        from bots.shared.claude_client import LLMResponse
+        client = AsyncMock()
+        client.agenerate = AsyncMock(return_value=LLMResponse(
+            content="What do you REALISTICALLY think it's worth as-is?",
+            model="claude-haiku",
+            input_tokens=10,
+            output_tokens=5
+        ))
+        return client
+
+    @pytest.fixture
+    def mock_ghl_client(self):
+        client = AsyncMock()
+        client.add_tag = AsyncMock()
+        client.remove_tag = AsyncMock()
+        client.update_custom_field = AsyncMock()
+        return client
+
+    @pytest.fixture
+    def seller_bot(self, mock_claude_client, mock_ghl_client):
+        with patch('bots.seller_bot.jorge_seller_bot.ClaudeClient', return_value=mock_claude_client):
+            return JorgeSellerBot(ghl_client=mock_ghl_client)
+
+    # --- Fix 1: Q1 keyword expansion ---
+
+    @pytest.mark.asyncio
+    async def test_q1_okay_advances(self, seller_bot):
+        """'it's okay' should extract condition and advance to Q2."""
+        bot = seller_bot
+        extracted = await bot._extract_qualification_data("it's okay", 1)
+        assert "condition" in extracted
+        assert extracted["condition"] != "unknown"
+
+    @pytest.mark.asyncio
+    async def test_q1_showing_its_age_advances(self, seller_bot):
+        """'showing its age' should not leave condition unknown."""
+        extracted = await seller_bot._extract_qualification_data("showing its age", 1)
+        assert "condition" in extracted
+        assert extracted["condition"] in ("needs_major_repairs", "needs_minor_repairs", "move_in_ready")
+
+    @pytest.mark.asyncio
+    async def test_q1_fast_path_still_works(self, seller_bot):
+        """Fast-path keyword 'needs work' still maps to needs_major_repairs."""
+        extracted = await seller_bot._extract_qualification_data("it needs major work", 1)
+        assert extracted["condition"] == "needs_major_repairs"
+
+    @pytest.mark.asyncio
+    async def test_q1_should_advance_with_condition(self, seller_bot):
+        """_should_advance_question Q1 returns True when condition is set."""
+        assert seller_bot._should_advance_question({"condition": "needs_minor_repairs"}, 1) is True
+
+    @pytest.mark.asyncio
+    async def test_classify_with_claude_returns_default_on_failure(self, seller_bot, mock_claude_client):
+        """_classify_with_claude returns default when API raises."""
+        mock_claude_client.agenerate = AsyncMock(side_effect=Exception("API down"))
+        result = await seller_bot._classify_with_claude(
+            "some message", "classify it", ["a", "b", "c"], "b"
+        )
+        assert result == "b"
+
+    # --- Fix 2: Q3 motivation expansion ---
+
+    @pytest.mark.asyncio
+    async def test_q3_retiring_advances(self, seller_bot):
+        """'retiring' should set motivation and allow Q3 to advance."""
+        extracted = await seller_bot._extract_qualification_data("I'm retiring and downsizing", 3)
+        assert "motivation" in extracted
+        assert extracted["motivation"] in ("retirement", "downsizing", "job_relocation",
+                                           "financial_distress", "other")
+
+    @pytest.mark.asyncio
+    async def test_q3_tenant_problems_advances(self, seller_bot):
+        """'tenant problems' should set motivation."""
+        extracted = await seller_bot._extract_qualification_data("I have tenant problems", 3)
+        assert "motivation" in extracted
+
+    @pytest.mark.asyncio
+    async def test_q3_should_advance_when_motivation_set(self, seller_bot):
+        """_should_advance_question Q3 is True when motivation is present."""
+        assert seller_bot._should_advance_question({"motivation": "retirement"}, 3) is True
+
+    # --- Fix 6: Q4 offer/timeline separation ---
+
+    @pytest.mark.asyncio
+    async def test_q4_yes_sets_both_true(self, seller_bot):
+        """'yes let's do it' → offer_accepted=True, timeline_acceptable=True."""
+        extracted = await seller_bot._extract_qualification_data("yes let's do it", 4)
+        assert extracted["offer_accepted"] is True
+        assert extracted["timeline_acceptable"] is True
+
+    @pytest.mark.asyncio
+    async def test_q4_too_low_sets_both_false(self, seller_bot):
+        """'too low' → offer_accepted=False, timeline_acceptable=False."""
+        extracted = await seller_bot._extract_qualification_data("that's too low for me", 4)
+        assert extracted["offer_accepted"] is False
+        assert extracted["timeline_acceptable"] is False
+
+    @pytest.mark.asyncio
+    async def test_q4_timeline_pushback_independent(self, seller_bot):
+        """'price is fine but need more time' → offer not rejected, timeline False."""
+        extracted = await seller_bot._extract_qualification_data(
+            "okay price is fine but I need more time to close", 4
+        )
+        # offer_accepted may be True (fine/okay), but timeline should be False
+        assert extracted["timeline_acceptable"] is False
+
+    # --- Fix 8: Tag cleanup ---
+
+    @pytest.mark.asyncio
+    async def test_generate_actions_removes_stale_tags(self, seller_bot):
+        """When temperature=hot, remove_tag actions for warm and cold are present."""
+        state = SellerQualificationState(
+            contact_id="tag_test", location_id="loc1",
+            questions_answered=4, offer_accepted=True, timeline_acceptable=True
+        )
+        state.condition = "move_in_ready"
+        actions = await seller_bot._generate_actions("tag_test", "loc1", state, "hot")
+        remove_tags = {a["tag"] for a in actions if a.get("type") == "remove_tag"}
+        assert "seller_warm" in remove_tags
+        assert "seller_cold" in remove_tags
+        add_tags = {a["tag"] for a in actions if a.get("type") == "add_tag"}
+        assert "seller_hot" in add_tags
+
+
 class TestSellerBotEdgeCases:
     """Test edge cases and error conditions"""
 
