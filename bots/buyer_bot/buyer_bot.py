@@ -326,38 +326,93 @@ class JorgeBuyerBot:
                     break
 
         elif question_num == 2:
-            if any(word in msg for word in ["preapproved", "pre-approved", "pre approved", "approved", "cash"]):
+            if any(phrase in msg for phrase in [
+                "not approved", "not pre-approved", "not yet", "working on it",
+                "haven't been", "havent been", "not pre approved"
+            ]):
+                extracted["preapproved"] = False
+            elif any(word in msg for word in [
+                "preapproved", "pre-approved", "pre approved", "approved", "cash", "yes"
+            ]):
                 extracted["preapproved"] = True
-            elif any(word in msg for word in ["not", "no", "working on it"]):
+            elif any(word in msg for word in ["no", "nope"]):
                 extracted["preapproved"] = False
 
         elif question_num == 3:
-            if any(word in msg for word in ["asap", "immediately", "now", "urgent"]):
-                extracted["timeline_days"] = 30
+            import re
+            tl = None
+            # Check "not interested in buying soon" phrases first (most specific)
+            if any(phrase in msg for phrase in ["browsing", "just looking", "no rush", "not sure"]):
+                tl = 180
+            elif any(word in msg for word in ["asap", "immediately", "urgent", "right away"]):
+                tl = 30
+            elif "now" in msg.split():
+                tl = 30
+            elif "year" in msg:
+                m = re.search(r"(\d+)\s*year", msg)
+                tl = int(m.group(1)) * 365 if m else 365
             elif "month" in msg:
-                import re
-                match = re.search(r"(\d+)\s*month", msg)
-                if match:
-                    extracted["timeline_days"] = int(match.group(1)) * 30
+                m = re.search(r"(\d+)\s*-\s*(\d+)\s*month", msg)
+                if m:
+                    tl = int(m.group(1)) * 30
+                else:
+                    m = re.search(r"(\d+)\s*month", msg)
+                    tl = int(m.group(1)) * 30 if m else 30
             elif "week" in msg:
-                import re
-                match = re.search(r"(\d+)\s*week", msg)
-                if match:
-                    extracted["timeline_days"] = int(match.group(1)) * 7
+                m = re.search(r"(\d+)\s*week", msg)
+                tl = int(m.group(1)) * 7 if m else 14
+            elif "day" in msg:
+                m = re.search(r"(\d+)\s*-\s*(\d+)\s*day", msg)
+                if m:
+                    tl = int(m.group(2))
+                else:
+                    m = re.search(r"(\d+)\s*day", msg)
+                    tl = int(m.group(1)) if m else 30
+            else:
+                m = re.search(r"\b([1-9][0-9]{0,2})\b", msg)
+                if m:
+                    n = int(m.group(1))
+                    if 1 <= n <= 730:
+                        tl = n
+            extracted["timeline_days"] = tl if tl is not None else 90
 
         elif question_num == 4:
             motivations = {
                 "job": "job_relocation",
+                "relocation": "job_relocation",
+                "relocating": "job_relocation",
+                "moving": "job_relocation",
+                "transfer": "job_relocation",
+                "closer": "job_relocation",
+                "military": "job_relocation",
                 "family": "growing_family",
+                "kids": "growing_family",
+                "baby": "growing_family",
+                "growing": "growing_family",
                 "investment": "investment",
+                "rental": "investment",
+                "renting": "investment",
                 "school": "school_district",
+                "district": "school_district",
                 "downsizing": "downsizing",
+                "downsize": "downsizing",
+                "retirement": "downsizing",
+                "retiring": "downsizing",
                 "upsizing": "upsizing",
+                "upsize": "upsizing",
+                "upgrade": "upsizing",
+                "space": "upsizing",
+                "room": "upsizing",
+                "starter": "first_time_buyer",
+                "first home": "first_time_buyer",
+                "first-time": "first_time_buyer",
             }
             for keyword, value in motivations.items():
                 if keyword in msg:
                     extracted["motivation"] = value
                     break
+            if "motivation" not in extracted:
+                extracted["motivation"] = "other"
 
         return extracted
 
@@ -430,6 +485,9 @@ class JorgeBuyerBot:
     ) -> List[Dict[str, Any]]:
         actions: List[Dict[str, Any]] = []
 
+        for other_temp in [BuyerStatus.HOT, BuyerStatus.WARM, BuyerStatus.COLD]:
+            if other_temp != temperature:
+                actions.append({"type": "remove_tag", "tag": f"buyer_{other_temp}"})
         actions.append({"type": "add_tag", "tag": f"buyer_{temperature}"})
         actions.append({"type": "update_custom_field", "field": "buyer_temperature", "value": temperature})
         if state.beds_min:
@@ -468,11 +526,12 @@ class JorgeBuyerBot:
             try:
                 if action_type == "add_tag":
                     await self.ghl_client.add_tag(contact_id, action["tag"])
+                elif action_type == "remove_tag":
+                    await self.ghl_client.remove_tag(contact_id, action["tag"])
                 elif action_type == "update_custom_field":
                     await self.ghl_client.update_custom_field(contact_id, action["field"], action["value"])
                 elif action_type == "trigger_workflow":
-                    # TODO: implement in GHL client when API available
-                    logger.info(f"Trigger workflow {action.get('workflow_id')} for {contact_id}")
+                    await self.ghl_client.trigger_workflow(contact_id, action.get("workflow_id"))
                 elif action_type == "upsert_opportunity":
                     # Minimal: create new opportunity
                     await self.ghl_client.create_opportunity({

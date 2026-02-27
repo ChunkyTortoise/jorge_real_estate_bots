@@ -154,3 +154,99 @@ def test_buyer_routes():
 
     resp = client.post("/api/jorge-buyer/process", json=payload)
     assert resp.status_code in (200, 500)
+
+
+class TestBuyerBotBugFixes:
+    """Tests for the P0/P1 buyer bot bug fixes (spec 2026-02-26)."""
+
+    @pytest.fixture
+    def bot(self):
+        return JorgeBuyerBot()
+
+    # --- Fix 5: Q2 pre-approval false positive ---
+
+    @pytest.mark.asyncio
+    async def test_q2_not_yet_approved_is_false(self, bot):
+        """'I'm not yet approved' must NOT set preapproved=True."""
+        extracted = await bot._extract_qualification_data("I'm not yet approved", 2)
+        assert extracted.get("preapproved") is False
+
+    @pytest.mark.asyncio
+    async def test_q2_preapproved_is_true(self, bot):
+        """'I'm pre-approved' sets preapproved=True."""
+        extracted = await bot._extract_qualification_data("I'm pre-approved for 400k", 2)
+        assert extracted.get("preapproved") is True
+
+    @pytest.mark.asyncio
+    async def test_q2_cash_buyer_is_true(self, bot):
+        """Cash buyers are treated as pre-approved."""
+        extracted = await bot._extract_qualification_data("I'm a cash buyer", 2)
+        assert extracted.get("preapproved") is True
+
+    # --- Fix 3: Q3 timeline parser ---
+
+    @pytest.mark.asyncio
+    async def test_q3_zero_to_thirty_days(self, bot):
+        """'0-30 days' parses as 30 days."""
+        extracted = await bot._extract_qualification_data("0-30 days", 3)
+        assert extracted["timeline_days"] == 30
+
+    @pytest.mark.asyncio
+    async def test_q3_one_to_three_months_range(self, bot):
+        """'1-3 months' should use lower bound = 30 days."""
+        extracted = await bot._extract_qualification_data("1-3 months", 3)
+        assert extracted["timeline_days"] == 30
+
+    @pytest.mark.asyncio
+    async def test_q3_just_browsing(self, bot):
+        """'just browsing' defaults to 180 days."""
+        extracted = await bot._extract_qualification_data("just browsing for now", 3)
+        assert extracted["timeline_days"] == 180
+
+    @pytest.mark.asyncio
+    async def test_q3_in_a_month(self, bot):
+        """'in a month' should parse as 30 days."""
+        extracted = await bot._extract_qualification_data("in a month", 3)
+        assert extracted["timeline_days"] == 30
+
+    @pytest.mark.asyncio
+    async def test_q3_gibberish_defaults_to_90(self, bot):
+        """Unrecognized input defaults to 90 days and always advances."""
+        extracted = await bot._extract_qualification_data("blah blah blah", 3)
+        assert extracted["timeline_days"] == 90
+
+    @pytest.mark.asyncio
+    async def test_q3_should_advance_on_default(self, bot):
+        """_should_advance_question returns True because timeline_days is always set."""
+        extracted = await bot._extract_qualification_data("blah blah", 3)
+        assert bot._should_advance_question(extracted, 3) is True
+
+    # --- Fix 4: Q4 motivation keywords + default ---
+
+    @pytest.mark.asyncio
+    async def test_q4_relocating_for_work(self, bot):
+        """'relocating for work' maps to job_relocation."""
+        extracted = await bot._extract_qualification_data("relocating for work", 4)
+        assert extracted.get("motivation") == "job_relocation"
+
+    @pytest.mark.asyncio
+    async def test_q4_just_ready_defaults_to_other(self, bot):
+        """'just ready to buy' falls back to 'other' — still advances."""
+        extracted = await bot._extract_qualification_data("just ready to buy", 4)
+        assert extracted.get("motivation") == "other"
+        assert bot._should_advance_question(extracted, 4) is True
+
+    # --- Fix 8: Buyer tag cleanup ---
+
+    @pytest.mark.asyncio
+    async def test_generate_actions_removes_stale_buyer_tags(self, bot):
+        """When temperature=hot, remove_tag for warm and cold should be present."""
+        state = BuyerQualificationState(contact_id="c1", location_id="loc1")
+        state.preapproved = True
+        state.timeline_days = 20
+        actions = await bot._generate_actions("c1", "loc1", state, BuyerStatus.HOT)
+        remove_tags = {a["tag"] for a in actions if a.get("type") == "remove_tag"}
+        assert f"buyer_{BuyerStatus.WARM}" in remove_tags
+        assert f"buyer_{BuyerStatus.COLD}" in remove_tags
+        add_tags = {a["tag"] for a in actions if a.get("type") == "add_tag"}
+        assert f"buyer_{BuyerStatus.HOT}" in add_tags

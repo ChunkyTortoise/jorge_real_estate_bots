@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 
 from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.cache_service import get_cache_service
-from bots.shared.claude_client import ClaudeClient
+from bots.shared.claude_client import ClaudeClient, TaskComplexity
 from bots.shared.ghl_client import GHLClient
 from bots.shared.logger import get_logger
 from database.repository import upsert_contact, upsert_conversation
@@ -489,7 +489,21 @@ class JorgeSellerBot:
 
         except Exception as e:
             self.logger.error(f"Error processing seller message: {e}", exc_info=True)
-            # Return safe fallback response
+            try:
+                cached = await self.get_conversation_state(contact_id)
+                if cached:
+                    temperature = self._calculate_temperature(cached)
+                    return SellerResult(
+                        response_message="I'm interested but need a bit more info. Let me get back to you shortly.",
+                        seller_temperature=temperature,
+                        questions_answered=cached.questions_answered,
+                        qualification_complete=(cached.questions_answered >= 4),
+                        actions_taken=[],
+                        next_steps="Manual follow-up required",
+                        analytics={"error": "Processing error occurred"}
+                    )
+            except Exception:
+                pass
             return self._create_fallback_result()
 
     async def _get_or_create_state(
@@ -550,11 +564,18 @@ class JorgeSellerBot:
         # Build prompt for Claude
         prompt = self._build_claude_prompt(state, user_message, current_q)
 
+        # Build conversation history for Claude context (last 10 turns)
+        history = [
+            {"role": "user", "content": entry["answer"]}
+            for entry in state.conversation_history[-10:]
+        ]
+
         # Get AI response from Claude
         try:
             llm_response = await self.claude_client.agenerate(
                 prompt=prompt,
                 system_prompt=SELLER_SYSTEM_PROMPT,
+                history=history,
                 max_tokens=500
             )
             ai_message = llm_response.content
@@ -620,6 +641,34 @@ RESPONSE (keep under 100 words):"""
 
         return prompt
 
+    async def _classify_with_claude(
+        self,
+        user_message: str,
+        instruction: str,
+        valid_values: List[str],
+        default: str
+    ) -> str:
+        """Use Haiku to classify text when keyword matching fails. Returns default on any error."""
+        try:
+            prompt = (
+                f"{instruction}\n\n"
+                f"User message: {user_message}\n\n"
+                f"Respond with ONLY one of: {', '.join(valid_values)}"
+            )
+            response = await self.claude_client.agenerate(
+                prompt=prompt,
+                system_prompt="Classify the user message. Respond with ONLY the classification label, nothing else.",
+                max_tokens=20,
+                temperature=0.0,
+                complexity=TaskComplexity.ROUTINE,
+            )
+            result = response.content.strip().lower()
+            if result in valid_values:
+                return result
+            return default
+        except Exception:
+            return default
+
     async def _extract_qualification_data(
         self,
         user_message: str,
@@ -635,22 +684,41 @@ RESPONSE (keep under 100 words):"""
 
         if question_num == 1:
             # Q1: Condition
-            if any(word in message_lower for word in ["major", "significant", "extensive", "needs work", "bad shape"]):
+            if any(word in message_lower for word in [
+                "major", "significant", "extensive", "needs work", "bad shape",
+                "falling apart", "broken", "run down", "rundown", "fixer", "gut",
+                "disaster", "terrible", "awful", "wreck", "dump", "outdated",
+                "old", "rough", "trashed", "condemned"
+            ]):
                 extracted["condition"] = "needs_major_repairs"
-            elif any(word in message_lower for word in ["minor", "small", "few", "cosmetic"]):
+            elif any(word in message_lower for word in [
+                "minor", "small", "few", "cosmetic", "touch up", "paint", "carpet",
+                "dated", "okay", "ok", "fine", "alright", "decent", "fair",
+                "maintenance", "wear", "showing its age", "aging", "lived in",
+                "some work", "little work", "needs some"
+            ]):
                 extracted["condition"] = "needs_minor_repairs"
-            elif any(word in message_lower for word in ["ready", "good", "excellent", "perfect", "great shape"]):
+            elif any(word in message_lower for word in [
+                "ready", "good", "excellent", "perfect", "great shape", "move in",
+                "updated", "renovated", "remodeled", "new", "nice", "beautiful",
+                "pristine", "great", "well maintained", "well-maintained", "clean"
+            ]):
                 extracted["condition"] = "move_in_ready"
             else:
-                extracted["condition"] = "unknown"
+                extracted["condition"] = await self._classify_with_claude(
+                    user_message,
+                    "Classify this home condition description.",
+                    ["needs_major_repairs", "needs_minor_repairs", "move_in_ready"],
+                    "needs_minor_repairs"
+                )
 
         elif question_num == 2:
             # Q2: Price expectation
             import re
             price_patterns = [
-                r'\$?([\d,]+)k',  # $350k or 350k
-                r'\$?([\d,]+),000',  # $350,000
-                r'\$?([\d,]+)'  # $350000 or 350000
+                r'\$?(\d[\d,]*)k',  # $350k or 350k
+                r'\$?(\d[\d,]*),000',  # $350,000
+                r'\$?(\d[\d,]*)'  # $350000 or 350000 (must start with digit)
             ]
 
             for pattern in price_patterns:
@@ -672,20 +740,54 @@ RESPONSE (keep under 100 words):"""
             motivations = {
                 "job": "job_relocation",
                 "relocation": "job_relocation",
+                "relocating": "job_relocation",
                 "transfer": "job_relocation",
+                "moving": "job_relocation",
+                "move": "job_relocation",
                 "divorce": "divorce",
+                "separation": "divorce",
+                "separating": "divorce",
                 "foreclosure": "foreclosure",
+                "foreclose": "foreclosure",
                 "financial": "financial_distress",
+                "behind on": "financial_distress",
+                "debt": "financial_distress",
+                "bankruptcy": "financial_distress",
                 "inherited": "inheritance",
+                "inheritance": "inheritance",
+                "probate": "inheritance",
+                "death in": "inheritance",
+                "passed away": "inheritance",
+                "died": "inheritance",
+                "estate": "inheritance",
                 "downsize": "downsizing",
+                "downsizing": "downsizing",
+                "retire": "retirement",
+                "retirement": "retirement",
+                "retiring": "retirement",
                 "upsize": "upsizing",
-                "medical": "medical_emergency"
+                "upsizing": "upsizing",
+                "medical": "medical_emergency",
+                "tenant": "landlord_exit",
+                "vacant": "landlord_exit",
+                "don't want": "landlord_exit",
+                "tired of": "landlord_exit",
             }
 
             for keyword, motivation_type in motivations.items():
                 if keyword in message_lower:
                     extracted["motivation"] = motivation_type
                     break
+
+            if "motivation" not in extracted:
+                extracted["motivation"] = await self._classify_with_claude(
+                    user_message,
+                    "Classify the seller's motivation to sell their home.",
+                    ["job_relocation", "divorce", "foreclosure", "financial_distress",
+                     "inheritance", "downsizing", "upsizing", "medical_emergency",
+                     "retirement", "landlord_exit", "other"],
+                    "financial_distress"
+                )
 
             # Detect urgency
             if any(word in message_lower for word in ["asap", "urgent", "immediately", "fast", "quick", "soon"]):
@@ -696,15 +798,33 @@ RESPONSE (keep under 100 words):"""
                 extracted["urgency"] = "medium"
 
         elif question_num == 4:
-            # Q4: Offer acceptance
-            if any(word in message_lower for word in ["yes", "deal", "accept", "sounds good", "let's do it", "sure"]):
+            # Q4: Offer acceptance (independent of timeline)
+            if any(word in message_lower for word in [
+                "yes", "deal", "accept", "sounds good", "let's do it", "lets do it",
+                "sure", "ok", "okay", "works for me", "i'll take it", "ill take it"
+            ]):
                 extracted["offer_accepted"] = True
-                extracted["timeline_acceptable"] = True
-            elif any(word in message_lower for word in ["no", "can't", "won't", "need more", "too low"]):
+            elif any(word in message_lower for word in [
+                "no", "can't", "cant", "won't", "wont", "too low", "pass",
+                "not interested", "not enough", "need more money"
+            ]):
                 extracted["offer_accepted"] = False
-                extracted["timeline_acceptable"] = False
             else:
-                extracted["offer_accepted"] = False  # Default to no for ambiguous
+                extracted["offer_accepted"] = False
+
+            # Timeline acceptance is independent — check for explicit pushback
+            timeline_pushback = any(phrase in message_lower for phrase in [
+                "need more time", "too quick", "can't close", "cant close",
+                "won't close", "wont close", "not that fast", "need longer",
+                "more time", "too fast", "need 30", "need 60", "need 90"
+            ])
+            if timeline_pushback:
+                extracted["timeline_acceptable"] = False
+            elif extracted.get("offer_accepted"):
+                # Accepting the offer implicitly accepts the 2-3 week close
+                extracted["timeline_acceptable"] = True
+            else:
+                extracted["timeline_acceptable"] = False
 
         return extracted
 
@@ -712,7 +832,7 @@ RESPONSE (keep under 100 words):"""
         """Determine if we should advance to next question based on extracted data"""
 
         if current_q == 1:
-            return "condition" in extracted_data and extracted_data["condition"] != "unknown"
+            return "condition" in extracted_data
         elif current_q == 2:
             return "price_expectation" in extracted_data
         elif current_q == 3:
@@ -778,6 +898,11 @@ RESPONSE (keep under 100 words):"""
         - Trigger workflows (CMA automation for HOT leads)
         """
         actions = []
+
+        # Remove stale temperature tags before adding the current one
+        for other_temp in ["hot", "warm", "cold"]:
+            if other_temp != temperature:
+                actions.append({"type": "remove_tag", "tag": f"seller_{other_temp}"})
 
         # Add temperature tag
         actions.append({
