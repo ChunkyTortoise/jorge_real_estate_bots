@@ -29,6 +29,7 @@ from bots.lead_bot.websocket_manager import websocket_manager
 from bots.seller_bot.jorge_seller_bot import JorgeSellerBot
 from bots.shared.auth_middleware import get_current_active_user
 from bots.shared.auth_service import get_auth_service
+from bots.shared.bot_settings import get_all_overrides as _settings_get_all, update_settings as _settings_update, KNOWN_BOTS as _known_bots
 from bots.shared.cache_service import get_cache_service
 from bots.shared.config import settings
 from bots.shared.event_broker import event_broker
@@ -844,6 +845,46 @@ async def event_system_health(user=Depends(get_current_active_user())):
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+
+
+# ── Admin: Bot Tone Settings ──────────────────────────────────────────────────
+
+@app.get("/admin/settings")
+async def admin_get_settings():
+    """Return current effective settings — bot defaults merged with any live overrides."""
+    from bots.seller_bot.jorge_seller_bot import (
+        SELLER_SYSTEM_PROMPT, JorgeSellerBot
+    )
+    from bots.shared.bot_settings import get_override as _get_override
+
+    seller_override = _get_override("seller")
+    qs_raw = JorgeSellerBot.QUALIFICATION_QUESTIONS
+    return {
+        "seller": {
+            "system_prompt": seller_override.get("system_prompt", SELLER_SYSTEM_PROMPT),
+            "jorge_phrases": seller_override.get("jorge_phrases", JorgeSellerBot.JORGE_PHRASES),
+            "questions": {
+                str(k): seller_override.get("questions", {}).get(str(k), v)
+                for k, v in qs_raw.items()
+            },
+        }
+    }
+
+
+@app.put("/admin/settings/{bot}")
+async def admin_update_settings(bot: str, request: Request):
+    """
+    Update tone settings for a bot (seller | buyer | lead).
+
+    Body: partial settings dict — only supplied keys are overridden.
+    Supported keys for seller: system_prompt, jorge_phrases, questions
+    """
+    if bot not in _known_bots:
+        raise HTTPException(status_code=404, detail=f"Unknown bot: {bot}. Valid: {sorted(_known_bots)}")
+    body = await request.json()
+    _settings_update(bot, body)
+    logger.info(f"Admin: updated {bot} settings — keys: {list(body)}")
+    return {"status": "ok", "bot": bot, "updated_keys": list(body)}
 
 
 if __name__ == "__main__":

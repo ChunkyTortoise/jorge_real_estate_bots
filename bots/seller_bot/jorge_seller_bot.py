@@ -26,6 +26,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from bots.shared.business_rules import JorgeBusinessRules
+from bots.shared.bot_settings import get_override as _get_bot_override
 from bots.shared.cache_service import get_cache_service
 from bots.shared.claude_client import ClaudeClient, TaskComplexity
 from bots.shared.ghl_client import GHLClient
@@ -212,6 +213,17 @@ class JorgeSellerBot:
             "with no repairs needed on your end. Does that work for your timeline?"
         )
     }
+
+    @property
+    def _questions(self) -> dict:
+        """Live qualification questions — override-aware, falls back to class constant."""
+        raw = _get_bot_override("seller").get("questions")
+        if not raw:
+            return self.QUALIFICATION_QUESTIONS
+        # Override uses string keys ("1"–"4"); normalise to int keys
+        if isinstance(next(iter(raw)), str):
+            return {int(k): v for k, v in raw.items()}
+        return raw
 
     def __init__(self, ghl_client: Optional[GHLClient] = None):
         """
@@ -585,7 +597,7 @@ class JorgeSellerBot:
         # Determine which question to ask
         if state.current_question == 0:
             # Initial greeting - move to Q1
-            question_text = self.QUALIFICATION_QUESTIONS[1]
+            question_text = self._questions[1]
             jorge_intro = self._get_random_jorge_phrase()
             response_message = f"{jorge_intro}. {question_text}"
             # Preserve the initial message in history before advancing
@@ -618,11 +630,12 @@ class JorgeSellerBot:
             if bot_reply:
                 history.append({"role": "assistant", "content": bot_reply})
 
-        # Get AI response from Claude
+        # Get AI response from Claude (system prompt may be overridden via admin settings)
+        system_prompt = _get_bot_override("seller").get("system_prompt", SELLER_SYSTEM_PROMPT)
         try:
             llm_response = await self.claude_client.agenerate(
                 prompt=prompt,
-                system_prompt=SELLER_SYSTEM_PROMPT,
+                system_prompt=system_prompt,
                 history=history,
                 max_tokens=500
             )
@@ -656,7 +669,7 @@ class JorgeSellerBot:
 
         # Get next question text
         next_q = current_question + 1 if current_question < 4 else None
-        next_question_text = self.QUALIFICATION_QUESTIONS.get(next_q, "")
+        next_question_text = self._questions.get(next_q, "")
 
         # Calculate offer amount for Q4 if needed
         if next_q == 4:
@@ -676,7 +689,7 @@ PERSONALITY TRAITS:
 - Moves efficiently but never makes sellers feel rushed
 
 CURRENT SITUATION:
-You just asked: "{self.QUALIFICATION_QUESTIONS.get(current_question, '')}"
+You just asked: "{self._questions.get(current_question, '')}"
 
 Seller responded: "{user_message}"
 
@@ -1122,15 +1135,16 @@ RESPONSE (keep under 100 words):"""
         return self._build_analytics(state, temperature)
 
     def _get_random_jorge_phrase(self) -> str:
-        """Get a random Jorge opening phrase"""
+        """Get a random Jorge opening phrase (override-aware)."""
         import random
-        return random.choice(self.JORGE_PHRASES)
+        phrases = _get_bot_override("seller").get("jorge_phrases", self.JORGE_PHRASES)
+        return random.choice(phrases)
 
     def _get_fallback_response(self, question_num: int, state: Optional["SellerQualificationState"] = None) -> str:
         """Get fallback response if AI fails. Re-asks current question when there is no next question."""
         jorge_phrase = self._get_random_jorge_phrase()
         # Use next question if available, otherwise re-ask the current question
-        question = self.QUALIFICATION_QUESTIONS.get(question_num + 1) or self.QUALIFICATION_QUESTIONS.get(question_num, "")
+        question = self._questions.get(question_num + 1) or self._questions.get(question_num, "")
 
         if question:
             if "{offer_amount}" in question:
