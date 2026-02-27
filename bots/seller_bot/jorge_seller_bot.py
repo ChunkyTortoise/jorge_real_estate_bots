@@ -19,8 +19,8 @@ Author: Claude Code Assistant
 Created: 2026-01-23
 """
 import os
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass, field, fields
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -93,7 +93,7 @@ class SellerQualificationState:
     conversation_history: List[Dict[str, str]] = field(default_factory=list)
     extracted_data: Dict[str, Any] = field(default_factory=dict)  # For dashboard integration
     last_interaction: Optional[datetime] = None
-    conversation_started: datetime = field(default_factory=datetime.now)
+    conversation_started: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def advance_question(self):
         """Move to next question in sequence and update stage"""
@@ -115,9 +115,11 @@ class SellerQualificationState:
             "question": question_num,
             "answer": answer,
             "bot_response": "",  # filled in by process_seller_message after Claude responds
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "extracted_data": extracted_data
         })
+        if len(self.conversation_history) > 20:
+            self.conversation_history = self.conversation_history[-20:]
 
         # Update questions_answered count
         if question_num > self.questions_answered:
@@ -143,7 +145,7 @@ class SellerQualificationState:
         # Update extracted_data field for dashboard
         self.extracted_data.update(extracted_data)
 
-        self.last_interaction = datetime.now()
+        self.last_interaction = datetime.now(timezone.utc)
         logger.debug(f"Recorded Q{question_num} answer: {extracted_data}")
 
 
@@ -257,6 +259,8 @@ class JorgeSellerBot:
                 state_dict['conversation_started']
             )
 
+        valid_fields = {f.name for f in fields(SellerQualificationState)}
+        state_dict = {k: v for k, v in state_dict.items() if k in valid_fields}
         return SellerQualificationState(**state_dict)
 
     async def save_conversation_state(
@@ -506,8 +510,8 @@ class JorgeSellerBot:
                         next_steps="Manual follow-up required",
                         analytics={"error": "Processing error occurred"}
                     )
-            except Exception:
-                pass
+            except Exception as inner_e:
+                self.logger.error(f"Fallback state load also failed: {inner_e}")
             return self._create_fallback_result()
 
     async def _get_or_create_state(
@@ -524,7 +528,7 @@ class JorgeSellerBot:
                 location_id=location_id,
                 current_question=0,
                 stage="Q0",
-                conversation_started=datetime.now()
+                conversation_started=datetime.now(timezone.utc)
             )
             await self.save_conversation_state(contact_id, state)
             self.logger.info(f"Created new qualification state for {contact_id}")
@@ -552,9 +556,15 @@ class JorgeSellerBot:
             question_text = self.QUALIFICATION_QUESTIONS[1]
             jorge_intro = self._get_random_jorge_phrase()
             response_message = f"{jorge_intro}. {question_text}"
+            # Preserve the initial message in history before advancing
+            state.conversation_history.append({
+                "question": 0,
+                "answer": user_message,
+                "bot_response": response_message,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "extracted_data": {},
+            })
             state.advance_question()  # Move to Q1
-            # Treat the initial Q1 prompt as progress for dashboard/test expectations.
-            state.questions_answered = max(state.questions_answered, 1)
 
             return {
                 "message": response_message,
@@ -587,7 +597,7 @@ class JorgeSellerBot:
             ai_message = llm_response.content
         except Exception as e:
             self.logger.error(f"Claude API error: {e}")
-            ai_message = self._get_fallback_response(current_q)
+            ai_message = self._get_fallback_response(current_q, state)
 
         # Extract data from user's response
         extracted_data = await self._extract_qualification_data(
@@ -877,6 +887,10 @@ RESPONSE (keep under 100 words):"""
         HOT: All 4 questions + offer accepted + timeline OK
         WARM: All 4 questions + reasonable responses but no offer acceptance
         COLD: <4 questions or disqualifying responses
+
+        Urgency modifies borderline WARM/COLD decisions:
+        - high urgency: tip borderline COLD → WARM
+        - low urgency: tip borderline WARM → COLD
         """
         # HOT criteria
         if (state.questions_answered >= 4 and
@@ -892,7 +906,14 @@ RESPONSE (keep under 100 words):"""
                            state.price_expectation <=
                            JorgeBusinessRules.MAX_BUDGET)
                 if in_range and state.motivation:
+                    # Low urgency tips WARM → COLD
+                    if state.urgency == "low":
+                        return SellerStatus.COLD.value
                     return SellerStatus.WARM.value
+
+        # High urgency tips borderline COLD → WARM when close to qualification
+        if state.urgency == "high" and state.questions_answered >= 3:
+            return SellerStatus.WARM.value
 
         # COLD otherwise
         return SellerStatus.COLD.value
@@ -1066,12 +1087,16 @@ RESPONSE (keep under 100 words):"""
         import random
         return random.choice(self.JORGE_PHRASES)
 
-    def _get_fallback_response(self, question_num: int) -> str:
-        """Get fallback response if AI fails"""
+    def _get_fallback_response(self, question_num: int, state: Optional["SellerQualificationState"] = None) -> str:
+        """Get fallback response if AI fails. Re-asks current question when there is no next question."""
         jorge_phrase = self._get_random_jorge_phrase()
-        question = self.QUALIFICATION_QUESTIONS.get(question_num + 1, "")
+        # Use next question if available, otherwise re-ask the current question
+        question = self.QUALIFICATION_QUESTIONS.get(question_num + 1) or self.QUALIFICATION_QUESTIONS.get(question_num, "")
 
         if question:
+            if "{offer_amount}" in question:
+                offer_amount = int(((state.price_expectation if state else None) or 300000) * 0.75)
+                question = question.format(offer_amount=f"${offer_amount:,}")
             return f"{jorge_phrase}. {question}"
         else:
             return "Look, something came up. Give me a few and I'll text you back."

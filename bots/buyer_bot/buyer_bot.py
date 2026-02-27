@@ -6,7 +6,7 @@ Q0 Greeting -> Q1 Preferences -> Q2 Pre-approval -> Q3 Timeline -> Q4 Motivation
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -70,9 +70,12 @@ class BuyerQualificationState:
         self.conversation_history.append({
             "question": question_num,
             "answer": answer,
+            "bot_response": "",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "extracted_data": extracted_data,
         })
+        if len(self.conversation_history) > 20:
+            self.conversation_history = self.conversation_history[-20:]
         if question_num > self.questions_answered:
             self.questions_answered = question_num
 
@@ -139,13 +142,17 @@ class JorgeBuyerBot:
             except Exception as db_err:
                 self.logger.warning(f"DB upsert_contact skipped (schema not ready?): {db_err}")
 
+        original_q = state.current_question
         response = await self._generate_response(state, message)
 
         extracted_data = response.get("extracted_data", {})
         should_advance = response.get("should_advance", False)
 
-        if state.current_question > 0:
+        if original_q > 0:
             state.record_answer(state.current_question, message, extracted_data)
+            # Store bot response so Claude has proper alternating history next turn
+            if state.conversation_history:
+                state.conversation_history[-1]["bot_response"] = response.get("message", "")
 
         if should_advance:
             state.advance_question()
@@ -178,6 +185,8 @@ class JorgeBuyerBot:
                 state_dict["last_interaction"] = datetime.fromisoformat(state_dict["last_interaction"])
             if state_dict.get("conversation_started"):
                 state_dict["conversation_started"] = datetime.fromisoformat(state_dict["conversation_started"])
+            valid_fields = {f.name for f in fields(BuyerQualificationState)}
+            state_dict = {k: v for k, v in state_dict.items() if k in valid_fields}
             return BuyerQualificationState(**state_dict)
 
         state = BuyerQualificationState(contact_id=contact_id, location_id=location_id)
@@ -216,7 +225,10 @@ class JorgeBuyerBot:
         }
         await self.cache.set(key, state_dict, ttl=604800)
         if hasattr(self.cache, "sadd"):
-            await self.cache.sadd("buyer:active_contacts", contact_id, ttl=604800)
+            try:
+                await self.cache.sadd("buyer:active_contacts", contact_id, ttl=604800)
+            except Exception as e:
+                self.logger.warning(f"Could not add to active contacts set: {e}")
 
         # Persist to database (best-effort — schema may not be initialized yet)
         try:
@@ -266,6 +278,14 @@ class JorgeBuyerBot:
             jorge_intro = self._get_random_jorge_phrase()
             question_text = BUYER_QUESTIONS[1]
             response_message = f"{jorge_intro}. {question_text}"
+            # Preserve the initial message in history before advancing
+            state.conversation_history.append({
+                "question": 0,
+                "answer": user_message,
+                "bot_response": response_message,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "extracted_data": {},
+            })
             state.advance_question()
             return {"message": response_message, "extracted_data": {}, "should_advance": False}
 
@@ -274,10 +294,18 @@ class JorgeBuyerBot:
         next_question_text = BUYER_QUESTIONS.get(next_q, "Let's lock in the details.")
         prompt = build_buyer_prompt(current_q, user_message, next_question_text)
 
+        history = []
+        for entry in state.conversation_history[-10:]:
+            history.append({"role": "user", "content": entry["answer"]})
+            bot_reply = entry.get("bot_response", "")
+            if bot_reply:
+                history.append({"role": "assistant", "content": bot_reply})
+
         try:
             llm_response = await self.claude_client.agenerate(
                 prompt=prompt,
                 system_prompt=BUYER_SYSTEM_PROMPT,
+                history=history,
                 max_tokens=400,
             )
             ai_message = llm_response.content
@@ -299,8 +327,6 @@ class JorgeBuyerBot:
             bed_match = re.search(r"(\d+)\s*(bed|beds|br)", msg)
             bath_match = re.search(r"(\d+(?:\.\d+)?)\s*(bath|baths|ba)", msg)
             sqft_match = re.search(r"(\d{3,5})\s*(sqft|square feet|sq ft)", msg)
-            price_match = re.findall(r"\$?([\d,]+)k?", msg)
-
             if bed_match:
                 extracted["beds_min"] = int(bed_match.group(1))
             if bath_match:
@@ -308,18 +334,26 @@ class JorgeBuyerBot:
             if sqft_match:
                 extracted["sqft_min"] = int(sqft_match.group(1))
 
-            if price_match:
-                parsed = []
-                for val in price_match:
-                    num = int(val.replace(",", ""))
-                    if "k" in msg and num < 10000:
-                        num *= 1000
-                    parsed.append(num)
-                if len(parsed) >= 2:
-                    extracted["price_min"] = min(parsed)
-                    extracted["price_max"] = max(parsed)
-                elif len(parsed) == 1:
-                    extracted["price_max"] = parsed[0]
+            # Price extraction: require explicit k-suffix, $-prefix, or 6+ digit bare numbers
+            # to avoid matching zip codes (5 digits), bedroom counts, or sqft values
+            k_prices = re.findall(r'\$?([\d,]+)\s*[kK]\b', msg)
+            dollar_prices = re.findall(r'\$([\d,]+)\b', msg)
+            bare_large = re.findall(r'\b(\d{6,})\b', msg) if not k_prices and not dollar_prices else []
+
+            price_values = []
+            for val in k_prices:
+                price_values.append(int(val.replace(",", "")) * 1000)
+            for val in dollar_prices:
+                price_values.append(int(val.replace(",", "")))
+            for val in bare_large:
+                price_values.append(int(val))
+
+            if price_values:
+                if len(price_values) >= 2:
+                    extracted["price_min"] = min(price_values)
+                    extracted["price_max"] = max(price_values)
+                else:
+                    extracted["price_max"] = price_values[0]
 
             # location (simple heuristic)
             for area in JorgeBusinessRules.SERVICE_AREAS:
@@ -620,6 +654,8 @@ class JorgeBuyerBot:
                 state_data["last_interaction"] = datetime.fromisoformat(state_data["last_interaction"])
             if state_data.get("conversation_started"):
                 state_data["conversation_started"] = datetime.fromisoformat(state_data["conversation_started"])
+            valid_fields = {f.name for f in fields(BuyerQualificationState)}
+            state_data = {k: v for k, v in state_data.items() if k in valid_fields}
             states.append(BuyerQualificationState(**state_data))
 
         return states
