@@ -852,22 +852,29 @@ async def event_system_health(user=Depends(get_current_active_user())):
 @app.get("/admin/settings")
 async def admin_get_settings():
     """Return current effective settings — bot defaults merged with any live overrides."""
-    from bots.seller_bot.jorge_seller_bot import (
-        SELLER_SYSTEM_PROMPT, JorgeSellerBot
-    )
+    from bots.seller_bot.jorge_seller_bot import SELLER_SYSTEM_PROMPT, JorgeSellerBot
+    from bots.buyer_bot.buyer_prompts import BUYER_SYSTEM_PROMPT, BUYER_QUESTIONS, JORGE_BUYER_PHRASES
     from bots.shared.bot_settings import get_override as _get_override
 
     seller_override = _get_override("seller")
-    qs_raw = JorgeSellerBot.QUALIFICATION_QUESTIONS
+    buyer_override = _get_override("buyer")
     return {
         "seller": {
             "system_prompt": seller_override.get("system_prompt", SELLER_SYSTEM_PROMPT),
             "jorge_phrases": seller_override.get("jorge_phrases", JorgeSellerBot.JORGE_PHRASES),
             "questions": {
                 str(k): seller_override.get("questions", {}).get(str(k), v)
-                for k, v in qs_raw.items()
+                for k, v in JorgeSellerBot.QUALIFICATION_QUESTIONS.items()
             },
-        }
+        },
+        "buyer": {
+            "system_prompt": buyer_override.get("system_prompt", BUYER_SYSTEM_PROMPT),
+            "jorge_phrases": buyer_override.get("jorge_phrases", JORGE_BUYER_PHRASES),
+            "questions": {
+                str(k): buyer_override.get("questions", {}).get(str(k), v)
+                for k, v in BUYER_QUESTIONS.items()
+            },
+        },
     }
 
 

@@ -66,3 +66,16 @@ async def get_active_conversations(user=Depends(get_current_active_user())):
         return await buyer_bot.get_all_active_conversations()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/jorge-buyer/{contact_id}/state")
+async def reset_state(contact_id: str, user=Depends(get_current_active_user())):
+    """Delete a contact's buyer bot conversation state (Redis + in-memory)."""
+    try:
+        cache = buyer_bot.cache
+        await cache.delete(f"buyer:state:{contact_id}")
+        if hasattr(cache, "srem"):
+            await cache.srem("buyer:active_contacts", contact_id)
+        return {"status": "ok", "contact_id": contact_id, "message": "Buyer bot state cleared"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
