@@ -7,6 +7,11 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from database.base import Base
+from database import billing_models  # noqa: F401
+from database import session as db_session_module
 
 
 def pytest_configure(config):
@@ -69,3 +74,46 @@ def _patch_async_session_factory(request, monkeypatch):
             monkeypatch.setattr(location, mock_factory)
         except (AttributeError, ImportError):
             pass  # Module not imported in this test's context
+
+
+@pytest.fixture
+async def db_session():
+    """Provide an isolated async SQLite session for tests that need real ORM behavior."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    billing_tables = [
+        billing_models.AgencyModel.__table__,
+        billing_models.SubscriptionModel.__table__,
+        billing_models.UsageRecordModel.__table__,
+        billing_models.WhiteLabelConfigModel.__table__,
+        billing_models.InvoiceModel.__table__,
+        billing_models.WebhookEventModel.__table__,
+        billing_models.OnboardingStateModel.__table__,
+    ]
+
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda sync_conn: Base.metadata.create_all(sync_conn, tables=billing_tables))
+
+    Session = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+    prev_engine = db_session_module._async_engine
+    prev_factory = db_session_module._session_factory
+    db_session_module._async_engine = engine
+    db_session_module._session_factory = Session
+
+    async with Session() as session:
+        original_execute = session.execute
+
+        async def _execute_with_refresh(*args, **kwargs):
+            session.sync_session.expire_all()
+            return await original_execute(*args, **kwargs)
+
+        session.execute = _execute_with_refresh
+        yield session
+
+    db_session_module._async_engine = prev_engine
+    db_session_module._session_factory = prev_factory
+
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda sync_conn: Base.metadata.drop_all(sync_conn, tables=billing_tables))
+    await engine.dispose()

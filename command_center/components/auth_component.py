@@ -72,14 +72,12 @@ def render_login_form() -> Optional[User]:
                 st.error("Login failed. Please try again.")
                 return None
     
-    # Default credentials hint
+    # Security guidance
     st.markdown("---")
     st.info("""
-    **Default Admin Credentials:**
-    - Email: jorge@realestate.ai
-    - Password: admin123
-    
-    *Change password after first login*
+    Use your assigned dashboard credentials.
+
+    If this is your first login, contact your administrator for secure account setup.
     """)
     
     st.markdown("</div>", unsafe_allow_html=True)

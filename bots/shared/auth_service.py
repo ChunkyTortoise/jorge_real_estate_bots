@@ -23,6 +23,7 @@ from passlib.context import CryptContext
 from sqlalchemy import select
 
 from bots.shared.cache_service import get_cache_service
+from bots.shared.config import settings
 from bots.shared.logger import get_logger
 from database.models import SessionModel, UserModel
 from database.session import AsyncSessionFactory
@@ -93,11 +94,15 @@ class AuthService:
 
     def _get_secret_key(self) -> str:
         """Get JWT secret key from environment or generate one."""
-        secret = os.getenv("JWT_SECRET")
-        if not secret:
-            logger.warning("JWT_SECRET not set, using default (not for production!)")
-            secret = "jorge_real_estate_ai_default_secret_change_in_production"
-        return secret
+        secret = os.getenv("JWT_SECRET") or settings.jwt_secret
+        if secret:
+            return secret
+
+        if settings.environment == "test":
+            logger.warning("JWT secret not configured in test; using ephemeral in-memory secret")
+            return secrets.token_urlsafe(64)
+
+        raise RuntimeError("JWT_SECRET must be configured in non-test environments")
 
     async def _initialize_default_users(self) -> None:
         """Initialize default admin user for first-time setup."""
