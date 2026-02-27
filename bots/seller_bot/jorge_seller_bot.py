@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.bot_settings import get_override as _get_bot_override
 from bots.shared.cache_service import get_cache_service
+from bots.shared.calendar_booking_service import FALLBACK_MESSAGE, CalendarBookingService
 from bots.shared.claude_client import ClaudeClient, TaskComplexity
 from bots.shared.ghl_client import GHLClient
 from bots.shared.logger import get_logger
@@ -90,6 +91,11 @@ class SellerQualificationState:
     # Q4: Offer acceptance
     offer_accepted: Optional[bool] = None
     timeline_acceptable: Optional[bool] = None  # 2-3 week close
+
+    # Scheduling state (calendar booking)
+    scheduling_offered: bool = False
+    appointment_booked: bool = False
+    appointment_id: Optional[str] = None
 
     # Metadata
     conversation_history: List[Dict[str, str]] = field(default_factory=list)
@@ -236,6 +242,7 @@ class JorgeSellerBot:
         self.ghl_client = ghl_client or GHLClient()
         self.cache = get_cache_service()  # Redis cache for persistence
         self.logger = get_logger(__name__)
+        self.calendar_service = CalendarBookingService(self.ghl_client)
 
         # Note: No in-memory _states dict - all state now in Redis
         self.logger.info("Initialized JorgeSellerBot with Redis persistence")
@@ -335,6 +342,9 @@ class JorgeSellerBot:
             'urgency': state.urgency,
             'offer_accepted': state.offer_accepted,
             'timeline_acceptable': state.timeline_acceptable,
+            'scheduling_offered': state.scheduling_offered,
+            'appointment_booked': state.appointment_booked,
+            'appointment_id': state.appointment_id,
             'conversation_history': state.conversation_history,
             'extracted_data': state.extracted_data,
             'last_interaction': state.last_interaction.isoformat() if state.last_interaction else None,
@@ -456,6 +466,39 @@ class JorgeSellerBot:
             # Get or create qualification state (now from Redis)
             state = await self._get_or_create_state(contact_id, location_id)
 
+            # --- Slot selection intercept ---
+            # If scheduling has been offered but appointment not yet booked,
+            # check if the lead replied with "1", "2", or "3".
+            if state.scheduling_offered and not state.appointment_booked:
+                slot_index = CalendarBookingService.detect_slot_selection(message)
+                if slot_index is not None:
+                    booking = await self.calendar_service.book_appointment(
+                        contact_id, slot_index, "seller"
+                    )
+                    if booking["success"]:
+                        state.appointment_booked = True
+                        appt = booking.get("appointment") or {}
+                        state.appointment_id = str(
+                            appt.get("id") or appt.get("appointmentId") or ""
+                        )
+                    temperature = self._calculate_temperature(state)
+                    await self.save_conversation_state(
+                        contact_id, state, temperature=temperature
+                    )
+                    return SellerResult(
+                        response_message=booking["message"],
+                        seller_temperature=temperature,
+                        questions_answered=state.questions_answered,
+                        qualification_complete=(state.questions_answered >= 4),
+                        actions_taken=[],
+                        next_steps=(
+                            "Appointment booked"
+                            if booking["success"]
+                            else "Retry slot selection"
+                        ),
+                        analytics=self._build_analytics(state, temperature),
+                    )
+
             if contact_info:
                 try:
                     await upsert_contact(
@@ -496,6 +539,16 @@ class JorgeSellerBot:
             # Calculate temperature
             temperature = self._calculate_temperature(state)
 
+            # --- One-time scheduling offer ---
+            # Mark scheduling_offered BEFORE saving so we don't double-offer
+            # even if the async API call fails or takes too long.
+            _offer_scheduling = not state.scheduling_offered and temperature in (
+                SellerStatus.HOT.value,
+                SellerStatus.WARM.value,
+            )
+            if _offer_scheduling:
+                state.scheduling_offered = True
+
             # Save state to Redis and DB after updates
             await self.save_conversation_state(
                 contact_id,
@@ -506,6 +559,17 @@ class JorgeSellerBot:
                     "property_address": contact_info.get("property_address") if contact_info else None,
                 },
             )
+
+            # Fetch scheduling message (state already saved as scheduling_offered=True)
+            scheduling_append = ""
+            if _offer_scheduling:
+                if temperature == SellerStatus.HOT.value:
+                    sched = await self.calendar_service.offer_appointment_slots(
+                        contact_id, "seller"
+                    )
+                else:
+                    sched = {"message": FALLBACK_MESSAGE}
+                scheduling_append = "\n\n" + sched["message"]
 
             # Determine next steps
             next_steps = self._determine_next_steps(state, temperature)
@@ -523,7 +587,7 @@ class JorgeSellerBot:
 
             # Create result
             result = SellerResult(
-                response_message=response_data["message"],
+                response_message=response_data["message"] + scheduling_append,
                 seller_temperature=temperature,
                 questions_answered=state.questions_answered,
                 qualification_complete=(state.questions_answered >= 4),

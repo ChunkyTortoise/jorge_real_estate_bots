@@ -15,7 +15,7 @@ Features:
 - Batch operations
 - Health monitoring
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -430,6 +430,65 @@ class GHLClient:
             raise e
 
     # ========== CALENDAR & APPOINTMENTS ==========
+
+    async def get_free_slots(self, calendar_id: str, days_ahead: int = 7) -> List[Dict]:
+        """
+        Get available appointment slots from GHL calendar.
+
+        Queries the next `days_ahead` days, filters to 9am-5pm PT, and returns
+        at most 3 slots. Returns [] on any failure (graceful degradation).
+
+        Args:
+            calendar_id: GHL calendar ID
+            days_ahead: How many days into the future to query (default 7)
+
+        Returns:
+            List of slot dicts with "start" and "end" ISO timestamp strings.
+        """
+        try:
+            now = datetime.now()
+            start_ms = int(now.timestamp() * 1000)
+            end_ms = int((now + timedelta(days=days_ahead)).timestamp() * 1000)
+
+            result = await self._make_request(
+                "GET",
+                f"calendars/{calendar_id}/free-slots",
+                params={
+                    "startDate": start_ms,
+                    "endDate": end_ms,
+                    "timezone": "America/Los_Angeles",
+                },
+            )
+
+            if not result.get("success"):
+                logger.warning(f"get_free_slots failed: {result.get('error')}")
+                return []
+
+            # GHL returns {"slots": {"2024-02-01": [{"startTime": ..., "endTime": ...}]}}
+            slots_by_date = result.get("data", {}).get("slots", {})
+            business_slots: List[Dict] = []
+            for date_slots in slots_by_date.values():
+                for slot in date_slots:
+                    start_str = slot.get("startTime") or slot.get("start", "")
+                    end_str = slot.get("endTime") or slot.get("end", "")
+                    if not start_str:
+                        continue
+                    try:
+                        dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                        # Approximate PT offset: UTC-8 (ignore DST for simplicity)
+                        hour_pt = (dt.hour - 8) % 24
+                        if 9 <= hour_pt < 17:
+                            business_slots.append({"start": start_str, "end": end_str})
+                            if len(business_slots) >= 3:
+                                return business_slots
+                    except (ValueError, AttributeError):
+                        continue
+
+            return business_slots
+
+        except Exception as e:
+            logger.error(f"get_free_slots exception: {e}")
+            return []
 
     async def create_appointment(self, appointment_data: Dict[str, Any]) -> Dict:
         """
