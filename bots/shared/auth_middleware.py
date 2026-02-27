@@ -54,7 +54,7 @@ class AuthMiddleware:
             token = credentials.credentials
 
             # Lightweight test token for compatibility tests.
-            if token == "test-token":
+            if token == "test-token" and settings.environment == "test":
                 return User(
                     user_id="test-user",
                     email="api@test.com",

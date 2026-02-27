@@ -71,9 +71,10 @@ class Settings(BaseSettings):
     app_name: str = "Jorge's Real Estate AI Bots"
     version: str = "1.0.0"
     debug: bool = False
+    cors_origins: list[str] = ["http://localhost:8501", "http://localhost:3000"]
 
     # ========== SECURITY ==========
-    jwt_secret: str = "change_this_in_production"
+    jwt_secret: str = ""
     ghl_webhook_secret: Optional[str] = None
     ghl_webhook_public_key: Optional[str] = None
 

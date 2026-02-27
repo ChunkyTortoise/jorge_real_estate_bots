@@ -549,13 +549,11 @@ Be concise. Focus on actionable insights for Jorge."""
                 logger.warning(f"Failed to publish GHL update error event: {event_error}")
 
     async def _async_ghl_update(self, contact_id: str, analysis: Dict[str, Any]) -> Dict:
-        """Async wrapper for GHL update (sync library)."""
-        import asyncio
-        return await asyncio.to_thread(
-            self.ghl.update_lead_score,
+        """Update GHL lead score fields using async client method."""
+        return await self.ghl.update_lead_score(
             contact_id,
             analysis["score"],
-            analysis["temperature"]
+            analysis["temperature"],
         )
 
     async def _send_followup(self, contact_id: str, analysis: Dict[str, Any]):
@@ -596,13 +594,8 @@ Be concise. Focus on actionable insights for Jorge."""
                 logger.warning(f"Failed to publish follow-up error event: {event_error}")
 
     async def _async_send_followup(self, contact_id: str, temperature: str) -> Dict:
-        """Async wrapper for sending follow-up."""
-        import asyncio
-        return await asyncio.to_thread(
-            self.ghl.send_immediate_followup,
-            contact_id,
-            temperature
-        )
+        """Send follow-up using async client method."""
+        return await self.ghl.send_immediate_followup(contact_id, temperature)
 
     def _fallback_scoring(self, lead_data: Dict[str, Any]) -> Dict[str, Any]:
         """
