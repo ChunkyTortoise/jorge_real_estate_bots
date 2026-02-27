@@ -127,12 +127,10 @@ app.add_middleware(
 )
 
 def verify_ghl_signature(payload: bytes, signature: Optional[str]) -> bool:
-    if not signature:
-        return False
-    signature = signature.strip()
-
     # RSA signature with public key (current GHL webhook scheme)
     if settings.ghl_webhook_public_key:
+        if not signature:
+            return False
         try:
             from cryptography.hazmat.primitives import hashes, serialization
             from cryptography.hazmat.primitives.asymmetric import padding
@@ -140,7 +138,7 @@ def verify_ghl_signature(payload: bytes, signature: Optional[str]) -> bool:
                 settings.ghl_webhook_public_key.encode()
             )
             public_key.verify(
-                base64.b64decode(signature),
+                base64.b64decode(signature.strip()),
                 payload,
                 padding.PKCS1v15(),
                 hashes.SHA256(),
@@ -152,21 +150,26 @@ def verify_ghl_signature(payload: bytes, signature: Optional[str]) -> bool:
 
     # HMAC signature with shared secret (legacy/optional)
     if settings.ghl_webhook_secret:
+        if not signature:
+            return False
+        sig = signature.strip().replace("sha256=", "")
         computed = hmac.new(
             settings.ghl_webhook_secret.encode(),
             payload,
             hashlib.sha256,
         ).hexdigest()
-        sig = signature.replace("sha256=", "").strip()
         if hmac.compare_digest(computed, sig):
             return True
         # Try base64 format
         computed_b64 = base64.b64encode(
             hmac.new(settings.ghl_webhook_secret.encode(), payload, hashlib.sha256).digest()
         ).decode()
-        return hmac.compare_digest(computed_b64, signature)
+        return hmac.compare_digest(computed_b64, sig)
 
-    return False
+    # No signature config set — allow all requests (pass-through mode)
+    # Add GHL_WEBHOOK_SECRET or GHL_WEBHOOK_PUBLIC_KEY env var to enable verification
+    logger.debug("Webhook signature verification skipped: no secret configured")
+    return True
 
 
 # Middleware: Enhanced performance monitoring for 5-minute rule

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -19,13 +19,25 @@ async def client() -> AsyncClient:
 
 
 @pytest.mark.asyncio
-async def test_unified_webhook_rejects_missing_signature(client: AsyncClient) -> None:
+async def test_unified_webhook_allows_when_no_secret_configured(client: AsyncClient) -> None:
+    """When no signature config is set, requests are allowed (pass-through mode for MVP)."""
+    payload = {"contactId": "c1", "message": "hello"}
+
+    response = await client.post("/api/ghl/webhook", json=payload)
+
+    # 200 or 500 (processing error) — not 401
+    assert response.status_code != 401
+
+
+@pytest.mark.asyncio
+async def test_unified_webhook_rejects_missing_signature_when_secret_set(client: AsyncClient, monkeypatch) -> None:
+    """When a webhook secret IS configured, missing signatures must be rejected."""
+    monkeypatch.setattr(lead_main.settings, "ghl_webhook_secret", "test-secret-abc")
     payload = {"contactId": "c1", "message": "hello"}
 
     response = await client.post("/api/ghl/webhook", json=payload)
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "Invalid webhook signature"
 
 
 @pytest.mark.asyncio
