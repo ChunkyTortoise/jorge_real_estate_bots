@@ -80,8 +80,6 @@ jobs:
       ANTHROPIC_API_KEY: sk-test-not-real
       GHL_API_KEY: test-key
       GHL_LOCATION_ID: test-location
-      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-
     steps:
       - uses: actions/checkout@v4
 
@@ -92,13 +90,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Verify integration secrets
-        run: |
-          if [ -z "${STRIPE_SECRET_KEY}" ]; then
-            echo "::error::Missing required secret: STRIPE_SECRET_KEY"
-            exit 1
-          fi
 
       - name: Run integration tests
         run: pytest -m integration -v --tb=short
@@ -118,4 +109,4 @@ jobs:
         pip install pyright
         pip install -r requirements.txt || pip install -r requirements-dev.txt || true
     - name: Run pyright
-      run: pyright --pythonversion 3.11 || true
+      run: pyright --pythonversion 3.11

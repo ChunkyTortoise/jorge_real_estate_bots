@@ -117,7 +117,7 @@ app = FastAPI(
 )
 
 # CORS middleware for browser-based clients
-cors_origins = settings.cors_origins or []
+cors_origins = getattr(settings, "cors_origins", None) or []
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
