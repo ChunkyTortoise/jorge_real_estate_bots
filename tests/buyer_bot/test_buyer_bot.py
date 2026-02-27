@@ -412,3 +412,53 @@ async def test_buyer_state_deserialization_ignores_unknown_keys(dummy_cache):
     # Should not raise TypeError
     loaded = await bot._get_or_create_state("c1", "loc1")
     assert loaded.contact_id == "c1"
+
+
+# ─── Q1 advance — location-only does not advance ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_buyer_q1_location_only_does_not_advance():
+    """Saying just a city name must NOT advance past Q1."""
+    bot = JorgeBuyerBot()
+    data = await bot._extract_qualification_data("looking in Dallas", 1)
+    # preferred_location may be set, but no beds/price → should not advance
+    assert bot._should_advance_question(data, 1) is False
+
+
+@pytest.mark.asyncio
+async def test_buyer_q1_beds_advances():
+    """Providing bedroom count advances Q1."""
+    bot = JorgeBuyerBot()
+    data = await bot._extract_qualification_data("3 bedrooms please", 1)
+    assert bot._should_advance_question(data, 1) is True
+
+
+# ─── DB fallback — buyer restores state after cache miss ─────────────────────
+
+@pytest.mark.asyncio
+async def test_buyer_db_fallback_restores_state(dummy_cache):
+    """_get_or_create_state falls back to DB when cache is empty."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from datetime import datetime, timezone
+
+    bot = JorgeBuyerBot()
+    bot.cache = dummy_cache  # empty cache → triggers fallback
+
+    mock_row = MagicMock()
+    mock_row.current_question = 2
+    mock_row.questions_answered = 1
+    mock_row.is_qualified = False
+    mock_row.stage = "Q2"
+    mock_row.extracted_data = {"beds_min": 3, "price_max": 400000}
+    mock_row.conversation_history = []
+    mock_row.last_activity = None
+    mock_row.conversation_started = datetime.now(timezone.utc)
+    mock_row.metadata_json = {"location_id": "loc_test", "preferred_location": "Dallas"}
+
+    with patch("bots.buyer_bot.buyer_bot.fetch_conversation", return_value=mock_row):
+        state = await bot._get_or_create_state("c1", "loc_fallback")
+
+    assert state.current_question == 2
+    assert state.beds_min == 3
+    assert state.price_max == 400000
+    assert state.location_id == "loc_test"

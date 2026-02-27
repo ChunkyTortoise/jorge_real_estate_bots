@@ -913,3 +913,39 @@ async def test_seller_state_deserialization_ignores_unknown_keys():
     loaded = await bot.get_conversation_state("c1")
     assert loaded is not None
     assert loaded.contact_id == "c1"
+
+
+# ─── DB fallback — seller restores state after cache miss ────────────────────
+
+@pytest.mark.asyncio
+async def test_seller_db_fallback_restores_state():
+    """get_conversation_state falls back to DB when cache is empty."""
+    from unittest.mock import MagicMock, patch
+    from datetime import datetime, timezone
+
+    class EmptyCache:
+        async def get(self, key): return None
+        async def set(self, key, value, ttl=None): pass
+
+    bot = JorgeSellerBot()
+    bot.cache = EmptyCache()
+
+    mock_row = MagicMock()
+    mock_row.current_question = 3
+    mock_row.questions_answered = 2
+    mock_row.is_qualified = False
+    mock_row.stage = "Q3"
+    mock_row.extracted_data = {"condition": "needs_major_repairs", "price_expectation": 280000}
+    mock_row.conversation_history = []
+    mock_row.last_activity = None
+    mock_row.conversation_started = datetime.now(timezone.utc)
+    mock_row.metadata_json = {"location_id": "loc_test"}
+
+    with patch("bots.seller_bot.jorge_seller_bot.fetch_conversation", return_value=mock_row):
+        state = await bot.get_conversation_state("c1")
+
+    assert state is not None
+    assert state.current_question == 3
+    assert state.condition == "needs_major_repairs"
+    assert state.price_expectation == 280000
+    assert state.location_id == "loc_test"

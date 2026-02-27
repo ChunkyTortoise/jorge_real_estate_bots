@@ -234,6 +234,17 @@ async def fetch_properties(
         return list(result.scalars().all())
 
 
+async def fetch_conversation(contact_id: str, bot_type: str) -> Optional[ConversationModel]:
+    """Fetch a conversation record by contact_id and bot_type. Returns None if not found."""
+    async with AsyncSessionFactory() as session:
+        stmt = select(ConversationModel).where(
+            ConversationModel.contact_id == contact_id,
+            ConversationModel.bot_type == bot_type,
+        )
+        result = await session.execute(stmt)
+        return result.scalars().first()
+
+
 async def count_conversations_by_stage(bot_type: str) -> Dict[str, int]:
     async with AsyncSessionFactory() as session:
         stmt = select(ConversationModel.stage, func.count()).where(
