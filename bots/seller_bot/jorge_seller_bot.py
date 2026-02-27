@@ -18,6 +18,7 @@ Temperature Scoring:
 Author: Claude Code Assistant
 Created: 2026-01-23
 """
+import asyncio
 import os
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
@@ -1032,9 +1033,16 @@ RESPONSE (keep under 100 words):"""
                 "workflow_name": "CMA Report Generation"
             })
 
-        # Apply actions to GHL
+        # Apply actions to GHL — hard 10s deadline so Render never times out
         try:
-            await self._apply_ghl_actions(contact_id, location_id, actions)
+            await asyncio.wait_for(
+                self._apply_ghl_actions(contact_id, location_id, actions),
+                timeout=10.0
+            )
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                f"GHL actions timed out for {contact_id} — tags/workflows will sync on next message"
+            )
         except Exception as e:
             self.logger.error(f"Failed to apply GHL actions: {e}")
 
