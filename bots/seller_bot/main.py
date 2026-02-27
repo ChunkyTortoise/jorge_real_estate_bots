@@ -95,6 +95,17 @@ async def get_active_conversations(user=Depends(get_current_active_user())):
         logger.error(f"Error in get_active_conversations: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/jorge-seller/{contact_id}/state")
+async def reset_state(contact_id: str, user=Depends(get_current_active_user())):
+    """Delete a contact's seller bot conversation state (Redis + in-memory)."""
+    try:
+        await seller_bot.delete_conversation_state(contact_id)
+        return {"status": "ok", "contact_id": contact_id, "message": "Seller bot state cleared"}
+    except Exception as e:
+        logger.error(f"Error resetting state for {contact_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("bots.seller_bot.main:app", host="0.0.0.0", port=8002, reload=settings.debug)

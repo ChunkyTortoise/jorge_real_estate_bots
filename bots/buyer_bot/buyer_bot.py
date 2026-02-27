@@ -136,6 +136,26 @@ class JorgeBuyerBot:
         message: str,
         contact_info: Optional[Dict[str, Any]] = None,
     ) -> BuyerResult:
+        # --- Jorge-Active takeover check ---
+        _tags: list = (contact_info or {}).get("tags") or []
+        if not _tags:
+            try:
+                _contact_data = await self.ghl_client.get_contact(contact_id)
+                _tags = _contact_data.get("tags") or []
+            except Exception as _tag_err:
+                logger.warning(f"Could not fetch tags for {contact_id}: {_tag_err}")
+        if "Jorge-Active" in _tags:
+            logger.info(f"Skipping buyer {contact_id} — Jorge-Active tag set")
+            return BuyerResult(
+                response_message="",
+                buyer_temperature="cold",
+                questions_answered=0,
+                qualification_complete=False,
+                actions_taken=[],
+                next_steps="Jorge handling manually (Jorge-Active tag set)",
+                analytics={},
+            )
+
         state = await self._get_or_create_state(contact_id, location_id)
 
         # --- Slot selection intercept ---
