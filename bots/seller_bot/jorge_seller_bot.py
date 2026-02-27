@@ -463,6 +463,29 @@ class JorgeSellerBot:
         try:
             self.logger.info(f"Processing seller message for contact {contact_id}")
 
+            # --- Jorge-Active takeover check ---
+            # If Jorge adds the "Jorge-Active" tag to a contact, the bot goes silent
+            # so Jorge can handle the conversation manually.
+            # Remove the tag when Jorge is done to resume the bot.
+            _tags: list = (contact_info or {}).get("tags") or []
+            if not _tags:
+                try:
+                    _contact_data = await self.ghl_client.get_contact(contact_id)
+                    _tags = _contact_data.get("tags") or []
+                except Exception as _tag_err:
+                    self.logger.warning(f"Could not fetch tags for {contact_id}: {_tag_err}")
+            if "Jorge-Active" in _tags:
+                self.logger.info(f"Skipping {contact_id} — Jorge-Active tag set")
+                return SellerResult(
+                    response_message="",
+                    seller_temperature="cold",
+                    questions_answered=0,
+                    qualification_complete=False,
+                    actions_taken=[],
+                    next_steps="Jorge handling manually (Jorge-Active tag set)",
+                    analytics={},
+                )
+
             # Get or create qualification state (now from Redis)
             state = await self._get_or_create_state(contact_id, location_id)
 

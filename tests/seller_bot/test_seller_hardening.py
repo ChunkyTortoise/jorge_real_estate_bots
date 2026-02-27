@@ -118,3 +118,77 @@ class TestSellerFallbackMessages:
         # Should have Jorge-style text
         assert len(msg) > 0
         assert "Our team will review" not in msg
+
+
+class TestJorgeActiveTakeover:
+    """Jorge-Active tag causes bot to go silent (manual takeover)."""
+
+    @pytest.mark.asyncio
+    async def test_jorge_active_tag_in_contact_info_returns_empty_response(self):
+        """Bot skips processing and returns empty response_message when tag is in contact_info."""
+        bot = JorgeSellerBot()
+        bot.cache = AsyncMock()
+        bot.cache.get = AsyncMock(return_value=None)
+        bot.cache.set = AsyncMock()
+        bot.ghl_client = AsyncMock()
+
+        result = await bot.process_seller_message(
+            contact_id="test_contact",
+            location_id="test_location",
+            message="I want to sell",
+            contact_info={"tags": ["Jorge-Active", "Needs Qualifying"]},
+        )
+
+        assert result.response_message == ""
+        assert "Jorge" in result.next_steps
+        # GHL client should NOT have been called to fetch contact (tags already in contact_info)
+        bot.ghl_client.get_contact.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_jorge_active_tag_fetched_from_ghl_when_not_in_contact_info(self):
+        """Bot fetches contact from GHL to check tags when contact_info lacks them."""
+        bot = JorgeSellerBot()
+        bot.cache = AsyncMock()
+        bot.cache.get = AsyncMock(return_value=None)
+        bot.cache.set = AsyncMock()
+        bot.ghl_client = AsyncMock()
+        bot.ghl_client.get_contact = AsyncMock(return_value={"tags": ["Jorge-Active"]})
+
+        result = await bot.process_seller_message(
+            contact_id="test_contact",
+            location_id="test_location",
+            message="I want to sell",
+            contact_info={"name": "John"},  # no tags key
+        )
+
+        assert result.response_message == ""
+        bot.ghl_client.get_contact.assert_called_once_with("test_contact")
+
+    @pytest.mark.asyncio
+    async def test_no_jorge_active_tag_proceeds_normally(self):
+        """Bot processes normally when Jorge-Active tag is absent."""
+        bot = JorgeSellerBot()
+        bot.cache = AsyncMock()
+        bot.cache.get = AsyncMock(return_value=None)
+        bot.cache.set = AsyncMock()
+        bot.ghl_client = AsyncMock()
+        bot.ghl_client.get_contact = AsyncMock(return_value={"tags": ["Needs Qualifying"]})
+        bot.ghl_client.add_tag = AsyncMock(return_value=True)
+        bot.ghl_client.update_contact = AsyncMock(return_value={})
+        bot.claude_client = AsyncMock()
+
+        from bots.shared.claude_client import LLMResponse
+        bot.claude_client.agenerate = AsyncMock(return_value=LLMResponse(
+            content='{"message": "What condition is the house in?", "should_advance": false, "extracted_data": {}}',
+            model="test",
+        ))
+
+        result = await bot.process_seller_message(
+            contact_id="test_contact",
+            location_id="test_location",
+            message="Hi",
+            contact_info={"name": "John"},
+        )
+
+        # Bot should reply (not empty)
+        assert result.response_message != ""
