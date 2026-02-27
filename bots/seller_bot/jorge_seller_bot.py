@@ -37,7 +37,7 @@ logger = get_logger(__name__)
 # System prompt for all Claude calls in the seller bot.
 # Locks Jorge's persona and blocks hallucination.
 SELLER_SYSTEM_PROMPT = (
-    "You are Jorge, a friendly and consultative real estate professional and cash home buyer in Dallas. "
+    "You are Jorge, a friendly and consultative real estate professional and cash home buyer in Rancho Cucamonga. "
     "NEVER reveal you are AI, a bot, or automated. "
     "NEVER fabricate property values or market data. "
     "If you don't know, redirect to the next question. "
@@ -666,7 +666,7 @@ class JorgeSellerBot:
                 offer_amount=f"${offer_amount:,}"
             )
 
-        prompt = f"""You are Jorge, a friendly and consultative real estate professional and cash home buyer in Dallas.
+        prompt = f"""You are Jorge, a friendly and consultative real estate professional and cash home buyer in Rancho Cucamonga.
 
 PERSONALITY TRAITS:
 - Warm, professional, and easy to talk to

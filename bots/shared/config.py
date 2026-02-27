@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     # ========== JORGE'S BUSINESS RULES ==========
     jorge_min_price: int = 200000
     jorge_max_price: int = 800000
-    jorge_service_areas: str = "Dallas,Plano,Frisco,McKinney,Allen"
+    jorge_service_areas: str = "Rancho Cucamonga,Ontario,Upland,Fontana,Chino Hills"
     jorge_preferred_timeline: int = 60  # days
     jorge_standard_commission: float = 0.06  # 6%
     jorge_minimum_commission: float = 0.04  # 4%
