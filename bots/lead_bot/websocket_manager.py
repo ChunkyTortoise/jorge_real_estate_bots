@@ -409,7 +409,7 @@ class WebSocketManager:
 
         try:
             if self.redis_client:
-                await self.redis_client.ping()
+                await self.redis_client.ping()  # type: ignore[misc]
                 health_data["redis_connected"] = True
         except Exception as e:
             health_data["redis_error"] = str(e)

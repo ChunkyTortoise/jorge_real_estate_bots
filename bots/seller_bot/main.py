@@ -4,9 +4,11 @@ Exposes Jorge's confrontational qualification system via REST API.
 """
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from bots.seller_bot.jorge_seller_bot import JorgeSellerBot
 from bots.shared.auth_middleware import get_current_active_user
@@ -104,6 +106,78 @@ async def reset_state(contact_id: str, user=Depends(get_current_active_user())):
     except Exception as e:
         logger.error(f"Error resetting state for {contact_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class TriggerCmaRequest(BaseModel):
+    contact_id: str
+
+
+class AdvanceStageRequest(BaseModel):
+    stage: Optional[str] = None
+
+
+def _check_admin_key(x_admin_key: Optional[str] = Header(default=None)) -> None:
+    """Allow requests that carry the configured admin API key."""
+    if not settings.admin_api_key:
+        return  # no key configured — open access (dev mode)
+    if x_admin_key != settings.admin_api_key:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+
+
+@app.post("/api/jorge-seller/trigger-cma")
+async def trigger_cma(
+    request: TriggerCmaRequest,
+    _: None = Depends(_check_admin_key),
+):
+    """Trigger CMA generation for a contact (dashboard action)."""
+    try:
+        state = await seller_bot.get_conversation_state(request.contact_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Contact not found in seller bot")
+        # Apply cma_requested tag via GHL so the CMA workflow fires
+        from bots.shared.ghl_client import GHLClient
+        ghl = GHLClient()
+        await ghl.add_tag(request.contact_id, "cma_requested")
+        logger.info(f"CMA triggered for contact {request.contact_id}")
+        return {"status": "ok", "contact_id": request.contact_id, "action": "cma_requested"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering CMA for {request.contact_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/jorge-seller/{contact_id}/advance-stage")
+async def advance_stage(
+    contact_id: str,
+    request: AdvanceStageRequest,
+    _: None = Depends(_check_admin_key),
+):
+    """Advance a contact's seller bot conversation stage (dashboard action)."""
+    try:
+        state = await seller_bot.get_conversation_state(contact_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Contact not found in seller bot")
+
+        stage_order = ["Q0", "Q1", "Q2", "Q3", "Q4", "QUALIFIED"]
+        target = request.stage or _next_stage(state.stage)
+        if target not in stage_order:
+            raise HTTPException(status_code=400, detail=f"Invalid stage: {target}")
+
+        state.stage = target
+        await seller_bot.save_conversation_state(contact_id, state)
+        logger.info(f"Stage advanced to {target} for contact {contact_id}")
+        return {"status": "ok", "contact_id": contact_id, "stage": target}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error advancing stage for {contact_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _next_stage(current: str) -> str:
+    progression = {"Q0": "Q1", "Q1": "Q2", "Q2": "Q3", "Q3": "Q4", "Q4": "QUALIFIED"}
+    return progression.get(current, current)
 
 
 if __name__ == "__main__":

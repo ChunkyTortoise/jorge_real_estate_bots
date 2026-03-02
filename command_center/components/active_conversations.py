@@ -441,15 +441,51 @@ class ActiveConversationsComponent:
 
     def _trigger_cma(self, conv: ConversationState) -> None:
         """Trigger CMA for selected conversation."""
-        st.success(f"📊 CMA triggered for {conv.seller_name}!")
-        st.info("CMA request has been sent to the property valuation system.")
-        # TODO: Integrate with actual CMA service
+        import requests
+        from bots.shared.config import settings
+
+        headers = {}
+        if settings.admin_api_key:
+            headers["X-Admin-Key"] = settings.admin_api_key
+        try:
+            resp = requests.post(
+                f"{settings.seller_bot_url}/api/jorge-seller/trigger-cma",
+                json={"contact_id": conv.contact_id},
+                headers=headers,
+                timeout=10,
+            )
+            if resp.ok:
+                st.success(f"📊 CMA triggered for {conv.seller_name}!")
+                st.info("CMA request tagged in GHL — workflow will fire automatically.")
+            else:
+                st.warning(f"CMA request returned {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            logger.error(f"CMA trigger failed: {e}")
+            st.error(f"Could not reach seller bot: {e}")
 
     def _advance_stage(self, conv: ConversationState, next_stage: str) -> None:
         """Advance conversation to next stage."""
-        st.success(f"➡️ {conv.seller_name} advanced to {next_stage}!")
-        st.info("Stage advancement has been logged and next question sequence initiated.")
-        # TODO: Integrate with actual seller bot service
+        import requests
+        from bots.shared.config import settings
+
+        headers = {}
+        if settings.admin_api_key:
+            headers["X-Admin-Key"] = settings.admin_api_key
+        try:
+            resp = requests.post(
+                f"{settings.seller_bot_url}/api/jorge-seller/{conv.contact_id}/advance-stage",
+                json={"stage": next_stage},
+                headers=headers,
+                timeout=10,
+            )
+            if resp.ok:
+                st.success(f"➡️ {conv.seller_name} advanced to {next_stage}!")
+                st.info("Stage updated in seller bot — next question sequence initiated.")
+            else:
+                st.warning(f"Stage advance returned {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            logger.error(f"Stage advance failed: {e}")
+            st.error(f"Could not reach seller bot: {e}")
 
     def _get_temperature_emoji(self, temperature: Temperature) -> str:
         """Get emoji representation for temperature."""

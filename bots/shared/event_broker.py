@@ -441,7 +441,7 @@ class EventBroker:
 
         try:
             if self.redis_client:
-                await self.redis_client.ping()
+                await self.redis_client.ping()  # type: ignore[misc]
                 health_data["redis_connected"] = True
 
                 # Get Redis info

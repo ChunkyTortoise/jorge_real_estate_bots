@@ -60,14 +60,14 @@ SERVICES = [
         "command": ["python", "-m", "uvicorn", "bots.seller_bot.main:app", "--host", "0.0.0.0", "--port", "8002"],
         "port": 8002,
         "health_url": "http://localhost:8002/health",
-        "enabled": False  # Phase 1: Lead Bot only
+        "enabled": True
     },
     {
         "name": "Buyer Bot",
         "command": ["python", "-m", "uvicorn", "bots.buyer_bot.main:app", "--host", "0.0.0.0", "--port", "8003"],
         "port": 8003,
         "health_url": "http://localhost:8003/health",
-        "enabled": False  # Phase 1: Lead Bot only
+        "enabled": True
     },
     {
         "name": "Command Center",

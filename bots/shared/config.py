@@ -84,6 +84,12 @@ class Settings(BaseSettings):
 
     # ========== WEBHOOK CONFIGURATION ==========
     base_url: str = "http://localhost:8000"
+    seller_bot_url: str = "http://localhost:8002"
+
+    # ========== SERVICE-TO-SERVICE AUTH ==========
+    # Static key used by internal services (dashboard → seller bot).
+    # Set ADMIN_API_KEY env var in production.
+    admin_api_key: str = ""
 
     # ========== CALENDAR / SCHEDULING ==========
     jorge_calendar_id: Optional[str] = None   # JORGE_CALENDAR_ID env var
