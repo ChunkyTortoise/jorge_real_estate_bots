@@ -1,7 +1,8 @@
 """Admin settings routes for Lead Bot — bot tone configuration."""
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from bots.shared.auth_middleware import get_admin_user
 from bots.shared.bot_settings import (
     get_all_overrides as _settings_get_all,
     get_override as _get_override,
@@ -41,7 +42,7 @@ async def settings_save(cache) -> None:
 
 
 @router.get("/admin/settings")
-async def admin_get_settings():
+async def admin_get_settings(user=Depends(get_admin_user())):
     """Return current effective settings -- bot defaults merged with any live overrides."""
     from bots.seller_bot.jorge_seller_bot import SELLER_SYSTEM_PROMPT, JorgeSellerBot
     from bots.buyer_bot.buyer_prompts import BUYER_SYSTEM_PROMPT, BUYER_QUESTIONS, JORGE_BUYER_PHRASES
@@ -69,7 +70,7 @@ async def admin_get_settings():
 
 
 @router.post("/admin/reassign-bot")
-async def admin_reassign_bot(request: Request):
+async def admin_reassign_bot(request: Request, user=Depends(get_admin_user())):
     """
     Reassign a contact to a different bot type.
 
@@ -99,7 +100,7 @@ async def admin_reassign_bot(request: Request):
 
 
 @router.put("/admin/settings/{bot}")
-async def admin_update_settings(bot: str, request: Request):
+async def admin_update_settings(bot: str, request: Request, user=Depends(get_admin_user())):
     """
     Update tone settings for a bot (seller | buyer | lead).
 

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from bots.buyer_bot.buyer_prompts import BUYER_QUESTIONS, BUYER_SYSTEM_PROMPT, JORGE_BUYER_PHRASES, build_buyer_prompt
 from bots.shared.business_rules import JorgeBusinessRules
+from bots.shared.response_filter import sanitize_bot_response
 from bots.shared.cache_service import get_cache_service
 from bots.shared.calendar_booking_service import FALLBACK_MESSAGE, CalendarBookingService
 from bots.shared.claude_client import ClaudeClient
@@ -245,7 +246,7 @@ class JorgeBuyerBot:
             scheduling_append = "\n\n" + sched["message"]
 
         return BuyerResult(
-            response_message=response["message"] + scheduling_append,
+            response_message=sanitize_bot_response(response["message"] + scheduling_append),
             buyer_temperature=temperature,
             questions_answered=state.questions_answered,
             qualification_complete=state.questions_answered >= 4,

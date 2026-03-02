@@ -1157,12 +1157,9 @@ class TestOutputSafety:
     def buyer_bot(self):
         return _make_buyer_bot(MockCache())
 
-    @pytest.mark.xfail(
-        reason="No output content filter — Claude responses go directly to SMS (gap #OS-1)"
-    )
     @pytest.mark.asyncio
     async def test_seller_claude_returns_identity_disclosure(self, seller_bot):
-        """8.1 — [xfail] Claude returns identity disclosure: no code filter exists today."""
+        """8.1 — Claude returns identity disclosure: output filter strips it."""
         cid = "os-8-1"
         state = SellerQualificationState(contact_id=cid, location_id="loc-test")
         state.current_question = 1
@@ -1195,12 +1192,9 @@ class TestOutputSafety:
             "response_message must be a string"
         )
 
-    @pytest.mark.xfail(
-        reason="No response length filter — long Claude responses go directly to SMS (gap #OS-3)"
-    )
     @pytest.mark.asyncio
     async def test_seller_claude_returns_extremely_long(self, seller_bot):
-        """8.3 — [xfail] Claude returns 1000-word response: no truncation today."""
+        """8.3 — Claude returns 1000-word response: output filter truncates it."""
         cid = "os-8-3"
         state = SellerQualificationState(contact_id=cid, location_id="loc-test")
         state.current_question = 1
@@ -1218,12 +1212,9 @@ class TestOutputSafety:
             "Response should be truncated to SMS-safe length"
         )
 
-    @pytest.mark.xfail(
-        reason="No URL filter — Claude responses with URLs go directly to SMS (gap #OS-4)"
-    )
     @pytest.mark.asyncio
     async def test_seller_claude_returns_url(self, seller_bot):
-        """8.4 — [xfail] Claude returns phishing URL: no URL filter today."""
+        """8.4 — Claude returns phishing URL: output filter strips URLs."""
         cid = "os-8-4"
         state = SellerQualificationState(contact_id=cid, location_id="loc-test")
         state.current_question = 1
@@ -1273,12 +1264,9 @@ class TestOutputSafety:
             "response_message must be a string after API error fallback"
         )
 
-    @pytest.mark.xfail(
-        reason="No competitor-redirect filter — competitor recommendations go to SMS (gap #OS-6)"
-    )
     @pytest.mark.asyncio
     async def test_seller_claude_returns_competitor_recommendation(self, seller_bot):
-        """8.6 — [xfail] Claude recommends competitor: no competitor filter today."""
+        """8.6 — Claude recommends competitor: output filter strips competitor names."""
         cid = "os-8-6"
         state = SellerQualificationState(contact_id=cid, location_id="loc-test")
         state.current_question = 1
@@ -1306,12 +1294,9 @@ class TestWebhookAdminSecurity:
 
     # --- Admin endpoint tests (unauthenticated access gaps) ---
 
-    @pytest.mark.xfail(
-        reason="Admin endpoints unauthenticated — GET /admin/settings returns 200 (gap #ADM-1)"
-    )
     @pytest.mark.asyncio
     async def test_admin_settings_get_no_auth(self):
-        """9.1 — [xfail] GET /admin/settings with no token should return 401."""
+        """9.1 — GET /admin/settings with no token should return 401."""
         app = _admin_app()
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -1321,12 +1306,9 @@ class TestWebhookAdminSecurity:
             "Admin settings endpoint should require authentication"
         )
 
-    @pytest.mark.xfail(
-        reason="Admin endpoints unauthenticated — PUT /admin/settings returns 200 (gap #ADM-2)"
-    )
     @pytest.mark.asyncio
     async def test_admin_settings_put_no_auth(self):
-        """9.2 — [xfail] PUT /admin/settings/seller with no token should return 401."""
+        """9.2 — PUT /admin/settings/seller with no token should return 401."""
         import bots.lead_bot.main as _main_mod
         app = _admin_app()
         with patch.object(_main_mod, "_webhook_cache", MockCache()):
@@ -1341,12 +1323,9 @@ class TestWebhookAdminSecurity:
             "Admin settings PUT should require authentication"
         )
 
-    @pytest.mark.xfail(
-        reason="Admin reassign endpoint unauthenticated — returns 200 (gap #ADM-3)"
-    )
     @pytest.mark.asyncio
     async def test_admin_reassign_no_auth(self):
-        """9.3 — [xfail] POST /admin/reassign-bot with no token should return 401."""
+        """9.3 — POST /admin/reassign-bot with no token should return 401."""
         import bots.lead_bot.main as _main_mod
         app = _admin_app()
         with patch.object(_main_mod, "_webhook_cache", MockCache()):
