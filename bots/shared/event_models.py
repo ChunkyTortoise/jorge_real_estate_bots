@@ -12,7 +12,7 @@ Events follow a standard schema with validation, serialization, and type safety.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Literal, Optional, Union
+from typing import Any, Dict, Literal, Optional, Type, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -552,7 +552,7 @@ EventType = Union[
 
 def create_event(event_type: str, **kwargs) -> EventType:
     """Factory function to create events by type string"""
-    event_map = {
+    event_map: Dict[str, Type[BaseEvent]] = {
         "lead.analyzed": LeadAnalyzedEvent,
         "lead.scored": LeadScoredEvent,
         "lead.cache_hit": LeadCacheHitEvent,
@@ -582,7 +582,7 @@ def create_event(event_type: str, **kwargs) -> EventType:
     if event_type not in event_map:
         raise ValueError(f"Unknown event type: {event_type}")
 
-    return event_map[event_type](**kwargs)
+    return event_map[event_type](**kwargs)  # type: ignore[return-value]
 
 
 def get_event_channel(event: BaseEvent) -> str:

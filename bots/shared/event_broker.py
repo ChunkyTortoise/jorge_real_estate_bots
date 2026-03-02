@@ -14,7 +14,7 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set
 
 import redis.asyncio as redis
 from redis.asyncio import ConnectionPool
@@ -305,7 +305,7 @@ class EventBroker:
         since: Optional[datetime] = None,
         event_types: Optional[List[str]] = None,
         limit: int = 100
-    ) -> List[BaseEvent]:
+    ) -> Sequence[BaseEvent]:
         """
         Get recent events from Redis Streams.
 
