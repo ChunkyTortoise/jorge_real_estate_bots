@@ -617,7 +617,7 @@ class JorgeBuyerBot:
                 "score": score,
             })
 
-        scored.sort(key=lambda x: x["score"], reverse=True)
+        scored.sort(key=lambda x: float(x["score"] or 0), reverse=True)
         return scored[:10]
 
     def _score_property(self, state: BuyerQualificationState, prop) -> float:
