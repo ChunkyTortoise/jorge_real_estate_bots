@@ -679,13 +679,17 @@ class JorgeBuyerBot:
         return actions
 
     async def _apply_ghl_actions(self, contact_id: str, actions: List[Dict[str, Any]]) -> None:
+        """Apply non-tag actions to GHL contact.
+
+        Tags (add_tag / remove_tag) are deferred 30 s by the webhook route via
+        BackgroundTasks so GHL workflows fire *after* the SMS is delivered.
+        """
         for action in actions:
             action_type = action.get("type")
             try:
-                if action_type == "add_tag":
-                    await self.ghl_client.add_tag(contact_id, action["tag"])
-                elif action_type == "remove_tag":
-                    await self.ghl_client.remove_tag(contact_id, action["tag"])
+                # Tags are applied by _deferred_tag_apply() in routes_webhook.py
+                if action_type in ("add_tag", "remove_tag"):
+                    continue
                 elif action_type == "update_custom_field":
                     await self.ghl_client.update_custom_field(contact_id, action["field"], action["value"])
                 elif action_type == "trigger_workflow":

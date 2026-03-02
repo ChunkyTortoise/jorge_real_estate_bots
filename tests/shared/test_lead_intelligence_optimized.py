@@ -112,30 +112,30 @@ class TestLocationExtraction:
     def setup_method(self):
         self.scorer = PredictiveLeadScorerV2Optimized()
 
-    def test_extract_location_dallas(self):
-        """Test Dallas extraction"""
-        message = "looking for a house in dallas"  # lowercase for matching
+    def test_extract_location_rancho_cucamonga(self):
+        """Test Rancho Cucamonga extraction"""
+        message = "looking for a house in rancho cucamonga"  # lowercase for matching
         locations = self.scorer._extract_locations_safe(message)
-        assert "Dallas" in locations
+        assert "Rancho Cucamonga" in locations
 
-    def test_extract_location_plano(self):
-        """Test Plano extraction"""
-        message = "interested in plano area"  # lowercase for matching
+    def test_extract_location_upland(self):
+        """Test Upland extraction"""
+        message = "interested in upland area"  # lowercase for matching
         locations = self.scorer._extract_locations_safe(message)
-        assert "Plano" in locations
+        assert "Upland" in locations
 
     def test_extract_location_multiple(self):
         """Test multiple locations"""
-        message = "looking in frisco or mckinney"  # lowercase for matching
+        message = "looking in fontana or ontario"  # lowercase for matching
         locations = self.scorer._extract_locations_safe(message)
-        assert "Frisco" in locations
-        assert "Mckinney" in locations
+        assert "Fontana" in locations
+        assert "Ontario" in locations
 
     def test_extract_location_premium_area(self):
         """Test premium area extraction"""
-        message = "interested in highland park"  # lowercase for matching
+        message = "interested in alta loma"  # lowercase for matching
         locations = self.scorer._extract_locations_safe(message)
-        assert "Highland Park" in locations
+        assert "Alta Loma" in locations
 
     def test_extract_location_no_location(self):
         """Test message with no location"""
@@ -145,7 +145,7 @@ class TestLocationExtraction:
 
     def test_extract_location_limit_three(self):
         """Test maximum 3 locations returned"""
-        message = "Interested in Dallas, Plano, Frisco, McKinney, and Allen"
+        message = "Interested in Rancho Cucamonga, Upland, Fontana, Ontario, and Chino Hills"
         locations = self.scorer._extract_locations_safe(message)
         assert len(locations) <= 3
 
@@ -276,7 +276,7 @@ class TestAnalyzeLeadMessage:
 
     def test_analyze_high_quality_lead(self):
         """Test analysis of high-quality lead"""
-        message = "Looking for a house in Plano around $500k. I'm pre-approved and need to move in 30 days."
+        message = "Looking for a house in Upland around $500k. I'm pre-approved and need to move in 30 days."
         profile = self.scorer.analyze_lead_message(message)
 
         assert profile.has_specific_budget is True
@@ -284,7 +284,7 @@ class TestAnalyzeLeadMessage:
         assert profile.has_clear_timeline is True
         assert profile.timeline == "1_month"
         assert profile.has_location_preference is True
-        assert "Plano" in profile.location_preferences
+        assert "Upland" in profile.location_preferences
         assert profile.is_pre_approved is True
         assert profile.financing_status == "pre_approved"
         assert profile.qualification_score > 0.7
@@ -302,12 +302,12 @@ class TestAnalyzeLeadMessage:
 
     def test_analyze_cash_buyer(self):
         """Test analysis of cash buyer"""
-        message = "Cash buyer looking in Frisco, $600k budget, need to close ASAP"
+        message = "Cash buyer looking in Fontana, $600k budget, need to close ASAP"
         profile = self.scorer.analyze_lead_message(message)
 
         assert profile.financing_status == "cash"
         assert profile.budget_max == 600000
-        assert "Frisco" in profile.location_preferences
+        assert "Fontana" in profile.location_preferences
         assert profile.urgency_score > 0.7
 
     def test_analyze_empty_message(self):
@@ -328,7 +328,7 @@ class TestGetEnhancedLeadIntelligence:
 
     def test_get_intelligence_high_score(self):
         """Test high-scoring lead"""
-        message = "pre-approved buyer, $700k budget, looking in dallas, need to move in 30 days"
+        message = "pre-approved buyer, $700k budget, looking in rancho cucamonga, need to move in 30 days"
         result = get_enhanced_lead_intelligence(message)
 
         assert result["lead_score"] > 75  # High score
@@ -337,7 +337,7 @@ class TestGetEnhancedLeadIntelligence:
         assert result["budget_analysis"] == "high"
         # Timeline can be "immediate" (ASAP) or "1_month" (30 days), both valid
         assert result["timeline_analysis"] in ["immediate", "1_month"]
-        assert "Dallas" in result["location_analysis"]
+        assert "Rancho Cucamonga" in result["location_analysis"]
         assert result["financing_analysis"] == "pre_approved"
         assert result["has_specific_budget"] is True
         assert result["has_clear_timeline"] is True
@@ -347,12 +347,12 @@ class TestGetEnhancedLeadIntelligence:
 
     def test_get_intelligence_medium_score(self):
         """Test medium-scoring lead"""
-        message = "Looking for a house in Plano, budget around $400k"
+        message = "Looking for a house in Upland, budget around $400k"
         result = get_enhanced_lead_intelligence(message)
 
         assert 50 < result["lead_score"] < 75  # Medium score
         assert result["budget_analysis"] == "medium"
-        assert "Plano" in result["location_analysis"]
+        assert "Upland" in result["location_analysis"]
 
     def test_get_intelligence_low_score(self):
         """Test low-scoring lead"""
@@ -424,10 +424,10 @@ class TestErrorHandling:
 
     def test_handle_special_characters(self):
         """Test handling special characters in message"""
-        message = "Looking for $500k! @#$% house in Dallas??? ASAP!!!"
+        message = "Looking for $500k! @#$% house in Rancho Cucamonga??? ASAP!!!"
         profile = self.scorer.analyze_lead_message(message)
         assert profile.budget_max == 500000
-        assert "Dallas" in profile.location_preferences
+        assert "Rancho Cucamonga" in profile.location_preferences
 
     def test_handle_very_long_message(self):
         """Test handling very long message"""
@@ -442,23 +442,23 @@ class TestErrorHandling:
         assert profile.budget_max == 500000
 
 
-class TestDallasSpecificPatterns:
-    """Test Dallas market-specific patterns"""
+class TestInlandEmpireSpecificPatterns:
+    """Test Inland Empire market-specific patterns"""
 
     def setup_method(self):
         self.scorer = PredictiveLeadScorerV2Optimized()
 
-    def test_dallas_core_cities(self):
-        """Test Dallas core cities recognition"""
-        cities = ["Dallas", "Plano", "Frisco", "McKinney", "Allen"]
+    def test_inland_empire_core_cities(self):
+        """Test Inland Empire core cities recognition"""
+        cities = ["Rancho Cucamonga", "Upland", "Fontana", "Ontario", "Chino Hills"]
         for city in cities:
             message = f"Looking for a house in {city}"
             locations = self.scorer._extract_locations_safe(message.lower())
             assert len(locations) > 0, f"Failed to extract {city}"
 
-    def test_dallas_premium_areas(self):
-        """Test Dallas premium areas"""
-        premium = ["Highland Park", "University Park", "Southlake"]
+    def test_inland_empire_premium_areas(self):
+        """Test Inland Empire premium areas"""
+        premium = ["Alta Loma", "Etiwanda", "Day Creek"]
         for area in premium:
             message = f"Interested in {area}"
             locations = self.scorer._extract_locations_safe(message.lower())
