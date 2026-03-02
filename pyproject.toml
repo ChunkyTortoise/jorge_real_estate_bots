@@ -20,6 +20,43 @@ typeCheckingMode = "basic"
 reportMissingImports = false
 reportMissingModuleSource = false
 
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = false
+ignore_missing_imports = true
+explicit_package_bases = true
+mypy_path = "."
+exclude = [
+    "tests/",
+    "benchmarks/",
+    "command_center/",
+    "\\.venv/",
+    "\\.mypy_venv/",
+]
+# Disable noisy error codes while establishing baseline.
+# TODO: Enable these incrementally as type coverage improves.
+disable_error_code = [
+    "union-attr",
+    "arg-type",
+    "assignment",
+    "attr-defined",
+    "no-any-return",
+    "name-defined",
+    "valid-type",
+    "has-type",
+    "dict-item",
+    "call-arg",
+    "var-annotated",
+    "operator",
+]
+
+[[tool.mypy.overrides]]
+module = "bots.shared.dashboard_data_service"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

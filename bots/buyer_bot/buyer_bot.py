@@ -162,7 +162,7 @@ class JorgeBuyerBot:
 
         # --- Slot selection intercept ---
         if state.scheduling_offered and not state.appointment_booked:
-            slot_index = CalendarBookingService.detect_slot_selection(message)
+            slot_index = self.calendar_service.detect_slot_selection(message, contact_id)
             if slot_index is not None:
                 booking = await self.calendar_service.book_appointment(
                     contact_id, slot_index, "buyer"

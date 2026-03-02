@@ -10,6 +10,7 @@ from bots.buyer_bot.buyer_bot import (
     BuyerStatus,
     JorgeBuyerBot,
 )
+from bots.buyer_bot.buyer_prompts import BUYER_SYSTEM_PROMPT, build_buyer_prompt
 from bots.buyer_bot.main import app
 from bots.shared.auth_middleware import auth_middleware
 from bots.shared.auth_service import User, UserRole
@@ -412,6 +413,17 @@ async def test_buyer_state_deserialization_ignores_unknown_keys(dummy_cache):
     # Should not raise TypeError
     loaded = await bot._get_or_create_state("c1", "loc1")
     assert loaded.contact_id == "c1"
+
+
+# ─── Seller-question guardrail assertions ─────────────────────────────────────
+
+def test_buyer_system_prompt_has_seller_guardrail():
+    assert "motivation to SELL" in BUYER_SYSTEM_PROMPT or "seller questions" in BUYER_SYSTEM_PROMPT
+
+
+def test_buyer_prompt_has_seller_prohibition():
+    prompt = build_buyer_prompt(1, "3 beds", "Are you pre-approved?")
+    assert "condition" in prompt.lower() or "sell" in prompt.lower()
 
 
 # ─── Q1 advance — location-only does not advance ─────────────────────────────

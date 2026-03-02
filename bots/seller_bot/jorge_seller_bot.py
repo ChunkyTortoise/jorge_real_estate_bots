@@ -493,9 +493,9 @@ class JorgeSellerBot:
 
             # --- Slot selection intercept ---
             # If scheduling has been offered but appointment not yet booked,
-            # check if the lead replied with "1", "2", or "3".
+            # check if the lead replied with a slot selection (digit, ordinal, or day name).
             if state.scheduling_offered and not state.appointment_booked:
-                slot_index = CalendarBookingService.detect_slot_selection(message)
+                slot_index = self.calendar_service.detect_slot_selection(message, contact_id)
                 if slot_index is not None:
                     booking = await self.calendar_service.book_appointment(
                         contact_id, slot_index, "seller"

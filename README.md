@@ -159,6 +159,71 @@ jorge_real_estate_bots/
 └── docker-compose.yml
 ```
 
+## API Documentation
+
+Each bot exposes a FastAPI server with auto-generated interactive docs:
+
+| Bot | Port | Swagger UI | ReDoc |
+|-----|------|-----------|-------|
+| Lead Bot | 8001 | [http://localhost:8001/docs](http://localhost:8001/docs) | [http://localhost:8001/redoc](http://localhost:8001/redoc) |
+| Seller Bot | 8002 | [http://localhost:8002/docs](http://localhost:8002/docs) | [http://localhost:8002/redoc](http://localhost:8002/redoc) |
+| Buyer Bot | 8003 | [http://localhost:8003/docs](http://localhost:8003/docs) | [http://localhost:8003/redoc](http://localhost:8003/redoc) |
+
+### Key Endpoints
+
+**Lead Bot** `:8001`
+- `POST /ghl/webhook/new-lead` -- Receive new lead webhooks from GoHighLevel
+- `POST /analyze-lead` -- Analyze and score a lead (returns temperature, qualification)
+- `GET /health` -- Health check
+- `GET /performance` -- Bot performance metrics
+- `GET /metrics` -- Detailed system metrics
+- `PUT /admin/settings/{bot}` -- Update bot configuration
+
+**Seller Bot** `:8002`
+- `POST /api/jorge-seller/process` -- Process seller conversation message
+- `GET /api/jorge-seller/{contact_id}/progress` -- Get seller qualification progress
+- `GET /api/jorge-seller/active` -- List active seller conversations
+- `DELETE /api/jorge-seller/{contact_id}/state` -- Reset seller conversation state
+
+**Buyer Bot** `:8003`
+- `POST /api/jorge-buyer/process` -- Process buyer conversation message
+- `GET /api/jorge-buyer/{contact_id}/progress` -- Get buyer qualification progress
+- `GET /api/jorge-buyer/preferences/{contact_id}` -- Get extracted buyer preferences
+- `GET /api/jorge-buyer/matches/{contact_id}` -- Get property matches for buyer
+- `GET /api/jorge-buyer/active` -- List active buyer conversations
+
+### curl Examples
+
+**Analyze a new lead:**
+```bash
+curl -X POST http://localhost:8001/analyze-lead \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contact_id": "abc123",
+    "name": "Maria Santos",
+    "email": "maria@example.com",
+    "phone": "+1-555-0142",
+    "message": "Looking to buy a 3BR home in Coral Gables under $650k. Pre-approved with Chase.",
+    "source": "website"
+  }'
+```
+
+**Process a seller conversation message:**
+```bash
+curl -X POST http://localhost:8002/api/jorge-seller/process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contact_id": "seller456",
+    "message": "I want to sell my 4BR/3BA house in Brickell. Bought it for $480k in 2019.",
+    "conversation_id": "conv-001"
+  }'
+```
+
+**Get buyer property matches:**
+```bash
+curl http://localhost:8003/api/jorge-buyer/matches/buyer789
+```
+
 ## Architecture Decisions
 
 | ADR | Title | Status |
@@ -174,6 +239,10 @@ See [BENCHMARKS.md](BENCHMARKS.md) for performance methodology and results. Run 
 ```bash
 python benchmarks/run_all.py
 ```
+
+## Troubleshooting
+
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for solutions to common issues: GHL webhook setup, Redis connection errors, environment variable checklist, HTTP error codes, and bot handoff failures.
 
 ## Testing
 
