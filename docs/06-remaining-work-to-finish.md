@@ -46,17 +46,16 @@ Item 6: GHL webhooks — create both inbound webhooks
     Effort: 5 minutes.
     Status: Not done yet.
 
+Item 3b: Set Bot Type field on existing contacts
+    What: Any contacts already in GHL need their Bot Type field set manually
+          (seller or buyer) so the system routes them correctly.
+    Who: Jorge — bulk edit in GHL or set individually.
+    Effort: 5-15 minutes depending on contact count.
+
 
 ========================================
 CAYMAN'S SIDE — DEPLOYMENT
 ========================================
-
-Item 7: Deploy today's 12 bug fixes to production
-    What: Push the corrected codebase to the Render service.
-    How: git push to main → Render auto-deploys.
-    Status: Fixes are written and tested locally. Not yet pushed to Render.
-    Effort: 10 minutes.
-    Priority: Do this first — fixes are meaningless until deployed.
 
 Item 8: Confirm Redis is connected
     What: The Render service falls back to in-memory cache if Redis rejects
@@ -146,7 +145,7 @@ Item 15: Lyrio Dashboard — keep or drop
 DONE — NO ACTION NEEDED
 ========================================
 
-    3 bots coded, tested (454 tests), deployed to Render
+    3 bots coded, tested (552 tests), deployed to Render
     Production URL live and responding
     All 12 production bugs fixed
     GHL API client working (tag add, tag remove, field update, SMS send)
@@ -158,3 +157,8 @@ DONE — NO ACTION NEEDED
     Price extraction edge cases handled
     Lyrio Dashboard live on demo data
     All documentation in this package complete
+    Deploy fixes pushed to main on 2026-03-01 — Render auto-deployed (552 tests, 0 failures)
+    Webhook routing: bot exclusivity (Fix 3), 30s deferred tags (Fix 4)
+    /admin/reassign-bot endpoint live
+    30 persona tests + 8 webhook routing tests added
+    Service area updated: Dallas → Inland Empire (Rancho Cucamonga)

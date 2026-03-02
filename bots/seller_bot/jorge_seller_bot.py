@@ -688,7 +688,7 @@ class JorgeSellerBot:
             # Initial greeting - move to Q1
             question_text = self._questions[1]
             jorge_intro = self._get_random_jorge_phrase()
-            response_message = f"{jorge_intro}. {question_text}"
+            response_message = f"{jorge_intro.rstrip('.!')} — {question_text}"
             # Preserve the initial message in history before advancing
             state.conversation_history.append({
                 "question": 0,

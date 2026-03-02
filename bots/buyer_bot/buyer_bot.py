@@ -393,7 +393,7 @@ class JorgeBuyerBot:
         if state.current_question == 0:
             jorge_intro = self._get_random_jorge_phrase()
             question_text = BUYER_QUESTIONS[1]
-            response_message = f"{jorge_intro}. {question_text}"
+            response_message = f"{jorge_intro.rstrip('.!')} — {question_text}"
             # Preserve the initial message in history before advancing
             state.conversation_history.append({
                 "question": 0,
