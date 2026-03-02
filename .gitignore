@@ -54,3 +54,8 @@ docker-compose.override.yml
 coverage.xml
 .ruff_cache/
 .env.*.local
+
+# Artifacts
+test.db
+.claude/
+docs/TAG_SLEEP_PROPOSAL.md

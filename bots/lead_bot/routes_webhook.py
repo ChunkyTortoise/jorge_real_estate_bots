@@ -5,9 +5,9 @@ import hashlib
 import json
 import time
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from bots.shared.config import settings
 from bots.shared.logger import get_logger
@@ -15,6 +15,26 @@ from bots.shared.logger import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+_ASSIGNED_BOT_TTL = 604_800  # 7 days
+
+
+async def _deferred_tag_apply(
+    ghl_client: Any,
+    contact_id: str,
+    actions: List[Dict[str, Any]],
+    delay_seconds: int = 30,
+) -> None:
+    """Apply add/remove tag actions after a delay so GHL workflows fire after SMS is delivered."""
+    await asyncio.sleep(delay_seconds)
+    for action in actions:
+        try:
+            if action.get("type") == "add_tag":
+                await ghl_client.add_tag(contact_id, action["tag"])
+            elif action.get("type") == "remove_tag":
+                await ghl_client.remove_tag(contact_id, action["tag"])
+        except Exception as e:
+            logger.error(f"Deferred tag action failed for {contact_id}: {e}")
 
 
 def _get_state():
@@ -87,7 +107,7 @@ async def handle_new_lead(request: Request):
 
 
 @router.post("/api/ghl/webhook")
-async def unified_ghl_webhook(request: Request):
+async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Unified GHL webhook dispatcher.
 
@@ -166,6 +186,8 @@ async def unified_ghl_webhook(request: Request):
                 or payload.get("bot_type")
                 or ""
             )
+            # Track whether the payload explicitly specifies a bot (vs. GHL API fallback)
+            _bot_type_explicit = bool(bot_type)
 
             if not bot_type and state._ghl_client:
                 try:
@@ -182,6 +204,20 @@ async def unified_ghl_webhook(request: Request):
                     logger.warning(f"Could not fetch contact for bot_type lookup: {e}")
 
             bot_type_lower = (bot_type or "lead").lower()
+
+            # Fix 3 — Bot exclusivity: one bot per contact (7-day assignment, explicit payload overrides)
+            _assigned_key = f"assigned_bot:{contact_id}"
+            if _webhook_cache:
+                _assigned_bot = await _webhook_cache.get(_assigned_key)
+                if _assigned_bot:
+                    if not _bot_type_explicit:
+                        # No explicit override in this webhook — honour the stored assignment
+                        bot_type_lower = _assigned_bot
+                    else:
+                        # Explicit bot_type in payload — update stored assignment
+                        await _webhook_cache.set(_assigned_key, bot_type_lower, ttl=_ASSIGNED_BOT_TTL)
+                else:
+                    await _webhook_cache.set(_assigned_key, bot_type_lower, ttl=_ASSIGNED_BOT_TTL)
 
             contact_info = {
                 "name": payload.get("fullName") or custom_data.get("name"),
@@ -216,6 +252,15 @@ async def unified_ghl_webhook(request: Request):
                         "qualification_complete": result.qualification_complete,
                     }
                 )
+                # Fix 4 — schedule tag application 30s after SMS is sent
+                _tag_actions = [
+                    a for a in result.actions_taken
+                    if a.get("type") in ("add_tag", "remove_tag")
+                ]
+                if _tag_actions and state._ghl_client:
+                    background_tasks.add_task(
+                        _deferred_tag_apply, state._ghl_client, contact_id, _tag_actions
+                    )
 
             elif "buyer" in bot_type_lower:
                 if not state.buyer_bot_instance:
@@ -235,6 +280,15 @@ async def unified_ghl_webhook(request: Request):
                         "qualification_complete": result.qualification_complete,
                     }
                 )
+                # Fix 4 — schedule tag application 30s after SMS is sent
+                _tag_actions = [
+                    a for a in result.actions_taken
+                    if a.get("type") in ("add_tag", "remove_tag")
+                ]
+                if _tag_actions and state._ghl_client:
+                    background_tasks.add_task(
+                        _deferred_tag_apply, state._ghl_client, contact_id, _tag_actions
+                    )
 
             else:
                 lead_data = {"id": contact_id, "message": message_body, **contact_info}

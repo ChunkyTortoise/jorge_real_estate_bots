@@ -68,6 +68,36 @@ async def admin_get_settings():
     }
 
 
+@router.post("/admin/reassign-bot")
+async def admin_reassign_bot(request: Request):
+    """
+    Reassign a contact to a different bot type.
+
+    Body: {"contact_id": "...", "bot_type": "seller" | "buyer" | "lead"}
+
+    Overwrites the assigned_bot Redis key so the next inbound message
+    is routed to the new bot immediately.
+    """
+    from bots.lead_bot import main as _m
+
+    body = await request.json()
+    contact_id: str = body.get("contact_id", "").strip()
+    new_bot_type: str = body.get("bot_type", "").strip().lower()
+
+    if not contact_id:
+        raise HTTPException(status_code=400, detail="contact_id is required")
+    if new_bot_type not in ("seller", "buyer", "lead"):
+        raise HTTPException(status_code=400, detail="bot_type must be 'seller', 'buyer', or 'lead'")
+
+    cache = _m._webhook_cache
+    if cache:
+        await cache.delete(f"assigned_bot:{contact_id}")
+        await cache.set(f"assigned_bot:{contact_id}", new_bot_type, ttl=604_800)
+
+    logger.info(f"Admin: reassigned contact {contact_id!r} to bot '{new_bot_type}'")
+    return {"status": "ok", "contact_id": contact_id, "bot_type": new_bot_type}
+
+
 @router.put("/admin/settings/{bot}")
 async def admin_update_settings(bot: str, request: Request):
     """
