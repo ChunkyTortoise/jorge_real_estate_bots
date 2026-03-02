@@ -1,0 +1,55 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Build & Deploy to Render
+    runs-on: ubuntu-latest
+    needs: []  # runs independently — CI is a separate workflow
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: chunktort
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            docker.io/chunktort/jorge-realty-ai:sha-${{ github.sha }}
+            docker.io/chunktort/jorge-realty-ai:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update Render image & deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: srv-d6d5go15pdvs73fcjjq0
+          IMAGE: docker.io/chunktort/jorge-realty-ai:sha-${{ github.sha }}
+        run: |
+          # Update the image URL
+          curl -sf -X PATCH \
+            "https://api.render.com/v1/services/${SERVICE_ID}" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"image\": {\"ownerId\": \"chunktort\", \"registryCredentialId\": null, \"imagePath\": \"${IMAGE}\"}}"
+
+          # Trigger a deploy
+          curl -sf -X POST \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploys" \
+            -H "Authorization: Bearer ${RENDER_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"clearCache\": \"do_not_clear\"}"
