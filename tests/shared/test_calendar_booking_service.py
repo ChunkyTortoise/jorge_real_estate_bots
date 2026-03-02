@@ -86,18 +86,19 @@ async def test_offer_slots_returns_fallback_on_api_exception(service):
 
 
 @pytest.mark.asyncio
-async def test_offer_slots_formats_numbered_options(service):
+async def test_offer_slots_formats_prose_options(service):
     service.ghl_client.get_free_slots = AsyncMock(return_value=SAMPLE_SLOTS)
 
     result = await service.offer_appointment_slots("contact-1", "seller")
 
     assert result["fallback"] is False
-    assert len(result["slots"]) == 3
+    # Only 2 slots offered (prose format works best with 2)
+    assert len(result["slots"]) == 2
     msg = result["message"]
-    assert "1." in msg
-    assert "2." in msg
-    assert "3." in msg
-    assert "reply with the number" in msg.lower()
+    assert " or " in msg
+    assert "open" in msg
+    assert "1." not in msg
+    assert "reply with the number" not in msg.lower()
 
 
 @pytest.mark.asyncio
@@ -194,25 +195,46 @@ async def test_book_appointment_uses_lead_type_for_title(service):
     [
         ("1", 0),
         ("2", 1),
-        ("3", 2),
         ("  2  ", 1),
-        ("slot 1", 0),
-        ("slot 3", 2),
-        ("#2", 1),
         ("option 1", 0),
-        ("SLOT 2", 1),
+        # ordinal / positional
+        ("first", 0),
+        ("the first one", 0),
+        ("second", 1),
+        ("second works for me", 1),
+        ("morning is better", 0),
+        ("afternoon", 1),
+        ("option 2", 1),
     ],
 )
-def test_detect_slot_selection_valid(message, expected):
-    assert CalendarBookingService.detect_slot_selection(message) == expected
+def test_detect_slot_selection_valid(service, message, expected):
+    assert service.detect_slot_selection(message) == expected
 
 
 @pytest.mark.parametrize(
     "message",
-    ["yes", "no", "hello", "4", "0", "maybe tomorrow", "what times?"],
+    ["yes", "no", "hello", "4", "0", "3", "maybe tomorrow", "what times?", "sure"],
 )
-def test_detect_slot_selection_no_match(message):
-    assert CalendarBookingService.detect_slot_selection(message) is None
+def test_detect_slot_selection_no_match(service, message):
+    assert service.detect_slot_selection(message) is None
+
+
+def test_detect_slot_selection_display_text(service):
+    """Day names in the reply match against pending slots."""
+    service._pending_slots["contact-1"] = SAMPLE_SLOTS[:2]
+    # SAMPLE_SLOTS[0] starts 2026-03-01 17:00Z → "Sunday, March 01 at 05:00 PM"
+    # SAMPLE_SLOTS[1] starts 2026-03-03 22:00Z → "Tuesday, March 03 at 10:00 PM"
+    assert service.detect_slot_selection("sunday works", "contact-1") == 0
+    assert service.detect_slot_selection("let's do tuesday", "contact-1") == 1
+
+
+def test_natural_language_slot_selection(service):
+    """Full suite of natural-language selection patterns."""
+    service._pending_slots["contact-nl"] = SAMPLE_SLOTS[:2]
+    assert service.detect_slot_selection("the first one sounds good", "contact-nl") == 0
+    assert service.detect_slot_selection("second works for me", "contact-nl") == 1
+    assert service.detect_slot_selection("morning is better", "contact-nl") == 0
+    assert service.detect_slot_selection("sure", "contact-nl") is None  # ambiguous → re-offer
 
 
 # ─────────────────────────────────────────────────────────────────────────────

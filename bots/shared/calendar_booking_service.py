@@ -70,10 +70,11 @@ class CalendarBookingService:
             logger.info(f"No available slots for contact {contact_id}")
             return {"message": FALLBACK_MESSAGE, "slots": [], "fallback": True}
 
-        self._pending_slots[contact_id] = slots
+        selected = slots[:2]
+        self._pending_slots[contact_id] = selected
         return {
-            "message": self._format_slot_options(slots),
-            "slots": slots,
+            "message": self._format_slot_options(selected),
+            "slots": selected,
             "fallback": False,
         }
 
@@ -154,29 +155,46 @@ class CalendarBookingService:
         """Return True if there are cached slots for this contact."""
         return bool(self._pending_slots.get(contact_id))
 
-    @staticmethod
-    def detect_slot_selection(message: str) -> Optional[int]:
+    def detect_slot_selection(self, message: str, contact_id: str = "") -> Optional[int]:
         """
         Parse a slot-selection reply from the lead.
 
-        Accepts bare digits ("1"), prefixed forms ("slot 2", "#3", "option 1"),
-        and returns a 0-based index. Returns None if no slot number found.
+        Accepts natural language: ordinals ("first", "second"), time-of-day
+        ("morning", "afternoon"), display-text matches (day/month names in the
+        offered time string), and legacy digits ("1", "2").
 
         Args:
             message: Raw SMS text from the lead.
+            contact_id: Used to look up pending slots for display-text matching.
 
         Returns:
-            0-based slot index (0, 1, or 2) or None.
+            0-based slot index or None if ambiguous.
         """
-        msg = message.strip()
-        patterns = [
-            r"^\s*([123])\s*$",                    # bare single digit
-            r"(?:slot|option|#)\s*([123])\b",      # "slot 2", "#3", "option 1"
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, msg, re.IGNORECASE)
-            if match:
-                return int(match.group(1)) - 1
+        slots = self._pending_slots.get(contact_id, []) if contact_id else []
+        msg = message.lower()
+
+        # Ordinal / positional / time-of-day keywords → slot 0
+        if re.search(r"\b(first|1st|earlier|sooner|morning|option 1)\b", msg):
+            return 0
+
+        # Ordinal / positional / time-of-day keywords → slot 1
+        if re.search(r"\b(second|2nd|later|afternoon|evening|other|option 2)\b", msg):
+            return 1
+
+        # Display text fallback: match any significant word from the formatted time
+        for i, slot in enumerate(slots):
+            display = self._format_slot_time(slot).lower()
+            display_words = [w for w in re.split(r"[\s,@:]+", display) if len(w) > 2]
+            if any(w in msg for w in display_words):
+                return i
+
+        # Legacy single-digit fallback (backward compat, only 1–2)
+        digits = re.findall(r"\b([12])\b", msg)
+        if len(digits) == 1:
+            idx = int(digits[0]) - 1
+            if not slots or idx < len(slots):
+                return idx
+
         return None
 
     # ------------------------------------------------------------------
@@ -184,12 +202,13 @@ class CalendarBookingService:
     # ------------------------------------------------------------------
 
     def _format_slot_options(self, slots: List[Dict]) -> str:
-        """Format a list of slots into a numbered SMS message."""
-        lines = ["Here are some times I have available:\n"]
-        for i, slot in enumerate(slots, 1):
-            lines.append(f"  {i}. {self._format_slot_time(slot)}")
-        lines.append("\nJust reply with the number that works best!")
-        return "\n".join(lines)
+        """Format up to 2 slots into conversational prose."""
+        displays = [self._format_slot_time(s) for s in slots]
+        if len(displays) == 2:
+            return f"I have {displays[0]} or {displays[1]} open — which works better for you?"
+        elif displays:
+            return f"I have {displays[0]} available — does that work for you?"
+        return ""
 
     def _format_confirmation(self, slot: Dict) -> str:
         """Format a booking confirmation message."""

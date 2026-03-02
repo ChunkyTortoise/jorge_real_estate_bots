@@ -82,7 +82,7 @@ async def test_hot_buyer_gets_slot_offer(bot, mock_ghl):
     ):
         result = await bot.process_buyer_message("contact-buyer", "loc-123", "I'm ready")
 
-    assert "1." in result.response_message or "reply with the number" in result.response_message.lower()
+    assert " or " in result.response_message and "open" in result.response_message
     assert state.scheduling_offered is True
 
 
