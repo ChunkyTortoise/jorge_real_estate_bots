@@ -11,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from bots.shared.config import settings
 from bots.shared.logger import get_logger
+from bots.shared.response_filter import sanitize_bot_response
 
 logger = get_logger(__name__)
 
@@ -303,6 +304,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 return {"status": "processed", **result_meta}
 
             # Send reply via GHL SMS (seller / buyer bots)
+            response_message = sanitize_bot_response(response_message)
             if response_message and state._ghl_client:
                 try:
                     await state._ghl_client.send_message(contact_id, response_message, "SMS")

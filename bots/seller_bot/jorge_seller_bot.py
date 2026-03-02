@@ -26,6 +26,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from bots.shared.business_rules import JorgeBusinessRules
+from bots.shared.response_filter import sanitize_bot_response
 from bots.shared.bot_settings import get_override as _get_bot_override
 from bots.shared.cache_service import get_cache_service
 from bots.shared.calendar_booking_service import FALLBACK_MESSAGE, CalendarBookingService
@@ -612,7 +613,7 @@ class JorgeSellerBot:
 
             # Create result
             result = SellerResult(
-                response_message=response_data["message"] + scheduling_append,
+                response_message=sanitize_bot_response(response_data["message"] + scheduling_append),
                 seller_temperature=temperature,
                 questions_answered=state.questions_answered,
                 qualification_complete=(state.questions_answered >= 4),
@@ -635,7 +636,7 @@ class JorgeSellerBot:
                 if cached:
                     temperature = self._calculate_temperature(cached)
                     return SellerResult(
-                        response_message="I'm interested but need a bit more info. Let me get back to you shortly.",
+                        response_message=sanitize_bot_response("I'm interested but need a bit more info. Let me get back to you shortly."),
                         seller_temperature=temperature,
                         questions_answered=cached.questions_answered,
                         qualification_complete=(cached.questions_answered >= 4),
