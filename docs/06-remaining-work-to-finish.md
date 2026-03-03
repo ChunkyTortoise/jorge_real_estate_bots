@@ -27,30 +27,20 @@ Item 2: A2P 10DLC SMS registration
     Effort: 30 minutes to submit. 1-4 weeks to clear.
 
 Item 3: GHL workflow edit — "New Inbound Lead"
-    Steps: Documented in email and in 02-ghl-setup-guide.md
-    Effort: 5 minutes.
-    Status: Not done yet.
+    Status: DONE — confirmed working via live GHL contact data (2026-03-02).
 
 Item 4: GHL workflow edit — "5. Process Message - Which Bot?"
-    Steps: Documented in email and in 02-ghl-setup-guide.md
-    Effort: 5 minutes.
-    Status: Not done yet.
+    Status: DONE — bot_type custom field is being written to contacts in production.
 
 Item 5: GHL custom fields — create all 12
-    Steps: Documented in 02-ghl-setup-guide.md, Part 1
-    Effort: 10 minutes.
-    Status: Not done yet.
+    Status: DONE — all custom field IDs confirmed present with real values in GHL
+            (Nv4hHaC1oEo0S1MFZPct, QnZ9ST39KLd3goCpH4kv, u1HiHi9wv9LKu9g5OJvc, etc.)
 
 Item 6: GHL webhooks — create both inbound webhooks
-    Steps: Documented in 02-ghl-setup-guide.md, Part 2
-    Effort: 5 minutes.
-    Status: Not done yet.
+    Status: DONE — live system receiving and processing real webhook events.
 
 Item 3b: Set Bot Type field on existing contacts
-    What: Any contacts already in GHL need their Bot Type field set manually
-          (seller or buyer) so the system routes them correctly.
-    Who: Jorge — bulk edit in GHL or set individually.
-    Effort: 5-15 minutes depending on contact count.
+    Status: DONE — YJ9EDgHQB3UoKnnTSoUO = "seller" confirmed on test contact.
 
 
 ========================================
