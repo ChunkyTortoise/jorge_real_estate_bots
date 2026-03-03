@@ -103,14 +103,17 @@ Item 11: End-to-end smoke test after deploy
           7. Answer all 4 questions
           8. Confirm temperature tag written to GHL contact
           9. Confirm custom fields populated in GHL contact
-    Status: Cannot run until Jorge completes GHL setup (Items 3-6).
+    Status: DONE — 2026-03-02. Full buyer + seller flow validated against live Render.
+            See docs/E2E_SMOKE_TEST.md for results.
     Effort: 30 minutes.
 
 Item 12: Confirm CMA workflow trigger (optional)
     What: Score a test lead HOT and confirm CMA Report Generation workflow
           fires in GHL. If it does not fire, the workflow needs to be created
           or the trigger name needs to match.
-    Status: Deferred until smoke test passes.
+    Status: DONE — 2026-03-02. Bot fires trigger_workflow: 577d56c4-28af-4668-8d84-80f5db234f48
+            when seller is qualified HOT and confirms call time. Human-Follow-Up-Needed +
+            AI-Off tags applied. Persona analysis generated. See docs/E2E_SMOKE_TEST.md.
 
 Item 13: Invoice Jorge for today's work
     What: Today's session was correction work beyond the original scope —

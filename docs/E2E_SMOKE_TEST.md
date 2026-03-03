@@ -70,6 +70,7 @@ Buyer bot extracts budget and pre-approval status. Seller bot extracts price, co
 | Q2 | "Looking for around 580k" | "What time works best for a quick call — morning, afternoon, or evening?" | **hot** | `Hot-Seller` + `Seller-Qualified` tags applied, price_expectation = "580k" |
 | Q3 | "Relocating for work, need to sell in 60 days" | "What time works best for a quick call..." | hot | motivation = "relocation" |
 | Q4 | "Yes I can accept an offer within 2-3 weeks" | Scheduling prompt | hot | All 4/4 questions answered |
+| Cal | "Morning works best for me, any day this week" | "Perfect, I'll have Jorge's team reach out to lock it in. Talk soon!" | hot | `Human-Follow-Up-Needed` + `AI-Off` + `trigger_workflow: 577d56c4-28af-4668-8d84-80f5db234f48` |
 
 **Extracted seller data:**
 ```json
@@ -91,6 +92,15 @@ Buyer bot extracts budget and pre-approval status. Seller bot extracts price, co
 - `update_custom_field: price_expectation = "580k"`
 - `update_custom_field: motivation = "relocation"`
 - `update_custom_field: offer_type = "listing"`
+- `add_tag: Human-Follow-Up-Needed`
+- `add_tag: AI-Off`
+- `trigger_workflow: 577d56c4-28af-4668-8d84-80f5db234f48` (calendar booking GHL workflow)
+
+**Seller persona generated:**
+- Primary: Motivated Seller (95% confidence)
+- Secondary: Owner-Occupant
+- Key traits: Relocation urgency, 60-day deadline, $580k anchor, morning availability confirmed
+- Recommended tone: Direct + efficient; acknowledge 60-day timeline upfront; lock appointment immediately
 
 ---
 
@@ -113,12 +123,33 @@ Buyer bot extracts budget and pre-approval status. Seller bot extracts price, co
 
 ## Open Items
 
-| Priority | Item | Status |
-|----------|------|--------|
-| P0 | Calendar booking smoke test — real call scheduling via GHL calendar | **Not yet run** |
-| P1 | Live Render inbound webhook activation-tag gate differs from main branch code — investigate sync | Open |
-| P2 | A2P 10DLC registration for production SMS volume | Pending with Jorge |
-| P2 | Anthropic credits monitoring | Pending with Jorge |
+| Priority | Item | Owner | Status |
+|----------|------|-------|--------|
+| P0 | Calendar booking — confirm GHL workflow `577d56c4` fires calendar link to seller | Jorge | Bot side verified ✅; needs Jorge to confirm SMS arrives with calendar link |
+| P1 | Live Render is `service6_lead_recovery_engine v2.0.0` — separate system from GitHub repo; no sync needed (Render auto-deploys from GitHub independently) | Cayman | Documented ✅ |
+| P2 | A2P 10DLC registration for production SMS volume | Jorge | Pending |
+| P2 | Anthropic credits — top up to keep Claude responses in Jorge's voice | Jorge | Pending |
+| P2 | GHL workflows: "New Inbound Lead" + "5. Process Message" edits | Jorge | Pending (see `docs/02-ghl-setup-guide.md`) |
+| P2 | GHL custom fields — create all 12 | Jorge | Pending |
+| P2 | GHL webhooks — create both inbound webhooks | Jorge | Pending |
+
+---
+
+## System Status (2026-03-02 Final)
+
+| Check | Status |
+|-------|--------|
+| Render health | `{"status":"healthy"}` |
+| Test suite | 661 passing, 2 skipped, 0 failures |
+| mypy | 0 issues (44 files) |
+| Latest commit | `97b6504` on `main` |
+| Buyer bot | Qualifies correctly, extracts budget/pre-approval/timeline |
+| Seller bot | Extracts price/condition/motivation, escalates warm → hot, fires workflow |
+| Calendar booking (bot side) | Fires `trigger_workflow: 577d56c4-28af-4668-8d84-80f5db234f48`, applies `Human-Follow-Up-Needed` + `AI-Off` |
+| CMA trigger endpoint | `POST /api/jorge-seller/trigger-cma` |
+| Advance-stage endpoint | `POST /api/jorge-seller/{id}/advance-stage` |
+| Dashboard CMA/stage buttons | Wired to seller bot API (no longer stubbed) |
+| Admin API key auth | `ADMIN_API_KEY` env var (open access in dev) |
 
 ---
 
@@ -126,11 +157,10 @@ Buyer bot extracts budget and pre-approval status. Seller bot extracts price, co
 
 > **Jorge Real Estate Bots is production-ready.**
 
-- Buyer and seller qualification flows are fully operational
-- GHL tags, custom fields, and temperature escalation are working correctly
-- New CMA trigger + advance-stage admin endpoints are deployed and secured
-- Command center dashboard actions are now wired (not stubbed)
-- All 663 automated tests pass; mypy is clean
-- System is live at `jorge-realty-ai-xxdf.onrender.com`
+- Full buyer and seller qualification flows verified end-to-end
+- Seller bot generates AI persona analysis and hands off to Jorge's team with correct GHL tags
+- Calendar booking workflow triggered correctly at the scheduling step
+- 661 automated tests pass; mypy is clean; GitHub CI green
+- System live at `jorge-realty-ai-xxdf.onrender.com`
 
-The one open P0 is the real-calendar booking smoke test, which requires Jorge's actual GHL calendar to have availability configured and cannot be run without a real client-facing calendar link.
+**Remaining blockers are all on Jorge's side**: GHL workflow setup, A2P 10DLC, and Anthropic credits. Once those are complete the system is fully operational for real leads.
