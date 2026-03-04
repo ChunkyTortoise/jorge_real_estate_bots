@@ -33,9 +33,9 @@ RUN chown -R jorge:jorge /app
 
 USER jorge
 
-EXPOSE 8001 8002 8003 8501
+EXPOSE 8001
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8001/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8001}/health || exit 1
 
-CMD ["python", "jorge_launcher.py"]
+CMD ["sh", "-c", "python -m uvicorn bots.lead_bot.main:app --host 0.0.0.0 --port ${PORT:-8001} --workers 1"]
