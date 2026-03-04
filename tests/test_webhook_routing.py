@@ -339,3 +339,99 @@ class TestDeferredTags:
         mock_deferred.assert_awaited_once()
         _, _, tag_actions = mock_deferred.call_args.args
         assert any(a["type"] == "add_tag" for a in tag_actions)
+
+
+# ---------------------------------------------------------------------------
+# New-lead bot locking
+# ---------------------------------------------------------------------------
+
+
+def _new_lead_body(contact_id: str = "nl-test") -> bytes:
+    return json.dumps({"id": contact_id, "email": "test@example.com"}).encode()
+
+
+class TestNewLeadBotLocking:
+    @pytest.mark.asyncio
+    async def test_new_lead_sets_assigned_bot_in_redis(self, app):
+        """POST /ghl/webhook/new-lead must write assigned_bot:<id>='lead' to cache."""
+        cache = MockCache()
+        state, _, _, _, _ = _make_state(cache=cache)
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/ghl/webhook/new-lead",
+                    content=_new_lead_body("lock-lead-1"),
+                    headers={"Content-Type": "application/json"},
+                )
+        assert r.status_code == 200
+        assert await cache.get("assigned_bot:lock-lead-1") == "lead"
+
+    @pytest.mark.asyncio
+    async def test_new_lead_then_reply_stays_on_lead_bot(self, app):
+        """
+        Contact created via new-lead → assigned_bot='lead'.
+        Follow-up reply with no explicit bot_type, even if GHL API returns 'seller',
+        must still route to lead bot (redis_cache takes precedence).
+        """
+        cache = MockCache()
+        state, mock_seller, mock_buyer, mock_ghl, mock_lead = _make_state(cache=cache)
+        # GHL API would misroute this contact to seller
+        mock_ghl.get_contact.return_value = {
+            "customFields": [{"fieldKey": "bot_type", "value": "seller"}]
+        }
+
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                # Step 1 — new lead arrives
+                await c.post(
+                    "/ghl/webhook/new-lead",
+                    content=_new_lead_body("sticky-lead"),
+                    headers={"Content-Type": "application/json"},
+                )
+                # Step 2 — contact replies; no explicit bot_type in payload
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(contact_id="sticky-lead", body="hello"),
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert r.status_code == 200
+        assert r.json()["bot_type"] == "lead"
+        mock_seller.process_seller_message.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# _normalize_bot_type unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # Canonical values
+        ("seller", "seller"),
+        ("buyer", "buyer"),
+        ("lead", "lead"),
+        # Case variants
+        ("Seller", "seller"),
+        ("SELLER", "seller"),
+        ("Buyer", "buyer"),
+        # Known variant aliases
+        ("seller_bot", "seller"),
+        ("seller-bot", "seller"),
+        ("SELLER_BOT", "seller"),
+        ("buyer_bot", "buyer"),
+        ("buyer-bot", "buyer"),
+        ("new_lead", "lead"),
+        ("new-lead", "lead"),
+        ("lead_bot", "lead"),
+        # Empty / unknown → "lead"
+        ("", "lead"),
+        ("unknown", "lead"),
+        ("foobar", "lead"),
+    ],
+)
+def test_normalize_bot_type(raw: str, expected: str) -> None:
+    from bots.lead_bot.routes_webhook import _normalize_bot_type
+
+    assert _normalize_bot_type(raw) == expected

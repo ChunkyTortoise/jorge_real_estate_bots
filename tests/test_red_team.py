@@ -1438,9 +1438,9 @@ class TestWebhookAdminSecurity:
 
         assert response.status_code == 200
         data = response.json()
-        # Documents: 'seller' substring matched first → routes to seller
-        assert data.get("bot_type") == "seller_buyer", (
-            "bot_type in response must reflect the raw value received"
+        # _normalize_bot_type maps 'seller_buyer' → 'seller' (first canonical substring wins)
+        assert data.get("bot_type") == "seller", (
+            "Non-canonical bot_type 'seller_buyer' must normalize to 'seller'"
         )
 
     @pytest.mark.asyncio

@@ -20,6 +20,33 @@ router = APIRouter()
 _ASSIGNED_BOT_TTL = 604_800  # 7 days
 
 
+def _normalize_bot_type(raw: str) -> str:
+    """Map raw bot_type values to canonical: 'seller', 'buyer', or 'lead'."""
+    _VARIANTS: Dict[str, str] = {
+        "seller_bot": "seller",
+        "seller-bot": "seller",
+        "buyer_bot": "buyer",
+        "buyer-bot": "buyer",
+        "lead_bot": "lead",
+        "lead-bot": "lead",
+        "new_lead": "lead",
+        "new-lead": "lead",
+    }
+    lower = raw.strip().lower()
+    if not lower:
+        return "lead"
+    if lower in ("seller", "buyer", "lead"):
+        return lower
+    if lower in _VARIANTS:
+        return _VARIANTS[lower]
+    for canonical in ("seller", "buyer", "lead"):
+        if canonical in lower:
+            logger.warning(f"Non-canonical bot_type {raw!r} matched to {canonical!r} by substring")
+            return canonical
+    logger.warning(f"Unknown bot_type {raw!r}, defaulting to 'lead'")
+    return "lead"
+
+
 async def _deferred_tag_apply(
     ghl_client: Any,
     contact_id: str,
@@ -87,6 +114,14 @@ async def handle_new_lead(request: Request):
             f"Lead {contact_id} processed in {total_time_ms:.1f}ms "
             f"(Score: {analysis_result.get('score', 0)}, Temp: {analysis_result.get('temperature', 'unknown')})"
         )
+
+        # Lock this contact to the lead bot for 7 days so follow-up replies
+        # don't fall through to the GHL API and get misrouted to seller/buyer.
+        _webhook_cache = state._webhook_cache
+        if _webhook_cache:
+            await _webhook_cache.set(
+                f"assigned_bot:{contact_id}", "lead", ttl=_ASSIGNED_BOT_TTL,
+            )
 
         return {
             "status": "processed",
@@ -179,14 +214,21 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
             _lock_acquired = True
 
         try:
-            # Determine bot type
+            # Determine bot type — track source for diagnostics
             custom_data: Dict = payload.get("customData") or {}
-            bot_type: str = (
-                custom_data.get("bot_type")
-                or custom_data.get("Bot Type")
-                or payload.get("bot_type")
-                or ""
-            )
+            _bot_type_source = "default"
+            bot_type: str = ""
+
+            if custom_data.get("bot_type"):
+                bot_type = custom_data["bot_type"]
+                _bot_type_source = "customData.bot_type"
+            elif custom_data.get("Bot Type"):
+                bot_type = custom_data["Bot Type"]
+                _bot_type_source = "customData.Bot_Type"
+            elif payload.get("bot_type"):
+                bot_type = payload["bot_type"]
+                _bot_type_source = "payload.bot_type"
+
             # Track whether the payload explicitly specifies a bot (vs. GHL API fallback)
             _bot_type_explicit = bool(bot_type)
 
@@ -200,11 +242,13 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                         key = (cf.get("fieldKey") or cf.get("name") or "").lower().replace(" ", "_")
                         if key in ("bot_type", "bot type"):
                             bot_type = cf.get("value") or ""
+                            if bot_type:
+                                _bot_type_source = "ghl_api_custom_field"
                             break
                 except Exception as e:
                     logger.warning(f"Could not fetch contact for bot_type lookup: {e}")
 
-            bot_type_lower = (bot_type or "lead").lower()
+            bot_type_lower = _normalize_bot_type(bot_type)
 
             # Fix 3 — Bot exclusivity: one bot per contact (7-day assignment, explicit payload overrides)
             _assigned_key = f"assigned_bot:{contact_id}"
@@ -214,6 +258,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                     if not _bot_type_explicit:
                         # No explicit override in this webhook — honour the stored assignment
                         bot_type_lower = _assigned_bot
+                        _bot_type_source = "redis_cache"
                     else:
                         # Explicit bot_type in payload — bot switch detected, purge old state
                         if _assigned_bot != bot_type_lower:
@@ -235,14 +280,14 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
 
             logger.info(
                 f"Unified webhook: contact={contact_id}, bot_type={bot_type_lower!r}, "
-                f"msg={message_body[:60]!r}"
+                f"source={_bot_type_source!r}, msg={message_body[:60]!r}"
             )
 
             # Route to bot
             response_message: Optional[str] = None
             result_meta: Dict = {"bot_type": bot_type_lower}
 
-            if "seller" in bot_type_lower:
+            if bot_type_lower == "seller":
                 if not state.seller_bot_instance:
                     logger.error("Seller bot not initialized")
                     return {"status": "error", "detail": "seller bot unavailable"}
@@ -270,7 +315,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                         _deferred_tag_apply, state._ghl_client, contact_id, _tag_actions
                     )
 
-            elif "buyer" in bot_type_lower:
+            elif bot_type_lower == "buyer":
                 if not state.buyer_bot_instance:
                     logger.error("Buyer bot not initialized")
                     return {"status": "error", "detail": "buyer bot unavailable"}
