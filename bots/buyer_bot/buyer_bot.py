@@ -6,6 +6,7 @@ Q0 Greeting -> Q1 Preferences -> Q2 Pre-approval -> Q3 Timeline -> Q4 Motivation
 """
 from __future__ import annotations
 
+import time as _time
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -119,6 +120,7 @@ class BuyerResult:
     next_steps: str
     analytics: Dict[str, Any]
     matches: List[Dict[str, Any]]
+    preapproved: Optional[bool] = None
 
 
 class JorgeBuyerBot:
@@ -149,6 +151,7 @@ class JorgeBuyerBot:
         message: str,
         contact_info: Optional[Dict[str, Any]] = None,
     ) -> BuyerResult:
+        _start = _time.time()
         # --- Jorge-Active takeover check ---
         if contact_info is not None:
             _tags: list = contact_info.get("tags") or []
@@ -171,102 +174,137 @@ class JorgeBuyerBot:
                 analytics={},
             )
 
-        state = await self._get_or_create_state(contact_id, location_id)
+        try:
+            state = await self._get_or_create_state(contact_id, location_id)
 
-        # --- Slot selection intercept ---
-        if state.scheduling_offered and not state.appointment_booked:
-            slot_index = self.calendar_service.detect_slot_selection(message, contact_id)
-            if slot_index is not None:
-                booking = await self.calendar_service.book_appointment(
-                    contact_id, slot_index, "buyer"
-                )
-                if booking["success"]:
-                    state.appointment_booked = True
-                    appt = booking.get("appointment") or {}
-                    state.appointment_id = str(
-                        appt.get("id") or appt.get("appointmentId") or ""
+            # --- Slot selection intercept ---
+            if state.scheduling_offered and not state.appointment_booked:
+                slot_index = self.calendar_service.detect_slot_selection(message, contact_id)
+                if slot_index is not None:
+                    booking = await self.calendar_service.book_appointment(
+                        contact_id, slot_index, "buyer"
                     )
-                temperature = self._calculate_temperature(state)
-                await self.save_conversation_state(contact_id, state, temperature)
-                return BuyerResult(
-                    response_message=booking["message"],
-                    buyer_temperature=temperature,
-                    questions_answered=state.questions_answered,
-                    qualification_complete=state.questions_answered >= 4,
-                    actions_taken=[],
-                    next_steps=(
-                        "Appointment booked"
-                        if booking["success"]
-                        else "Retry slot selection"
-                    ),
-                    analytics=self._build_analytics(state, temperature),
-                    matches=state.matches,
-                )
+                    if booking["success"]:
+                        state.appointment_booked = True
+                        appt = booking.get("appointment") or {}
+                        state.appointment_id = str(
+                            appt.get("id") or appt.get("appointmentId") or ""
+                        )
+                    temperature = self._calculate_temperature(state)
+                    await self.save_conversation_state(contact_id, state, temperature)
+                    return BuyerResult(
+                        response_message=booking["message"],
+                        buyer_temperature=temperature,
+                        questions_answered=state.questions_answered,
+                        qualification_complete=state.questions_answered >= 4,
+                        actions_taken=[],
+                        next_steps=(
+                            "Appointment booked"
+                            if booking["success"]
+                            else "Retry slot selection"
+                        ),
+                        analytics=self._build_analytics(state, temperature),
+                        matches=state.matches,
+                    )
 
-        if contact_info:
+            if contact_info:
+                try:
+                    await upsert_contact(
+                        contact_id=contact_id,
+                        location_id=location_id,
+                        name=contact_info.get("name") or contact_info.get("full_name"),
+                        email=contact_info.get("email"),
+                        phone=contact_info.get("phone"),
+                    )
+                except Exception as db_err:
+                    self.logger.warning(f"DB upsert_contact skipped (schema not ready?): {db_err}")
+
+            original_q = state.current_question
+            response = await self._generate_response(state, message)
+
+            extracted_data = response.get("extracted_data", {})
+            should_advance = response.get("should_advance", False)
+
+            if original_q > 0:
+                state.record_answer(state.current_question, message, extracted_data)
+                # Store bot response so Claude has proper alternating history next turn
+                if state.conversation_history:
+                    state.conversation_history[-1]["bot_response"] = response.get("message", "")
+
+            if should_advance:
+                state.advance_question()
+
+            # Update matches after Q1 or later
+            if state.questions_answered >= 1:
+                state.matches = await self._match_properties(state)
+
+            temperature = self._calculate_temperature(state)
+
+            # --- One-time scheduling offer ---
+            _offer_scheduling = not state.scheduling_offered and temperature in (
+                BuyerStatus.HOT,
+                BuyerStatus.WARM,
+            )
+            if _offer_scheduling:
+                state.scheduling_offered = True
+
+            actions = await self._generate_actions(contact_id, location_id, state, temperature)
+            await self.save_conversation_state(contact_id, state, temperature)
+
+            scheduling_append = ""
+            if _offer_scheduling:
+                if temperature == BuyerStatus.HOT:
+                    sched = await self.calendar_service.offer_appointment_slots(
+                        contact_id, "buyer"
+                    )
+                else:
+                    sched = {"message": FALLBACK_MESSAGE}
+                scheduling_append = "\n\n" + sched["message"]
+
             try:
-                await upsert_contact(
-                    contact_id=contact_id,
-                    location_id=location_id,
-                    name=contact_info.get("name") or contact_info.get("full_name"),
-                    email=contact_info.get("email"),
-                    phone=contact_info.get("phone"),
+                from bots.shared.bot_metrics_collector import BotMetricsCollector
+                BotMetricsCollector().record_bot_interaction(
+                    bot_type="buyer",
+                    duration_ms=(_time.time() - _start) * 1000,
+                    success=True,
+                    cache_hit=False,
                 )
-            except Exception as db_err:
-                self.logger.warning(f"DB upsert_contact skipped (schema not ready?): {db_err}")
+            except Exception:
+                pass
 
-        original_q = state.current_question
-        response = await self._generate_response(state, message)
+            return BuyerResult(
+                response_message=sanitize_bot_response(response["message"] + scheduling_append),
+                buyer_temperature=temperature,
+                questions_answered=state.questions_answered,
+                qualification_complete=state.questions_answered >= 4,
+                actions_taken=actions,
+                next_steps=self._determine_next_steps(state, temperature),
+                analytics=self._build_analytics(state, temperature),
+                matches=state.matches,
+                preapproved=state.preapproved,
+            )
 
-        extracted_data = response.get("extracted_data", {})
-        should_advance = response.get("should_advance", False)
-
-        if original_q > 0:
-            state.record_answer(state.current_question, message, extracted_data)
-            # Store bot response so Claude has proper alternating history next turn
-            if state.conversation_history:
-                state.conversation_history[-1]["bot_response"] = response.get("message", "")
-
-        if should_advance:
-            state.advance_question()
-
-        # Update matches after Q1 or later
-        if state.questions_answered >= 1:
-            state.matches = await self._match_properties(state)
-
-        temperature = self._calculate_temperature(state)
-
-        # --- One-time scheduling offer ---
-        _offer_scheduling = not state.scheduling_offered and temperature in (
-            BuyerStatus.HOT,
-            BuyerStatus.WARM,
-        )
-        if _offer_scheduling:
-            state.scheduling_offered = True
-
-        actions = await self._generate_actions(contact_id, location_id, state, temperature)
-        await self.save_conversation_state(contact_id, state, temperature)
-
-        scheduling_append = ""
-        if _offer_scheduling:
-            if temperature == BuyerStatus.HOT:
-                sched = await self.calendar_service.offer_appointment_slots(
-                    contact_id, "buyer"
+        except Exception as e:
+            self.logger.error(f"Error processing buyer message: {e}", exc_info=True)
+            try:
+                from bots.shared.bot_metrics_collector import BotMetricsCollector
+                BotMetricsCollector().record_bot_interaction(
+                    bot_type="buyer",
+                    duration_ms=(_time.time() - _start) * 1000,
+                    success=False,
                 )
-            else:
-                sched = {"message": FALLBACK_MESSAGE}
-            scheduling_append = "\n\n" + sched["message"]
-
-        return BuyerResult(
-            response_message=sanitize_bot_response(response["message"] + scheduling_append),
-            buyer_temperature=temperature,
-            questions_answered=state.questions_answered,
-            qualification_complete=state.questions_answered >= 4,
-            actions_taken=actions,
-            next_steps=self._determine_next_steps(state, temperature),
-            analytics=self._build_analytics(state, temperature),
-            matches=state.matches,
-        )
+            except Exception:
+                pass
+            return BuyerResult(
+                response_message="",
+                buyer_temperature="cold",
+                questions_answered=0,
+                qualification_complete=False,
+                actions_taken=[],
+                next_steps="Manual follow-up required",
+                analytics={"error": "Processing error occurred"},
+                matches=[],
+            )
 
     async def _get_or_create_state(self, contact_id: str, location_id: str) -> BuyerQualificationState:
         key = f"buyer:state:{contact_id}"

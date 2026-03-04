@@ -72,4 +72,5 @@ async def test_buyer_turn(req: _TurnRequest) -> Dict[str, Any]:
         "qualification_complete": result.qualification_complete,
         "actions_taken": result.actions_taken,
         "next_steps": result.next_steps,
+        "preapproved": result.preapproved,
     }

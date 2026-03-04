@@ -184,6 +184,22 @@ class TestBuyerBotBugFixes:
         extracted = await bot._extract_qualification_data("I'm a cash buyer", 2)
         assert extracted.get("preapproved") is True
 
+    def test_buyer_result_exposes_preapproved(self):
+        """BuyerResult must include preapproved field so the API response surfaces it."""
+        from bots.buyer_bot.buyer_bot import BuyerResult
+        result = BuyerResult(
+            response_message="test",
+            buyer_temperature="hot",
+            questions_answered=2,
+            qualification_complete=False,
+            actions_taken=[],
+            next_steps="continue",
+            analytics={},
+            matches=[],
+            preapproved=True,
+        )
+        assert result.preapproved is True
+
     # --- Fix 3: Q3 timeline parser ---
 
     @pytest.mark.asyncio
