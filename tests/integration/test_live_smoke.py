@@ -176,3 +176,137 @@ class TestOutputFilterLive:
         _require_live()
         r = self._probe("Tell me about real estate. " * 25)
         assert r.status_code != 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P0 Calendar booking smoke test
+#
+# Drives the 5-turn HOT seller conversation from docs/E2E_SMOKE_TEST.md and
+# verifies trigger_workflow: 577d56c4 appears in actions_taken.
+#
+# After this test passes, ask Jorge to confirm the calendar link SMS arrived.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_HOT_SELLER_TURNS = [
+    "Move-in ready, 3 bed 2 bath in Rancho Cucamonga",
+    "Looking for around 580k",
+    "Relocating for work, need to sell in 60 days",
+    "Yes I can accept an offer within 2-3 weeks",
+    "Morning works best for me, any day this week",
+]
+
+_CALENDAR_WORKFLOW_ID = "577d56c4-28af-4668-8d84-80f5db234f48"
+
+
+def _seller_turn(contact_id: str, message: str) -> httpx.Response:
+    return httpx.post(
+        f"{LIVE_URL}/test/seller",
+        json={"contact_id": contact_id, "message": message, "location_id": _TEST_LOCATION_ID},
+        timeout=TIMEOUT,
+    )
+
+
+class TestCalendarBookingSmoke:
+    """
+    P0: Confirm GHL workflow 577d56c4 fires for HOT seller.
+
+    Run:
+        RUN_LIVE_SMOKE=1 pytest tests/integration/test_live_smoke.py::TestCalendarBookingSmoke -v
+
+    Prerequisites:
+        - ENVIRONMENT != "production" on the target server (test endpoints must be mounted)
+        - JORGE_CALENDAR_ID must be set (otherwise calendar booking falls back to FALLBACK_MESSAGE)
+
+    After the test passes, ask Jorge to confirm the calendar link SMS arrived on his phone.
+    """
+
+    def test_test_seller_endpoint_reachable(self):
+        """/test/seller must respond (not 404/500) in non-production deployments."""
+        _require_live()
+        r = httpx.post(
+            f"{LIVE_URL}/test/seller",
+            json={"contact_id": "probe-reachable", "message": "hi"},
+            timeout=TIMEOUT,
+        )
+        if r.status_code == 404:
+            pytest.skip("/test/seller not mounted — ENVIRONMENT=production on this server")
+        assert r.status_code not in (500, 503), f"Server error on /test/seller: {r.text}"
+
+    def test_hot_seller_triggers_calendar_workflow(self):
+        """
+        5-turn HOT seller conversation must produce trigger_workflow: 577d56c4 action.
+
+        Verifies bot-side calendar booking. Follow up with Jorge to confirm
+        the GHL workflow actually delivers the calendar link by SMS.
+        """
+        _require_live()
+        contact_id = f"smoke-cal-{uuid.uuid4().hex[:8]}"
+
+        last: dict = {}
+        for turn, msg in enumerate(_HOT_SELLER_TURNS, start=1):
+            r = _seller_turn(contact_id, msg)
+            if r.status_code == 404:
+                pytest.skip("/test/seller not mounted — ENVIRONMENT=production on this server")
+            assert r.status_code == 200, (
+                f"Turn {turn} ({msg!r}) returned {r.status_code}: {r.text}"
+            )
+            last = r.json()
+
+        actions = last.get("actions_taken", [])
+        workflow_ids = [
+            a.get("workflow_id", "") or a.get("id", "")
+            for a in actions
+            if a.get("type") == "trigger_workflow"
+        ]
+
+        assert workflow_ids, (
+            f"No trigger_workflow action in final turn.\n"
+            f"  Temperature: {last.get('seller_temperature')}\n"
+            f"  Questions answered: {last.get('questions_answered')}\n"
+            f"  Actions: {actions}\n"
+            f"  Response: {last.get('response_message')!r}"
+        )
+        assert any(_CALENDAR_WORKFLOW_ID in wid for wid in workflow_ids), (
+            f"Expected workflow {_CALENDAR_WORKFLOW_ID!r} (calendar booking).\n"
+            f"Got: {workflow_ids}"
+        )
+        print(
+            f"\n✅  Calendar workflow triggered for contact {contact_id!r}.\n"
+            f"    Temperature: {last['seller_temperature']} | "
+            f"Q answered: {last['questions_answered']}\n"
+            f"    ➜  Ask Jorge to confirm the calendar link SMS arrived on his phone."
+        )
+
+    def test_seller_qualification_data_extracted(self):
+        """
+        Full HOT seller path extracts price, motivation, and all 4 questions answered.
+        Independent of calendar config — validates data extraction only.
+        """
+        _require_live()
+        contact_id = f"smoke-data-{uuid.uuid4().hex[:8]}"
+
+        responses = []
+        for msg in _HOT_SELLER_TURNS:
+            r = _seller_turn(contact_id, msg)
+            if r.status_code == 404:
+                pytest.skip("/test/seller not mounted")
+            assert r.status_code == 200, f"Turn failed: {r.status_code} {r.text}"
+            responses.append(r.json())
+
+        final = responses[-1]
+        assert final["questions_answered"] >= 4, (
+            f"Expected 4 questions answered, got {final['questions_answered']}"
+        )
+        assert final["seller_temperature"] == "hot", (
+            f"Expected 'hot' temperature, got {final['seller_temperature']!r}"
+        )
+
+        # price_expectation custom field must appear in actions
+        all_actions = [a for resp in responses for a in resp.get("actions_taken", [])]
+        price_actions = [
+            a for a in all_actions
+            if a.get("type") == "update_custom_field" and "price" in a.get("field", "").lower()
+        ]
+        assert price_actions, (
+            f"Expected price_expectation to be extracted. Actions: {all_actions}"
+        )

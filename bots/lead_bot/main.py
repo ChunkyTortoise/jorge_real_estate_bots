@@ -219,6 +219,12 @@ app.include_router(realtime_router)
 app.include_router(admin_router)
 app.include_router(productization_router)
 
+# Test endpoints — only in non-production environments
+if settings.environment != "production":
+    from bots.lead_bot.routes_test_endpoints import router as test_router
+    app.include_router(test_router)
+    logger.info("Test endpoints mounted at /test/* (non-production mode)")
+
 
 # ── Core routes (health, analyze, performance, metrics) ──────────────────────
 
