@@ -796,6 +796,18 @@ class TestSellerBotEvalFixes:
         assert extracted["price_expectation"] == 300000
 
     @pytest.mark.asyncio
+    async def test_q2_million_suffix_extracts_correctly(self, bot):
+        """$1.2m extracts as 1,200,000 (not 1,000)."""
+        extracted = await bot._extract_qualification_data("$1.2m", 2)
+        assert extracted.get("price_expectation") == 1_200_000
+
+    @pytest.mark.asyncio
+    async def test_q2_million_whole_number(self, bot):
+        """$2m extracts as 2,000,000."""
+        extracted = await bot._extract_qualification_data("around $2m", 2)
+        assert extracted.get("price_expectation") == 2_000_000
+
+    @pytest.mark.asyncio
     async def test_q2_should_advance_with_default_price(self, bot):
         """_should_advance_question returns True when price_expectation set to default."""
         extracted = {"price_expectation": 300000}

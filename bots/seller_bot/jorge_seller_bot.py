@@ -20,6 +20,7 @@ Created: 2026-01-23
 """
 import asyncio
 import os
+import time as _time
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from enum import Enum
@@ -468,6 +469,7 @@ class JorgeSellerBot:
         Returns:
             SellerResult with response and qualification status
         """
+        _start = _time.time()
         try:
             self.logger.info(f"Processing seller message for contact {contact_id}")
 
@@ -657,10 +659,30 @@ class JorgeSellerBot:
                 f"Answered: {state.questions_answered}/4, Temp: {temperature}"
             )
 
+            try:
+                from bots.shared.bot_metrics_collector import BotMetricsCollector
+                BotMetricsCollector().record_bot_interaction(
+                    bot_type="seller",
+                    duration_ms=(_time.time() - _start) * 1000,
+                    success=True,
+                    cache_hit=False,
+                )
+            except Exception:
+                pass
+
             return result
 
         except Exception as e:
             self.logger.error(f"Error processing seller message: {e}", exc_info=True)
+            try:
+                from bots.shared.bot_metrics_collector import BotMetricsCollector
+                BotMetricsCollector().record_bot_interaction(
+                    bot_type="seller",
+                    duration_ms=(_time.time() - _start) * 1000,
+                    success=False,
+                )
+            except Exception:
+                pass
             try:
                 cached = await self.get_conversation_state(contact_id)
                 if cached:
@@ -912,20 +934,22 @@ RESPONSE (keep under 100 words):"""
         elif question_num == 2:
             # Q2: Price expectation
             import re
+            # Each tuple: (pattern, multiplier) — None multiplier = auto-detect thousands
             price_patterns = [
-                r'\$?(\d[\d,]*)k',  # $350k or 350k
-                r'\$?(\d[\d,]*),000',  # $350,000
-                r'\$?(\d[\d,]*)'  # $350000 or 350000 (must start with digit)
+                (r'\$?(\d[\d,]*(?:\.\d+)?)m\b', 1_000_000),  # $1.2m, 1.2m
+                (r'\$?(\d[\d,]*(?:\.\d+)?)k\b', 1_000),       # $350k, 350k
+                (r'\$?(\d[\d,]*),000',           1),            # $350,000
+                (r'\$?(\d[\d,]*)',               None),         # $350000 or bare 350
             ]
 
-            for pattern in price_patterns:
-                match = re.search(pattern, user_message)
+            for pattern, multiplier in price_patterns:
+                match = re.search(pattern, user_message, re.IGNORECASE)
                 if match:
                     price_str = match.group(1).replace(',', '')
-                    if 'k' in user_message.lower():
-                        extracted["price_expectation"] = int(price_str) * 1000
+                    if multiplier is not None:
+                        extracted["price_expectation"] = int(float(price_str) * multiplier)
                     else:
-                        price = int(price_str)
+                        price = int(float(price_str))
                         # Assume values < 10000 are in thousands (e.g., "350" = $350K)
                         if price < 10000:
                             price *= 1000
