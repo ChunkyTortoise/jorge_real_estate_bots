@@ -465,17 +465,6 @@ summary() {
   fi
 
   bold ""
-  bold "  Known live bugs (require deploy of local fixes):"
-  yellow "  • S-Q0: Live server asks for property ADDRESS — fix asks for CONDITION"
-  yellow "  • S-Q3: Live server may skip cash offer — fix gates on offer_presented"
-  yellow ""
-  bold "  To deploy fixes:"
-  yellow "  The live service (service6_lead_recovery_engine v2.0.0) is a DIFFERENT"
-  yellow "  codebase from this repo. To deploy:"
-  yellow "  1. Identify which GitHub repo Render service srv-d6d5go15pdvs73fcjjq0 pulls from"
-  yellow "  2. Apply the same S-Q0 + offer_presented fixes to that codebase"
-  yellow "  3. Push to trigger Render redeploy"
-  yellow ""
   bold "  Manual SMS checklist (after removing Jorge-Active tag):"
   yellow "  □ SMS-B-Q0: Jorge greeting + asks beds/baths/price/area"
   yellow "  □ SMS-S-Q0: Jorge greeting + asks about CONDITION (not address)"
