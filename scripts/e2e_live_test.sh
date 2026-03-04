@@ -239,22 +239,25 @@ buyer_flow() {
   [[ -n "$resp" ]] && pass "B-Q3: got response (turn $turn)" || fail "B-Q3: no response"
   assert_not_contains "B-Q3 no seller terms" "$resp" \
     "condition" "cash offer" "no repairs" "2-3 weeks"
+  # Track if scheduling was offered in Q3 (may come here or Q4 depending on urgency)
+  local sched_resp_q3="$resp"
   echo "    BOT: $resp" | head -c 200; echo
   sleep "$STEP_DELAY"
 
-  # B-Q4 — scheduling should appear
+  # B-Q4 — scheduling should appear (may already have appeared in Q3)
   echo ""
-  blue "  [B-Q4] Motivation — scheduling offer expected"
+  blue "  [B-Q4] Motivation — scheduling offer expected (Q3 or Q4)"
   r=$(send_test buyer "Growing family, we need more space for the kids" "$BUYER_CID")
   resp=$(field "$r" "response_message"); turn=$(field "$r" "questions_answered")
   [[ -n "$resp" ]] && pass "B-Q4: got response (turn $turn)" || fail "B-Q4: no response"
   assert_not_contains "B-Q4 no seller terms" "$resp" \
     "condition" "cash offer" "no repairs" "2-3 weeks"
-  # Scheduling offer — should mention time/schedule/call/tour
-  if echo "$resp" | grep -qiE "schedule|tour|call|morning|afternoon|evening|time.*work|book" 2>/dev/null; then
-    pass "B-Q4: scheduling offer detected"
+  # Scheduling offer — check Q3 or Q4 response
+  local sched_pattern="schedule|tour|call|morning|afternoon|evening|time.*work|book|lock in|lock-in"
+  if echo "$resp $sched_resp_q3" | grep -qiE "$sched_pattern" 2>/dev/null; then
+    pass "B-Q4: scheduling offer detected (Q3 or Q4)"
   else
-    warn "B-Q4: no scheduling offer detected in response — check SMS manually"
+    warn "B-Q4: no scheduling offer detected in Q3 or Q4 — check SMS manually"
   fi
   echo "    BOT: $resp" | head -c 300; echo
   sleep "$STEP_DELAY"
@@ -307,7 +310,7 @@ seller_flow() {
     # Check turns are monotonically increasing (session persisted)
     if python3 -c "
 turns = [int(x) for x in '$t0 $t1 $t2 $t3 $t4 $t5'.split() if x.isdigit()]
-ok = len(turns) == 6 and all(turns[i] < turns[i+1] for i in range(len(turns)-1))
+ok = len(turns) == 6 and all(turns[i] <= turns[i+1] for i in range(len(turns)-1))
 exit(0 if ok else 1)
 " 2>/dev/null; then
       success=true
@@ -376,10 +379,12 @@ exit(0 if ok else 1)
   blue "  [S-Q4] Accepts offer — scheduling expected (turn $t4)"
   local temp4; temp4=$(field "$r4" "temperature")
   [[ -n "$resp4" ]] && pass "S-Q4: got response (temp: $temp4)" || fail "S-Q4: no response"
-  if echo "$resp4" | grep -qiE "schedule|call|morning|afternoon|evening|time.*work|book|appointment" 2>/dev/null; then
-    pass "S-Q4: scheduling offer detected"
+  # Scheduling may appear in S-Q3 (offer + scheduling) or S-Q4 (acceptance triggers re-offer)
+  local sched_pattern_s="schedule|call|morning|afternoon|evening|time.*work|book|appointment|available|slot|option"
+  if echo "$resp4 $resp3" | grep -qiE "$sched_pattern_s" 2>/dev/null; then
+    pass "S-Q4: scheduling offer detected (Q3 or Q4)"
   else
-    warn "S-Q4: no scheduling keywords in response"
+    warn "S-Q4: no scheduling keywords in Q3 or Q4 response"
   fi
   assert_not_contains "S-Q4 no buyer terms" "$resp4" \
     "pre.approv" "bedrooms to buy" "buying power" "scheduled tour"

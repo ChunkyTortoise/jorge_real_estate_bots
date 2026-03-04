@@ -531,6 +531,22 @@ class JorgeSellerBot:
                         ),
                         analytics=self._build_analytics(state, temperature),
                     )
+                else:
+                    # Scheduling was offered but user didn't pick a slot — re-prompt without API call
+                    temperature = self._calculate_temperature(state)
+                    re_prompt = (
+                        "Which time works better for you — morning or afternoon? "
+                        "Just let me know and I'll get that locked in for you."
+                    )
+                    return SellerResult(
+                        response_message=re_prompt,
+                        seller_temperature=temperature,
+                        questions_answered=state.questions_answered,
+                        qualification_complete=(state.questions_answered >= 4),
+                        actions_taken=[],
+                        next_steps="Awaiting slot selection",
+                        analytics=self._build_analytics(state, temperature),
+                    )
 
             if contact_info:
                 try:
