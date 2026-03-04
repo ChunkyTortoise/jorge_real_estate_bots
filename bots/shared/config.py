@@ -28,10 +28,10 @@ class Settings(BaseSettings):
     sendgrid_api_key: str = ""
 
     # ========== CLAUDE AI CONFIGURATION ==========
-    claude_model: str = "claude-3-5-sonnet-20241022"
-    claude_sonnet_model: str = "claude-3-5-sonnet-20241022"
-    claude_haiku_model: str = "claude-3-5-haiku-20241022"
-    claude_opus_model: str = "claude-3-opus-20240229"
+    claude_model: str = "claude-sonnet-4-5-20250514"
+    claude_sonnet_model: str = "claude-sonnet-4-5-20250514"
+    claude_haiku_model: str = "claude-haiku-4-5-20251001"
+    claude_opus_model: str = "claude-opus-4-5-20250514"
 
     # Default LLM Provider
     default_llm_provider: str = "claude"

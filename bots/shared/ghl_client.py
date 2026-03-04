@@ -464,20 +464,30 @@ class GHLClient:
                 logger.warning(f"get_free_slots failed: {result.get('error')}")
                 return []
 
-            # GHL returns {"slots": {"2024-02-01": [{"startTime": ..., "endTime": ...}]}}
-            slots_by_date = result.get("data", {}).get("slots", {})
+            # GHL returns {"2026-03-04": {"slots": ["2026-03-04T08:00:00-08:00", ...]}, ...}
+            # _make_request wraps this as {"success": True, "data": <above>}
+            raw_data = result.get("data", {})
             business_slots: List[Dict] = []
-            for date_slots in slots_by_date.values():
+            for date_key, date_obj in sorted(raw_data.items()):
+                if not isinstance(date_obj, dict):
+                    continue
+                date_slots = date_obj.get("slots", [])
                 for slot in date_slots:
-                    start_str = slot.get("startTime") or slot.get("start", "")
-                    end_str = slot.get("endTime") or slot.get("end", "")
+                    # Slots can be plain ISO strings or dicts with startTime/endTime
+                    if isinstance(slot, str):
+                        start_str = slot
+                        end_str = ""
+                    elif isinstance(slot, dict):
+                        start_str = slot.get("startTime") or slot.get("start", "")
+                        end_str = slot.get("endTime") or slot.get("end", "")
+                    else:
+                        continue
                     if not start_str:
                         continue
                     try:
                         dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                        # Approximate PT offset: UTC-8 (ignore DST for simplicity)
-                        hour_pt = (dt.hour - 8) % 24
-                        if 9 <= hour_pt < 17:
+                        hour_local = dt.hour  # Already in local tz from GHL
+                        if 9 <= hour_local < 17:
                             business_slots.append({"start": start_str, "end": end_str})
                             if len(business_slots) >= 3:
                                 return business_slots

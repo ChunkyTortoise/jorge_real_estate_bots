@@ -114,12 +114,21 @@ class CalendarBookingService:
 
         slot = slots[slot_index]
         title = "Seller Consultation" if lead_type == "seller" else "Buyer Consultation"
+        start_time = slot["start"]
+        end_time = slot.get("end") or ""
+        if not end_time and start_time:
+            try:
+                from datetime import timedelta as _td
+                st = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+                end_time = (st + _td(minutes=30)).isoformat()
+            except (ValueError, AttributeError):
+                end_time = start_time
         appointment_data: Dict = {
             "calendarId": self.calendar_id,
             "locationId": self.ghl_client.location_id,
             "contactId": contact_id,
-            "startTime": slot["start"],
-            "endTime": slot["end"],
+            "startTime": start_time,
+            "endTime": end_time,
             "title": title,
             "appointmentStatus": "new",
         }
