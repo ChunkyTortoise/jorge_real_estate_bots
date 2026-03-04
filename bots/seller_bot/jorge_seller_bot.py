@@ -599,7 +599,7 @@ class JorgeSellerBot:
             # states restored from Redis that predate this field.
             _offer_scheduling = (
                 not state.scheduling_offered
-                and (state.offer_presented or state.current_question >= 4)
+                and state.questions_answered >= 4
                 and temperature in (SellerStatus.HOT.value, SellerStatus.WARM.value)
             )
             if _offer_scheduling:
@@ -740,6 +740,20 @@ class JorgeSellerBot:
 
         # For Q1-Q4, use Claude to analyze response and ask next question
         current_q = state.current_question
+
+        # Q3 → Q4: Present cash offer directly — no AI acknowledgment, keeps message to 1 SMS segment
+        if current_q == 3:
+            offer_amount = int((state.price_expectation or 300000) * 0.75)
+            q4_text = self._questions[4].format(offer_amount=f"${offer_amount:,}")
+            extracted_data = await self._extract_qualification_data(
+                user_message=user_message,
+                question_num=current_q
+            )
+            return {
+                "message": q4_text,
+                "extracted_data": extracted_data,
+                "should_advance": self._should_advance_question(extracted_data, current_q),
+            }
 
         # Build prompt for Claude
         prompt = self._build_claude_prompt(state, user_message, current_q)
@@ -1274,7 +1288,7 @@ RESPONSE (keep under 100 words):"""
             if "{offer_amount}" in question:
                 offer_amount = int(((state.price_expectation if state else None) or 300000) * 0.75)
                 question = question.format(offer_amount=f"${offer_amount:,}")
-            return f"{jorge_phrase}. {question}"
+            return f"{jorge_phrase.rstrip('.!?')}. {question}"
         else:
             return "Look, something came up. Give me a few and I'll text you back."
 

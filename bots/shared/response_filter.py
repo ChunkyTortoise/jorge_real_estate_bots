@@ -66,4 +66,8 @@ def sanitize_bot_response(text: Optional[str]) -> str:
     # 5. Clean double spaces
     text = re.sub(r"  +", " ", text).strip()
 
+    # 6. Collapse exactly-double periods to single (e.g. "Good.. What" → "Good. What")
+    #    Preserve "..." (ellipsis) intentionally used in truncation or responses.
+    text = re.sub(r"(?<!\.)\.\.(?!\.)", ".", text)
+
     return text
