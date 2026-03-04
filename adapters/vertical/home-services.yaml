@@ -1,0 +1,13 @@
+id: home-services
+name: Home Services Adapter
+intent: "Adapt qualification for HVAC/plumbing/electrical dispatch"
+default_overrides:
+  qualification_fields:
+    - service_type
+    - issue_urgency
+    - property_type
+    - zip_code
+  handoff_target: "dispatcher"
+  urgency_rules:
+    - "issue_urgency = emergency => hot"
+    - "service_type in [water leak, no power] => immediate callback"

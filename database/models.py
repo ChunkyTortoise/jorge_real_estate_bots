@@ -169,3 +169,36 @@ class BuyerPreferenceModel(Base):
     matches_json: Mapped[dict] = mapped_column(JSONB, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class PlaybookApplicationModel(Base):
+    __tablename__ = "playbook_applications"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid_str)
+    agency_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    playbook_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    version: Mapped[str] = mapped_column(String(50), nullable=False)
+    applied_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    applied_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_playbook_applications_agency_active", "agency_id", "is_active"),
+    )
+
+
+class RoiReportModel(Base):
+    __tablename__ = "roi_reports"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid_str)
+    agency_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    date_from: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    date_to: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    format: Mapped[str] = mapped_column(String(20), nullable=False, default="both")
+    artifact_paths: Mapped[list] = mapped_column(JSONB, default=list)
+    summary_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    generated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

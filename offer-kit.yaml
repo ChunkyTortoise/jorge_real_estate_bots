@@ -1,0 +1,33 @@
+schema_version: 1
+name: jorge-real-estate-bots
+version: 1.0.0
+positioning: "SMB AI automation for lead qualification and agent routing"
+quickstart:
+  command: "make quickstart-client"
+  sla_days: 7
+environments:
+  required:
+    - ANTHROPIC_API_KEY
+    - GHL_API_KEY
+    - GHL_LOCATION_ID
+    - DATABASE_URL
+    - REDIS_URL
+deliverables:
+  - Onboarding API endpoints (/api/onboarding/*)
+  - Integration health endpoint (/api/integrations/health)
+  - Playbook presets (/api/playbooks, /api/playbooks/apply)
+  - ROI endpoints (/api/roi/summary, /api/roi/trends)
+  - Report endpoints (/api/reports/generate, /api/reports/{id})
+smoke_tests:
+  - "curl -s http://localhost:8001/health"
+  - "curl -s http://localhost:8001/api/integrations/health"
+  - "pytest -q tests/test_productization_routes.py"
+acceptance_checklist:
+  - "Onboarding endpoints return deterministic validation and bootstrap responses"
+  - "Integration health reports actionable remediation details"
+  - "Playbook apply is idempotent for same agency/version"
+  - "ROI and report endpoints return shareable executive artifacts"
+handoff_outputs:
+  - "Configured environment variables and secrets checklist"
+  - "Generated report artifact IDs and paths"
+  - "Smoke test output log"

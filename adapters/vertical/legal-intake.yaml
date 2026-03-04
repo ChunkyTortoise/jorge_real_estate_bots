@@ -1,0 +1,13 @@
+id: legal-intake
+name: Legal Intake Adapter
+intent: "Adapt lead qualification to plaintiff/legal intake workflows"
+default_overrides:
+  qualification_fields:
+    - incident_date
+    - injury_type
+    - represented_status
+    - insurance_carrier
+  handoff_target: "intake-specialist"
+  urgency_rules:
+    - "incident_date <= 14 days => hot"
+    - "represented_status = yes => escalate"

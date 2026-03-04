@@ -56,6 +56,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Dependency check
+        run: python -m pip check
+
       - name: Run tests
         run: pytest -v --tb=short
 
@@ -111,6 +114,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Dependency check
+        run: python -m pip check
+
       - name: Run integration tests
         run: pytest -m integration -v --tb=short
 
@@ -133,3 +139,21 @@ jobs:
 
       - name: Run mypy
         run: python -m mypy bots/
+
+  quality:
+    name: Lint + Security Baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt ruff
+      - name: Ruff
+        run: ruff check bots/ api/ database/
+      - name: Dependency check
+        run: python -m pip check
+      - name: Validate offer-kit
+        run: python scripts/validate_offer_kit.py

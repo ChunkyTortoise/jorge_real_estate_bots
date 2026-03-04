@@ -24,6 +24,7 @@ from sqlalchemy import text
 from bots.buyer_bot.buyer_bot import JorgeBuyerBot
 from bots.lead_bot.models import LeadAnalysisResponse, LeadMessage, PerformanceStatus
 from bots.lead_bot.routes_admin import router as admin_router, settings_load
+from bots.lead_bot.routes_productization import router as productization_router
 from bots.lead_bot.routes_realtime import router as realtime_router
 from bots.lead_bot.routes_webhook import router as webhook_router
 from bots.lead_bot.services.lead_analyzer import LeadAnalyzer
@@ -216,6 +217,7 @@ async def performance_monitor(request: Request, call_next):
 app.include_router(webhook_router)
 app.include_router(realtime_router)
 app.include_router(admin_router)
+app.include_router(productization_router)
 
 
 # ── Core routes (health, analyze, performance, metrics) ──────────────────────
