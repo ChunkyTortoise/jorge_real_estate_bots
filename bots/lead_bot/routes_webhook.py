@@ -215,7 +215,14 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                         # No explicit override in this webhook — honour the stored assignment
                         bot_type_lower = _assigned_bot
                     else:
-                        # Explicit bot_type in payload — update stored assignment
+                        # Explicit bot_type in payload — bot switch detected, purge old state
+                        if _assigned_bot != bot_type_lower:
+                            old_state_key = f"{_assigned_bot}:state:{contact_id}"
+                            await _webhook_cache.delete(old_state_key)
+                            logger.info(
+                                f"[BOT-SWITCH] {contact_id}: {_assigned_bot!r} → {bot_type_lower!r}, "
+                                f"cleared {old_state_key}"
+                            )
                         await _webhook_cache.set(_assigned_key, bot_type_lower, ttl=_ASSIGNED_BOT_TTL)
                 else:
                     await _webhook_cache.set(_assigned_key, bot_type_lower, ttl=_ASSIGNED_BOT_TTL)

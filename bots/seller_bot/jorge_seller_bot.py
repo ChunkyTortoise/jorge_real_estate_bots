@@ -46,6 +46,12 @@ SELLER_SYSTEM_PROMPT = (
     "If you don't know, redirect to the next question. "
     "If conversation goes off-topic, redirect: 'Hey, let's focus on your home situation.' "
     "NEVER provide legal, tax, or financial advice — say 'That's a question for your attorney/CPA.' "
+    "You are ONLY helping this person SELL their property. "
+    "NEVER mention buying a home, purchase budgets, pre-approval, or scheduled home tours "
+    "unless the seller explicitly raises them in THIS conversation. "
+    "NEVER reference any dollar amount as 'buying power' or 'purchase budget'. "
+    "The seller's stated price is their ASKING PRICE — never treat it as a buying budget. "
+    "NEVER mention specific neighborhoods as places to buy. "
     "Stay in character. Under 100 words."
 )
 
@@ -90,6 +96,7 @@ class SellerQualificationState:
     urgency: Optional[str] = None  # "high", "medium", "low"
 
     # Q4: Offer acceptance
+    offer_presented: bool = False        # True once the cash offer message has been sent
     offer_accepted: Optional[bool] = None
     timeline_acceptable: Optional[bool] = None  # 2-3 week close
 
@@ -549,6 +556,9 @@ class JorgeSellerBot:
 
             # Advance to next question if appropriate (before recording answer)
             if state.current_question < 4 and response_data.get("should_advance", False):
+                # When advancing from Q3→Q4, the cash offer was just included in the response
+                if state.current_question == 3:
+                    state.offer_presented = True
                 state.advance_question()
 
             # Record answer for the question we just asked
@@ -568,9 +578,13 @@ class JorgeSellerBot:
             # --- One-time scheduling offer ---
             # Mark scheduling_offered BEFORE saving so we don't double-offer
             # even if the async API call fails or takes too long.
-            _offer_scheduling = not state.scheduling_offered and temperature in (
-                SellerStatus.HOT.value,
-                SellerStatus.WARM.value,
+            # IMPORTANT: calendar must NOT fire until the cash offer has been presented (Q4).
+            # offer_presented is set when Q3→Q4 transitions; current_question >= 4 handles
+            # states restored from Redis that predate this field.
+            _offer_scheduling = (
+                not state.scheduling_offered
+                and (state.offer_presented or state.current_question >= 4)
+                and temperature in (SellerStatus.HOT.value, SellerStatus.WARM.value)
             )
             if _offer_scheduling:
                 state.scheduling_offered = True
@@ -687,7 +701,9 @@ class JorgeSellerBot:
         # Determine which question to ask
         if state.current_question == 0:
             # Initial greeting - move to Q1
-            question_text = self._questions[1]
+            # Always use the hardcoded condition question — never let an admin override
+            # replace Q0 with an address question or anything else.
+            question_text = self.QUALIFICATION_QUESTIONS[1]
             jorge_intro = self._get_random_jorge_phrase()
             response_message = f"{jorge_intro.rstrip('.!')} — {question_text}"
             # Preserve the initial message in history before advancing

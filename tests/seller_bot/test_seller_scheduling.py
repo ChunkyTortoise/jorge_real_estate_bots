@@ -46,6 +46,7 @@ def _hot_state(contact_id: str = "contact-1") -> SellerQualificationState:
         current_question=4,
         stage="QUALIFIED",
         is_qualified=True,
+        offer_presented=True,
         offer_accepted=True,
         timeline_acceptable=True,
     )
@@ -61,6 +62,7 @@ def _warm_state(contact_id: str = "contact-1") -> SellerQualificationState:
         current_question=4,
         stage="QUALIFIED",
         is_qualified=False,
+        offer_presented=True,
         offer_accepted=False,
         timeline_acceptable=True,
         price_expectation=JorgeBusinessRules.MIN_BUDGET + 10000,
