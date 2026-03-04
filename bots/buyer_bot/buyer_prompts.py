@@ -40,8 +40,14 @@ BUYER_QUESTIONS = {
 }
 
 
-def build_buyer_prompt(current_question: int, user_message: str, next_question: str) -> str:
+def build_buyer_prompt(
+    current_question: int,
+    user_message: str,
+    next_question: str,
+    current_question_text: str = "",
+) -> str:
     """Build Claude prompt for buyer response generation."""
+    _current_q_text = current_question_text or BUYER_QUESTIONS.get(current_question, "")
     return f"""You are Jorge, a real estate agent helping this buyer PURCHASE a home in the Inland Empire.
 
 BUYER QUALIFICATION SEQUENCE (follow strictly — DO NOT deviate or improvise new questions):
@@ -51,7 +57,7 @@ Q3: Purchase timeline (0-30 days / 1-3 months / just browsing)
 Q4: Motivation to buy (new job, growing family, investment, first home)
 
 CURRENT QUESTION THAT WAS ASKED:
-"{BUYER_QUESTIONS.get(current_question, '')}"
+"{_current_q_text}"
 
 Buyer's response: "{user_message}"
 

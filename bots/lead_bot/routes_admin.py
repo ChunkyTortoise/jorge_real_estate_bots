@@ -1,14 +1,19 @@
 """Admin settings routes for Lead Bot — bot tone configuration."""
+from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from typing import Optional
 
-from bots.shared.auth_middleware import get_admin_user
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from bots.shared.auth_middleware import auth_middleware
 from bots.shared.bot_settings import (
     get_all_overrides as _settings_get_all,
     get_override as _get_override,
     update_settings as _settings_update,
     KNOWN_BOTS as _known_bots,
 )
+from bots.shared.config import settings
 from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
@@ -17,6 +22,23 @@ router = APIRouter()
 
 _SETTINGS_CACHE_KEY = "admin:bot_settings"
 _SETTINGS_CACHE_TTL = 7_776_000  # 90 days
+
+_security = HTTPBearer(auto_error=False)
+
+
+async def get_admin_or_apikey(
+    x_admin_key: Optional[str] = Header(default=None),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_security),
+) -> None:
+    """Accept either X-Admin-Key header or valid JWT Bearer token."""
+    if x_admin_key is not None:
+        if not settings.admin_api_key:
+            return  # dev mode — no key configured, open access
+        if x_admin_key == settings.admin_api_key:
+            return
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+    # No API key supplied — fall back to JWT Bearer
+    await auth_middleware.get_admin_user(credentials)
 
 
 async def settings_load(cache) -> None:
@@ -42,13 +64,14 @@ async def settings_save(cache) -> None:
 
 
 @router.get("/admin/settings")
-async def admin_get_settings(user=Depends(get_admin_user())):
+async def admin_get_settings(_=Depends(get_admin_or_apikey)):
     """Return current effective settings -- bot defaults merged with any live overrides."""
     from bots.seller_bot.jorge_seller_bot import SELLER_SYSTEM_PROMPT, JorgeSellerBot
     from bots.buyer_bot.buyer_prompts import BUYER_SYSTEM_PROMPT, BUYER_QUESTIONS, JORGE_BUYER_PHRASES
 
     seller_override = _get_override("seller")
     buyer_override = _get_override("buyer")
+    lead_override = _get_override("lead")
     return {
         "seller": {
             "system_prompt": seller_override.get("system_prompt", SELLER_SYSTEM_PROMPT),
@@ -66,11 +89,19 @@ async def admin_get_settings(user=Depends(get_admin_user())):
                 for k, v in BUYER_QUESTIONS.items()
             },
         },
+        "lead": {
+            "min_price": lead_override.get("min_price", settings.jorge_min_price),
+            "max_price": lead_override.get("max_price", settings.jorge_max_price),
+            "service_areas": lead_override.get("service_areas", settings.jorge_service_areas),
+            "preferred_timeline": lead_override.get("preferred_timeline", settings.jorge_preferred_timeline),
+            "standard_commission": lead_override.get("standard_commission", settings.jorge_standard_commission),
+            "minimum_commission": lead_override.get("minimum_commission", settings.jorge_minimum_commission),
+        },
     }
 
 
 @router.post("/admin/reassign-bot")
-async def admin_reassign_bot(request: Request, user=Depends(get_admin_user())):
+async def admin_reassign_bot(request: Request, _=Depends(get_admin_or_apikey)):
     """
     Reassign a contact to a different bot type.
 
@@ -100,7 +131,7 @@ async def admin_reassign_bot(request: Request, user=Depends(get_admin_user())):
 
 
 @router.put("/admin/settings/{bot}")
-async def admin_update_settings(bot: str, request: Request, user=Depends(get_admin_user())):
+async def admin_update_settings(bot: str, request: Request, _=Depends(get_admin_or_apikey)):
     """
     Update tone settings for a bot (seller | buyer | lead).
 
@@ -115,3 +146,23 @@ async def admin_update_settings(bot: str, request: Request, user=Depends(get_adm
     await settings_save(_m._webhook_cache)
     logger.info(f"Admin: updated {bot} settings -- keys: {list(body)}")
     return {"status": "ok", "bot": bot, "updated_keys": list(body)}
+
+
+@router.delete("/admin/reset-state/{bot}/{contact_id}")
+async def admin_reset_state(bot: str, contact_id: str, _=Depends(get_admin_or_apikey)):
+    """
+    Clear Redis conversation state for a contact so the bot starts fresh.
+
+    Clears: seller:state:{contact_id} or buyer:state:{contact_id}
+    """
+    from bots.lead_bot import main as _m
+
+    if bot not in ("seller", "buyer"):
+        raise HTTPException(status_code=400, detail="bot must be 'seller' or 'buyer'")
+
+    cache = _m._webhook_cache
+    if cache:
+        await cache.delete(f"{bot}:state:{contact_id}")
+
+    logger.info(f"Admin: reset {bot} bot state for contact {contact_id!r}")
+    return {"status": "ok", "bot": bot, "contact_id": contact_id}

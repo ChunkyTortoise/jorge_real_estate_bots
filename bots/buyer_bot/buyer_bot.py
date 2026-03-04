@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from bots.buyer_bot.buyer_prompts import BUYER_QUESTIONS, BUYER_SYSTEM_PROMPT, JORGE_BUYER_PHRASES, build_buyer_prompt
+from bots.shared.bot_settings import get_override as _get_bot_override
 from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.response_filter import sanitize_bot_response
 from bots.shared.cache_service import get_cache_service
@@ -122,6 +123,17 @@ class BuyerResult:
 
 class JorgeBuyerBot:
     """Buyer bot for preference extraction and property matching."""
+
+    @property
+    def _questions(self) -> dict:
+        """Live qualification questions — override-aware, falls back to module constant."""
+        raw = _get_bot_override("buyer").get("questions")
+        if not raw:
+            return BUYER_QUESTIONS
+        # Override uses string keys ("1"–"4"); normalise to int keys
+        if isinstance(next(iter(raw)), str):
+            return {int(k): v for k, v in raw.items()}
+        return raw
 
     def __init__(self, ghl_client: Optional[GHLClient] = None):
         self.claude_client = ClaudeClient()
@@ -393,7 +405,7 @@ class JorgeBuyerBot:
     async def _generate_response(self, state: BuyerQualificationState, user_message: str) -> Dict[str, Any]:
         if state.current_question == 0:
             jorge_intro = self._get_random_jorge_phrase()
-            question_text = BUYER_QUESTIONS[1]
+            question_text = self._questions[1]
             response_message = f"{jorge_intro.rstrip('.!')} — {question_text}"
             # Preserve the initial message in history before advancing
             state.conversation_history.append({
@@ -408,8 +420,8 @@ class JorgeBuyerBot:
 
         current_q = state.current_question
         next_q = current_q + 1 if current_q < 4 else None
-        next_question_text = BUYER_QUESTIONS.get(next_q, "Let's lock in the details.")
-        prompt = build_buyer_prompt(current_q, user_message, next_question_text)
+        next_question_text = self._questions.get(next_q, "Let's lock in the details.")
+        prompt = build_buyer_prompt(current_q, user_message, next_question_text, self._questions.get(current_q, ""))
 
         history = []
         for entry in state.conversation_history[-10:]:
@@ -421,7 +433,7 @@ class JorgeBuyerBot:
         try:
             llm_response = await self.claude_client.agenerate(
                 prompt=prompt,
-                system_prompt=BUYER_SYSTEM_PROMPT,
+                system_prompt=_get_bot_override("buyer").get("system_prompt", BUYER_SYSTEM_PROMPT),
                 history=history,
                 max_tokens=400,
             )
@@ -733,7 +745,8 @@ class JorgeBuyerBot:
 
     def _get_random_jorge_phrase(self) -> str:
         import random
-        return random.choice(JORGE_BUYER_PHRASES)
+        phrases = _get_bot_override("buyer").get("jorge_phrases") or JORGE_BUYER_PHRASES
+        return random.choice(phrases)
 
     async def get_buyer_analytics(self, contact_id: str, location_id: str) -> Dict[str, Any]:
         state = await self._get_or_create_state(contact_id, location_id)

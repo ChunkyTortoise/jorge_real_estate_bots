@@ -15,6 +15,7 @@ import re
 import time
 from typing import Any, Dict, Optional, Tuple
 
+from bots.shared.bot_settings import get_override as _get_bot_override
 from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.cache_service import CacheService, PerformanceCache
 from bots.shared.claude_client import ClaudeClient, TaskComplexity
@@ -361,13 +362,20 @@ class LeadAnalyzer:
 
         This prompt is cached by Claude (90% token savings on subsequent calls).
         """
+        lead_cfg = _get_bot_override("lead")
+        min_price = lead_cfg.get("min_price", settings.jorge_min_price)
+        max_price = lead_cfg.get("max_price", settings.jorge_max_price)
+        service_areas = lead_cfg.get("service_areas", settings.jorge_service_areas)
+        preferred_timeline = lead_cfg.get("preferred_timeline", settings.jorge_preferred_timeline)
+        standard_commission = lead_cfg.get("standard_commission", settings.jorge_standard_commission)
+        minimum_commission = lead_cfg.get("minimum_commission", settings.jorge_minimum_commission)
         return f"""You are Jorge's AI Lead Qualification Assistant for real estate.
 
 **Jorge's Business Rules:**
-- Price Range: ${settings.jorge_min_price:,} - ${settings.jorge_max_price:,}
-- Service Areas: {settings.jorge_service_areas}
-- Preferred Timeline: {settings.jorge_preferred_timeline} days or less
-- Commission: {settings.jorge_standard_commission * 100}% (negotiable to {settings.jorge_minimum_commission * 100}%)
+- Price Range: ${min_price:,} - ${max_price:,}
+- Service Areas: {service_areas}
+- Preferred Timeline: {preferred_timeline} days or less
+- Commission: {standard_commission * 100}% (negotiable to {minimum_commission * 100}%)
 
 **Lead Scoring Criteria (0-100):**
 
