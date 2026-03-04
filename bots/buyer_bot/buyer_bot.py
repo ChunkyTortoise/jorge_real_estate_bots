@@ -605,15 +605,18 @@ class JorgeBuyerBot:
         return BuyerStatus.COLD
 
     async def _match_properties(self, state: BuyerQualificationState) -> List[Dict[str, Any]]:
-        properties = await fetch_properties(
-            city=state.preferred_location,
-            price_min=state.price_min,
-            price_max=state.price_max,
-            beds_min=state.beds_min,
-            baths_min=state.baths_min,
-            sqft_min=state.sqft_min,
-            limit=100,
-        )
+        try:
+            properties = await fetch_properties(
+                city=state.preferred_location,
+                price_min=state.price_min,
+                price_max=state.price_max,
+                beds_min=state.beds_min,
+                baths_min=state.baths_min,
+                sqft_min=state.sqft_min,
+                limit=100,
+            )
+        except Exception:
+            return []
 
         scored = []
         for prop in properties:

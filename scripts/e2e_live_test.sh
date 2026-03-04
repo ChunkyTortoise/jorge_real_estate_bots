@@ -202,7 +202,7 @@ buyer_flow() {
   # B-Q0
   blue "  [B-Q0] Initial buyer message"
   r=$(send_test buyer "Hi, I am interested in buying a home in the area" "$BUYER_CID" true)
-  resp=$(field "$r" "response"); turn=$(field "$r" "turn")
+  resp=$(field "$r" "response_message"); turn=$(field "$r" "questions_answered")
   [[ -n "$resp" ]] && pass "B-Q0: got response (turn $turn)" || fail "B-Q0: no response"
   assert_not_contains "B-Q0 no seller terms" "$resp" \
     "condition" "cash offer" "no repairs" "2-3 weeks" "what.*worth" "zestimate"
@@ -213,7 +213,7 @@ buyer_flow() {
   echo ""
   blue "  [B-Q1] Preferences"
   r=$(send_test buyer "Looking for 3 bed 2 bath around \$400k in Rancho Cucamonga" "$BUYER_CID")
-  resp=$(field "$r" "response"); turn=$(field "$r" "turn")
+  resp=$(field "$r" "response_message"); turn=$(field "$r" "questions_answered")
   [[ -n "$resp" ]] && pass "B-Q1: got response (turn $turn)" || fail "B-Q1: no response"
   assert_not_contains "B-Q1 no seller terms" "$resp" \
     "condition" "cash offer" "no repairs" "2-3 weeks"
@@ -224,7 +224,7 @@ buyer_flow() {
   echo ""
   blue "  [B-Q2] Pre-approval"
   r=$(send_test buyer "Yes I am pre-approved with my lender already" "$BUYER_CID")
-  resp=$(field "$r" "response"); turn=$(field "$r" "turn")
+  resp=$(field "$r" "response_message"); turn=$(field "$r" "questions_answered")
   [[ -n "$resp" ]] && pass "B-Q2: got response (turn $turn)" || fail "B-Q2: no response"
   assert_not_contains "B-Q2 no seller terms" "$resp" \
     "condition" "cash offer" "no repairs" "2-3 weeks"
@@ -235,7 +235,7 @@ buyer_flow() {
   echo ""
   blue "  [B-Q3] Timeline"
   r=$(send_test buyer "We need to move within 30 days, pretty urgent situation" "$BUYER_CID")
-  resp=$(field "$r" "response"); turn=$(field "$r" "turn")
+  resp=$(field "$r" "response_message"); turn=$(field "$r" "questions_answered")
   [[ -n "$resp" ]] && pass "B-Q3: got response (turn $turn)" || fail "B-Q3: no response"
   assert_not_contains "B-Q3 no seller terms" "$resp" \
     "condition" "cash offer" "no repairs" "2-3 weeks"
@@ -246,7 +246,7 @@ buyer_flow() {
   echo ""
   blue "  [B-Q4] Motivation — scheduling offer expected"
   r=$(send_test buyer "Growing family, we need more space for the kids" "$BUYER_CID")
-  resp=$(field "$r" "response"); turn=$(field "$r" "turn")
+  resp=$(field "$r" "response_message"); turn=$(field "$r" "questions_answered")
   [[ -n "$resp" ]] && pass "B-Q4: got response (turn $turn)" || fail "B-Q4: no response"
   assert_not_contains "B-Q4 no seller terms" "$resp" \
     "condition" "cash offer" "no repairs" "2-3 weeks"
@@ -263,7 +263,7 @@ buyer_flow() {
   echo ""
   blue "  [B-CAL] Calendar selection"
   r=$(send_test buyer "The first one works for me" "$BUYER_CID")
-  resp=$(field "$r" "response"); turn=$(field "$r" "turn")
+  resp=$(field "$r" "response_message"); turn=$(field "$r" "questions_answered")
   [[ -n "$resp" ]] && pass "B-CAL: got response (turn $turn)" || fail "B-CAL: no response"
   echo "    BOT: $resp" | head -c 200; echo
   sleep "$STEP_DELAY"
@@ -300,9 +300,9 @@ seller_flow() {
     r4=$(send_test seller "Yes that timeline works for me, lets move forward" "$SELLER_CID")
     r5=$(send_test seller "The second option please" "$SELLER_CID")
 
-    t0=$(field "$r0" "turn"); t1=$(field "$r1" "turn")
-    t2=$(field "$r2" "turn"); t3=$(field "$r3" "turn")
-    t4=$(field "$r4" "turn"); t5=$(field "$r5" "turn")
+    t0=$(field "$r0" "questions_answered"); t1=$(field "$r1" "questions_answered")
+    t2=$(field "$r2" "questions_answered"); t3=$(field "$r3" "questions_answered")
+    t4=$(field "$r4" "questions_answered"); t5=$(field "$r5" "questions_answered")
 
     # Check turns are monotonically increasing (session persisted)
     if python3 -c "
@@ -327,9 +327,9 @@ exit(0 if ok else 1)
 
   # Now assert on the captured responses
   local resp0 resp1 resp2 resp3 resp4 resp5
-  resp0=$(field "$r0" "response"); resp1=$(field "$r1" "response")
-  resp2=$(field "$r2" "response"); resp3=$(field "$r3" "response")
-  resp4=$(field "$r4" "response"); resp5=$(field "$r5" "response")
+  resp0=$(field "$r0" "response_message"); resp1=$(field "$r1" "response_message")
+  resp2=$(field "$r2" "response_message"); resp3=$(field "$r3" "response_message")
+  resp4=$(field "$r4" "response_message"); resp5=$(field "$r5" "response_message")
 
   # S-Q0 — CRITICAL: must ask CONDITION not address
   blue "  [S-Q0] Initial seller message — Q0 must ask CONDITION not address"
