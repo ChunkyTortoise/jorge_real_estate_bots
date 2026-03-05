@@ -67,6 +67,17 @@ _SPANISH_INDICATORS = frozenset({
     "gracias", "buenas", "quiero", "tengo",
 })
 
+_Q4_HESITATION_PHRASES = (
+    "let me think", "think about it", "not sure", "maybe later",
+    "need to think", "get back to you", "i'll think", "ill think",
+    "hmm", "i don't know", "i dont know",
+)
+
+_Q4_SOFT_CLOSE = (
+    "No worries — take your time. I'll follow up in a couple days. "
+    "If anything changes or you have questions, just reach out."
+)
+
 
 def _is_likely_spanish(text: str) -> bool:
     """Return True if *text* contains >= 2 common Spanish real-estate words."""
@@ -684,14 +695,9 @@ class JorgeSellerBot:
             # states restored from Redis that predate this field.
             # Don't offer scheduling when the current message is an explicit hesitation/rejection
             # (e.g. "let me think about it") — the lead hasn't committed yet.
-            _hesitation_phrases = [
-                "let me think", "think about it", "not sure", "maybe later",
-                "need to think", "get back to you", "i'll think", "ill think",
-                "hmm", "i don't know", "i dont know",
-            ]
             _lead_hesitating = (
                 state.current_question >= 4
-                and any(phrase in message.lower() for phrase in _hesitation_phrases)
+                and any(phrase in message.lower() for phrase in _Q4_HESITATION_PHRASES)
             )
             _offer_scheduling = (
                 not state.scheduling_offered
@@ -868,6 +874,18 @@ class JorgeSellerBot:
             )
             return {
                 "message": q4_text,
+                "extracted_data": extracted_data,
+                "should_advance": self._should_advance_question(extracted_data, current_q),
+            }
+
+        # Q4: if lead is hesitating, skip Claude and return a soft close directly
+        if current_q == 4 and any(phrase in user_message.lower() for phrase in _Q4_HESITATION_PHRASES):
+            extracted_data = await self._extract_qualification_data(
+                user_message=user_message,
+                question_num=current_q,
+            )
+            return {
+                "message": _Q4_SOFT_CLOSE,
                 "extracted_data": extracted_data,
                 "should_advance": self._should_advance_question(extracted_data, current_q),
             }
