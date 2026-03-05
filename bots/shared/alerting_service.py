@@ -56,6 +56,7 @@ DEFAULT_RULES: List[AlertRule] = [
     AlertRule("slow_handoff", "handoff.response_time_p95", "gt", 500, "warning"),
     AlertRule("low_cache_hit", "cache_hit_rate", "lt", 0.70, "warning"),
     AlertRule("high_handoff_failure", "handoff.failure_rate", "gt", 0.01, "critical"),
+    AlertRule("low_sms_delivery_rate", "sms.delivery_rate", "lt", 0.95, "warning"),
 ]
 
 

@@ -35,6 +35,18 @@ class MockCache:
     async def delete(self, key: str) -> None:
         self._store.pop(key, None)
 
+    async def setnx(self, key: str, value: Any, ttl: int = 300) -> bool:
+        if key in self._store:
+            return False
+        self._store[key] = value
+        return True
+
+    async def increment(self, key: str, amount: int = 1, ttl: Optional[int] = None) -> int:
+        current = self._store.get(key, 0)
+        new_value = int(current) + amount
+        self._store[key] = new_value
+        return new_value
+
 
 def _seller_result(temperature: str = "cold", **kwargs) -> SellerResult:
     tag_actions: List[Dict] = [

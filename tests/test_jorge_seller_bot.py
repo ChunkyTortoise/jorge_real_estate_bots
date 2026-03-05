@@ -32,6 +32,21 @@ class MockCache:
         self.store[key] = value
         return True
 
+    async def delete(self, key):
+        self.store.pop(key, None)
+
+    async def setnx(self, key, value, ttl=300):
+        if key in self.store:
+            return False
+        self.store[key] = value
+        return True
+
+    async def increment(self, key, amount=1, ttl=None):
+        current = self.store.get(key, 0)
+        new_value = int(current) + amount
+        self.store[key] = new_value
+        return new_value
+
 
 class TestSellerQualificationState:
     """Test seller qualification state management"""

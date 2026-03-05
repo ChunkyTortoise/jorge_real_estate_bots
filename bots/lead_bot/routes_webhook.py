@@ -4,16 +4,21 @@ import asyncio
 import hashlib
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from bots.shared.config import settings
+from bots.shared.funnel_attribution import FunnelEvent, FunnelTracker
 from bots.shared.logger import get_logger
 from bots.shared.response_filter import sanitize_bot_response
+from bots.shared.sms_metrics_collector import SmsMetricsCollector
 
 logger = get_logger(__name__)
+
+# Module-level funnel tracker instance (in-memory, shared across requests)
+_funnel_tracker = FunnelTracker()
 
 router = APIRouter()
 
@@ -165,11 +170,27 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
             or payload.get("location_id")
             or settings.ghl_location_id
         )
-        message_body = payload.get("body") or payload.get("message") or ""
+        _msg = payload.get("message")
+        message_body = (
+            payload.get("body")
+            or ((_msg.get("body") or _msg.get("text") or "") if isinstance(_msg, dict) else _msg)
+            or ""
+        )
 
         if not contact_id:
             logger.error("Unified webhook: missing contactId in payload")
             return {"status": "error", "detail": "missing contactId"}
+
+        # Funnel: AWARENESS — new message received for this contact
+        try:
+            _funnel_tracker.record_event(FunnelEvent(
+                contact_id=contact_id,
+                stage="awareness",
+                bot_name="webhook",
+                timestamp=datetime.now(),
+            ))
+        except Exception:
+            pass
 
         if not message_body.strip():
             logger.info(f"Unified webhook: empty message for {contact_id}, skipping")
@@ -180,16 +201,14 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
             logger.warning(f"Long message truncated: contact={contact_id}, original_len={len(message_body)}")
             message_body = message_body[:2000]
 
-        # Per-minute rate limiting
+        # Per-minute rate limiting (atomic increment — C4)
         _webhook_cache = state._webhook_cache
         if _webhook_cache:
             rate_key = f"rate:webhook:{datetime.now().strftime('%Y%m%d%H%M')}"
-            rate_val = await _webhook_cache.get(rate_key)
-            count = int(rate_val) if rate_val is not None else 0
-            if count >= settings.rate_limit_per_minute:
+            count = await _webhook_cache.increment(rate_key, ttl=60)
+            if count > settings.rate_limit_per_minute:
                 logger.warning(f"Webhook rate limit exceeded: {count} req/min for contact={contact_id}")
                 return {"status": "throttled", "reason": "rate_limit"}
-            await _webhook_cache.set(rate_key, str(count + 1), ttl=60)
 
         # Message deduplication (5-minute TTL)
         if _webhook_cache:
@@ -199,19 +218,22 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 return {"status": "skipped", "reason": "duplicate"}
             await _webhook_cache.set(dedup_key, "1", ttl=300)
 
-        # Per-contact processing lock (30s TTL, wait up to 10s)
+        # Per-contact rate limit (10 messages/minute)
+        if _webhook_cache:
+            contact_rate_key = f"rate:contact:{contact_id}:{datetime.now().strftime('%Y%m%d%H%M')}"
+            contact_count = await _webhook_cache.increment(contact_rate_key, ttl=60)
+            if contact_count > 10:
+                logger.warning(f"Per-contact rate limit exceeded for {contact_id}")
+                return {"status": "throttled", "reason": "per_contact_rate_limit"}
+
+        # Per-contact processing lock (atomic setnx — C3)
         _lock_acquired = False
         lock_key = f"lock:{contact_id}"
         if _webhook_cache:
-            for _ in range(10):
-                if not await _webhook_cache.get(lock_key):
-                    break
-                await asyncio.sleep(1)
-            else:
+            _lock_acquired = await _webhook_cache.setnx(lock_key, "1", ttl=30)
+            if not _lock_acquired:
                 logger.warning(f"Processing lock held for contact={contact_id}, throttling")
                 return {"status": "throttled", "reason": "processing_lock"}
-            await _webhook_cache.set(lock_key, "1", ttl=30)
-            _lock_acquired = True
 
         try:
             # Determine bot type — track source for diagnostics
@@ -268,6 +290,17 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                                 f"[BOT-SWITCH] {contact_id}: {_assigned_bot!r} → {bot_type_lower!r}, "
                                 f"cleared {old_state_key}"
                             )
+                            # Record handoff in BotMetricsCollector
+                            try:
+                                from bots.shared.bot_metrics_collector import BotMetricsCollector
+                                BotMetricsCollector().record_handoff(
+                                    source=_assigned_bot,
+                                    target=bot_type_lower,
+                                    success=True,
+                                    duration_ms=0,
+                                )
+                            except Exception:
+                                pass
                         await _webhook_cache.set(_assigned_key, bot_type_lower, ttl=_ASSIGNED_BOT_TTL)
                 else:
                     await _webhook_cache.set(_assigned_key, bot_type_lower, ttl=_ASSIGNED_BOT_TTL)
@@ -277,6 +310,17 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 "email": payload.get("email") or custom_data.get("email"),
                 "phone": payload.get("phone") or custom_data.get("phone"),
             }
+
+            # Funnel: INTEREST — bot assigned to contact
+            try:
+                _funnel_tracker.record_event(FunnelEvent(
+                    contact_id=contact_id,
+                    stage="interest",
+                    bot_name=bot_type_lower,
+                    timestamp=datetime.now(),
+                ))
+            except Exception:
+                pass
 
             logger.info(
                 f"Unified webhook: contact={contact_id}, bot_type={bot_type_lower!r}, "
@@ -305,6 +349,25 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                         "qualification_complete": result.qualification_complete,
                     }
                 )
+                # Funnel: CONSIDERATION (Q2+), INTENT (qualified), CONVERSION (appointment)
+                try:
+                    if result.questions_answered >= 2:
+                        _funnel_tracker.record_event(FunnelEvent(
+                            contact_id=contact_id, stage="consideration",
+                            bot_name="seller", timestamp=datetime.now(),
+                        ))
+                    if result.qualification_complete:
+                        _funnel_tracker.record_event(FunnelEvent(
+                            contact_id=contact_id, stage="intent",
+                            bot_name="seller", timestamp=datetime.now(),
+                        ))
+                    if "Appointment booked" in (result.next_steps or ""):
+                        _funnel_tracker.record_event(FunnelEvent(
+                            contact_id=contact_id, stage="purchase",
+                            bot_name="seller", timestamp=datetime.now(),
+                        ))
+                except Exception:
+                    pass
                 # Fix 4 — schedule tag application 30s after SMS is sent
                 _tag_actions = [
                     a for a in result.actions_taken
@@ -333,6 +396,20 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                         "qualification_complete": result.qualification_complete,
                     }
                 )
+                # Funnel: CONSIDERATION (Q2+), INTENT (qualified), CONVERSION (appointment)
+                try:
+                    if result.questions_answered >= 2:
+                        _funnel_tracker.record_event(FunnelEvent(
+                            contact_id=contact_id, stage="consideration",
+                            bot_name="buyer", timestamp=datetime.now(),
+                        ))
+                    if result.qualification_complete:
+                        _funnel_tracker.record_event(FunnelEvent(
+                            contact_id=contact_id, stage="intent",
+                            bot_name="buyer", timestamp=datetime.now(),
+                        ))
+                except Exception:
+                    pass
                 # Fix 4 — schedule tag application 30s after SMS is sent
                 _tag_actions = [
                     a for a in result.actions_taken
@@ -356,7 +433,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 return {"status": "processed", **result_meta}
 
             # Send reply via GHL SMS (seller / buyer bots)
-            response_message = sanitize_bot_response(response_message)
+            response_message = sanitize_bot_response(response_message, bot_type=bot_type_lower)
             if response_message and state._ghl_client:
                 try:
                     await state._ghl_client.send_message(contact_id, response_message, "SMS")
@@ -375,3 +452,30 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
     except Exception as e:
         logger.error(f"Unified webhook unhandled error: {e}", exc_info=True)
         return {"status": "error", "detail": str(e)}
+
+
+@router.post("/api/ghl/webhook/message-status")
+async def webhook_message_status(request: Request):
+    """Handles GHL message delivery status callbacks."""
+    state = _get_state()
+    payload_bytes = await request.body()
+    signature = request.headers.get("x-wh-signature") or request.headers.get("X-HighLevel-Signature")
+    if not state.verify_ghl_signature(payload_bytes, signature):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+    payload = json.loads(payload_bytes.decode("utf-8"))
+    event_type = payload.get("type", "")
+    contact_id = payload.get("contactId", "")
+    timestamp = datetime.now(timezone.utc)
+
+    status_map = {
+        "message.delivered": "delivered",
+        "message.failed": "failed",
+        "message.read": "read",
+    }
+
+    if event_type in status_map and contact_id:
+        collector = SmsMetricsCollector()
+        await collector.record_delivery(contact_id, status_map[event_type], timestamp)
+
+    return {"status": "ok"}

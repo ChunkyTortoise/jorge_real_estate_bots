@@ -19,6 +19,12 @@ _IDENTITY_PATTERNS = [
     (re.compile(r"not a real person", re.IGNORECASE), "a real estate professional"),
     (re.compile(r"as an AI\b", re.IGNORECASE), "as a real estate professional"),
     (re.compile(r"as an artificial intelligence", re.IGNORECASE), "as a real estate professional"),
+    (re.compile(r"I'm an artificial intelligence", re.IGNORECASE), "I'm Jorge, a real estate professional."),
+    (re.compile(r"language model", re.IGNORECASE), "real estate professional"),
+    (re.compile(r"neural network", re.IGNORECASE), ""),
+    (re.compile(r"\bClaude\b"), "Jorge"),
+    (re.compile(r"\bAnthropic\b", re.IGNORECASE), ""),
+    (re.compile(r"trained by\b", re.IGNORECASE), ""),
 ]
 
 _URL_PATTERN = re.compile(r"https?://[^\s]+")
@@ -31,6 +37,15 @@ _COMPETITOR_PATTERN = re.compile(
     "|".join(re.escape(name) for name in _COMPETITOR_NAMES),
     re.IGNORECASE,
 )
+
+_BUYING_LANGUAGE = re.compile(
+    r'\b(buying power|purchase budget|pre-?approv(?:al|ed)?|home tour|looking to buy)\b', re.I
+)
+_NEIGHBORHOOD_BUYING = re.compile(
+    r'\b(check out|look at|consider moving to)\s+\w+\s*(Heights|Gardens|Hills|Estates|Park|Village)\b', re.I
+)
+
+_SELLER_REDIRECT = "Let me focus on helping you with your sale."
 
 _MAX_LENGTH = 480
 
@@ -45,7 +60,7 @@ def _truncate_at_word_boundary(text: str, max_len: int) -> str:
     return truncated.rstrip(".,;:!?") + "..."
 
 
-def sanitize_bot_response(text: Optional[str]) -> str:
+def sanitize_bot_response(text: Optional[str], *, bot_type: str = "seller") -> str:
     """Apply all output safety filters to a bot response."""
     if not text:
         return text or ""
@@ -60,13 +75,21 @@ def sanitize_bot_response(text: Optional[str]) -> str:
     # 3. Competitor stripping
     text = _COMPETITOR_PATTERN.sub("", text)
 
-    # 4. Truncation
+    # 4. Buying language (seller safety only — redirect to sale focus)
+    if bot_type == "seller":
+        if _BUYING_LANGUAGE.search(text):
+            text = _BUYING_LANGUAGE.sub(_SELLER_REDIRECT, text, count=1)
+            # Remove any further matches entirely
+            text = _BUYING_LANGUAGE.sub("", text)
+        text = _NEIGHBORHOOD_BUYING.sub("", text)
+
+    # 5. Truncation
     text = _truncate_at_word_boundary(text, _MAX_LENGTH)
 
-    # 5. Clean double spaces
+    # 6. Clean double spaces
     text = re.sub(r"  +", " ", text).strip()
 
-    # 6. Collapse exactly-double periods to single (e.g. "Good.. What" → "Good. What")
+    # 7. Collapse exactly-double periods to single (e.g. "Good.. What" → "Good. What")
     #    Preserve "..." (ellipsis) intentionally used in truncation or responses.
     text = re.sub(r"(?<!\.)\.\.(?!\.)", ".", text)
 

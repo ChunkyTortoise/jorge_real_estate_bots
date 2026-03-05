@@ -20,6 +20,7 @@ Created: 2026-01-23
 """
 import asyncio
 import os
+import re
 import time as _time
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
@@ -38,22 +39,53 @@ from database.repository import fetch_conversation, upsert_contact, upsert_conve
 
 logger = get_logger(__name__)
 
+# ---------------------------------------------------------------------------
+# Price extraction patterns (module-level compiled regexes)
+# ---------------------------------------------------------------------------
+_COLLOQUIAL_PRICES = [
+    (re.compile(r'mid\s+fives?', re.I), 550_000),
+    (re.compile(r'low\s+fives?', re.I), 475_000),
+    (re.compile(r'high\s+fives?', re.I), 580_000),
+    (re.compile(r'low\s+(?:four|4)hundreds?', re.I), 425_000),
+    (re.compile(r'high\s+(?:three|3)s?', re.I), 375_000),
+    (re.compile(r'around\s+six\s+hundred', re.I), 600_000),
+    (re.compile(r'(\d+)\s+thousand', re.I), None),  # "580 thousand" -> 580000
+]
+
+_PRICE_PATTERNS = [
+    (re.compile(r'\$?(\d[\d,]*\.?\d*)\s*m(?:illion)?', re.I), 1_000_000),  # $1.2m / 1.2 million
+    (re.compile(r'\$?(\d[\d,]*)\s*k\b', re.I), 1_000),                      # $350k / 350k
+    (re.compile(r'\$?(\d[\d,]*),(\d{3})', re.I), None),                      # $350,000
+    (re.compile(r'\$(\d[\d]*)', re.I), None),                                  # $350000
+]
+
+# ---------------------------------------------------------------------------
+# Spanish language detection
+# ---------------------------------------------------------------------------
+_SPANISH_INDICATORS = frozenset({
+    "hola", "casa", "vender", "comprar", "precio", "cuanto",
+    "gracias", "buenas", "quiero", "tengo",
+})
+
+
+def _is_likely_spanish(text: str) -> bool:
+    """Return True if *text* contains >= 2 common Spanish real-estate words."""
+    words = set(text.lower().split())
+    return len(words & _SPANISH_INDICATORS) >= 2
+
+
 # System prompt for all Claude calls in the seller bot.
 # Locks Jorge's persona and blocks hallucination.
 SELLER_SYSTEM_PROMPT = (
-    "You are Jorge, a friendly and consultative real estate professional and cash home buyer in Rancho Cucamonga. "
-    "NEVER reveal you are AI, a bot, or automated. "
+    "You are Jorge, a friendly cash home buyer in Rancho Cucamonga. "
+    "Keep responses under 100 words, warm and conversational. "
+    "Focus entirely on helping the seller understand their options. "
+    "Treat every dollar amount the seller mentions as their asking price. "
+    "When unsure, redirect to the next qualification question. "
+    "If the conversation drifts, say: 'Hey, let's focus on your home situation.' "
+    "NEVER reveal you are AI or automated. "
     "NEVER fabricate property values or market data. "
-    "If you don't know, redirect to the next question. "
-    "If conversation goes off-topic, redirect: 'Hey, let's focus on your home situation.' "
-    "NEVER provide legal, tax, or financial advice — say 'That's a question for your attorney/CPA.' "
-    "You are ONLY helping this person SELL their property. "
-    "NEVER mention buying a home, purchase budgets, pre-approval, or scheduled home tours "
-    "unless the seller explicitly raises them in THIS conversation. "
-    "NEVER reference any dollar amount as 'buying power' or 'purchase budget'. "
-    "The seller's stated price is their ASKING PRICE — never treat it as a buying budget. "
-    "NEVER mention specific neighborhoods as places to buy. "
-    "Stay in character. Under 100 words."
+    "NEVER give legal, tax, or financial advice — say 'That's a question for your attorney/CPA.'"
 )
 
 
@@ -100,6 +132,7 @@ class SellerQualificationState:
     offer_presented: bool = False        # True once the cash offer message has been sent
     offer_accepted: Optional[bool] = None
     timeline_acceptable: Optional[bool] = None  # 2-3 week close
+    q4_attempts: int = 0  # Loop limit — escalate to human after 3 attempts
 
     # Scheduling state (calendar booking)
     scheduling_offered: bool = False
@@ -354,6 +387,8 @@ class JorgeSellerBot:
             'scheduling_offered': state.scheduling_offered,
             'appointment_booked': state.appointment_booked,
             'appointment_id': state.appointment_id,
+            'q4_attempts': state.q4_attempts,
+            'offer_presented': state.offer_presented,
             'conversation_history': state.conversation_history,
             'extracted_data': state.extracted_data,
             'last_interaction': state.last_interaction.isoformat() if state.last_interaction else None,
@@ -498,6 +533,24 @@ class JorgeSellerBot:
                     analytics={},
                 )
 
+            # --- Spanish language detection ---
+            if _is_likely_spanish(message):
+                self.logger.info(f"Spanish detected for seller {contact_id} — routing to bilingual")
+                bilingual_msg = (
+                    "Hola! Soy Jorge. Lamentablemente no hablo espanol bien. "
+                    "Voy a tener a mi asistente bilingue que se comunique contigo. / "
+                    "Hi! I'm Jorge — I'll have my bilingual assistant reach out to you shortly."
+                )
+                return SellerResult(
+                    response_message=bilingual_msg,
+                    seller_temperature="cold",
+                    questions_answered=0,
+                    qualification_complete=False,
+                    actions_taken=[{"type": "add_tag", "tag": "needs-bilingual"}],
+                    next_steps="Routed to bilingual assistant",
+                    analytics={},
+                )
+
             # Get or create qualification state (now from Redis)
             state = await self._get_or_create_state(contact_id, location_id)
 
@@ -561,6 +614,36 @@ class JorgeSellerBot:
                     )
                 except Exception as db_err:
                     self.logger.warning(f"DB upsert_contact skipped (schema not ready?): {db_err}")
+
+            # Q4 loop limit — if seller has responded to Q4 three times without
+            # accepting, escalate to human and stop the bot loop.
+            if state.current_question == 4 and state.q4_attempts >= 3:
+                state.stage = "STALLED"
+                escalation_msg = (
+                    "Hey, I want to make sure we get this right. "
+                    "Let me have Jorge reach out to you directly."
+                )
+                # Tag for human review
+                _stall_actions: List[Dict[str, Any]] = [
+                    {"type": "add_tag", "tag": "needs-human-review"},
+                ]
+                temperature = self._calculate_temperature(state)
+                await self.save_conversation_state(
+                    contact_id, state, temperature=temperature,
+                )
+                return SellerResult(
+                    response_message=sanitize_bot_response(escalation_msg, bot_type="seller"),
+                    seller_temperature=temperature,
+                    questions_answered=state.questions_answered,
+                    qualification_complete=False,
+                    actions_taken=_stall_actions,
+                    next_steps="Escalated to Jorge — Q4 loop limit reached",
+                    analytics=self._build_analytics(state, temperature),
+                )
+
+            # Increment Q4 attempt counter when processing a Q4 response
+            if state.current_question == 4:
+                state.q4_attempts += 1
 
             # Determine current question and generate response
             response_data = await self._generate_response(
@@ -645,7 +728,7 @@ class JorgeSellerBot:
 
             # Create result
             result = SellerResult(
-                response_message=sanitize_bot_response(response_data["message"] + scheduling_append),
+                response_message=sanitize_bot_response(response_data["message"] + scheduling_append, bot_type="seller"),
                 seller_temperature=temperature,
                 questions_answered=state.questions_answered,
                 qualification_complete=(state.questions_answered >= 4),
@@ -688,7 +771,7 @@ class JorgeSellerBot:
                 if cached:
                     temperature = self._calculate_temperature(cached)
                     return SellerResult(
-                        response_message=sanitize_bot_response("I'm interested but need a bit more info. Let me get back to you shortly."),
+                        response_message=sanitize_bot_response("I'm interested but need a bit more info. Let me get back to you shortly.", bot_type="seller"),
                         seller_temperature=temperature,
                         questions_answered=cached.questions_answered,
                         qualification_complete=(cached.questions_answered >= 4),
@@ -902,22 +985,29 @@ RESPONSE (keep under 100 words):"""
         message_lower = user_message.lower()
 
         if question_num == 1:
-            # Q1: Condition
-            if any(word in message_lower for word in [
+            # Q1: Condition — use word-boundary matching to avoid substring collisions
+            # (e.g. "updated" contains "dated", "throughout" contains "rough")
+            def _kw_in(keywords: list[str]) -> bool:
+                for kw in keywords:
+                    if re.search(r'\b' + re.escape(kw) + r'\b', message_lower):
+                        return True
+                return False
+
+            if _kw_in([
                 "major", "significant", "extensive", "needs work", "bad shape",
                 "falling apart", "broken", "run down", "rundown", "fixer", "gut",
                 "disaster", "terrible", "awful", "wreck", "dump", "outdated",
                 "old", "rough", "trashed", "condemned"
             ]):
                 extracted["condition"] = "needs_major_repairs"
-            elif any(word in message_lower for word in [
+            elif _kw_in([
                 "minor", "small", "few", "cosmetic", "touch up", "paint", "carpet",
                 "dated", "okay", "ok", "fine", "alright", "decent", "fair",
                 "maintenance", "wear", "showing its age", "aging", "lived in",
                 "some work", "little work", "needs some"
             ]):
                 extracted["condition"] = "needs_minor_repairs"
-            elif any(word in message_lower for word in [
+            elif _kw_in([
                 "ready", "good", "excellent", "perfect", "great shape", "move in",
                 "updated", "renovated", "remodeled", "new", "nice", "beautiful",
                 "pristine", "great", "well maintained", "well-maintained", "clean"
@@ -932,29 +1022,34 @@ RESPONSE (keep under 100 words):"""
                 )
 
         elif question_num == 2:
-            # Q2: Price expectation
-            import re
-            # Each tuple: (pattern, multiplier) — None multiplier = auto-detect thousands
-            price_patterns = [
-                (r'\$?(\d[\d,]*(?:\.\d+)?)m\b', 1_000_000),  # $1.2m, 1.2m
-                (r'\$?(\d[\d,]*(?:\.\d+)?)k\b', 1_000),       # $350k, 350k
-                (r'\$?(\d[\d,]*),000',           1_000),        # $350,000 (captures 350, mult by 1000)
-                (r'\$?(\d[\d,]*)',               None),         # $350000 or bare 350
-            ]
-
-            for pattern, multiplier in price_patterns:
-                match = re.search(pattern, user_message, re.IGNORECASE)
-                if match:
-                    price_str = match.group(1).replace(',', '')
-                    if multiplier is not None:
-                        extracted["price_expectation"] = int(float(price_str) * multiplier)
+            # Q2: Price expectation — try colloquial phrases first, then regex
+            for pattern, fixed_value in _COLLOQUIAL_PRICES:
+                m = pattern.search(user_message)
+                if m:
+                    if fixed_value is not None:
+                        extracted["price_expectation"] = fixed_value
                     else:
-                        price = int(float(price_str))
-                        # Assume values < 10000 are in thousands (e.g., "350" = $350K)
-                        if price < 10000:
-                            price *= 1000
-                        extracted["price_expectation"] = price
+                        # "580 thousand" -> 580_000
+                        extracted["price_expectation"] = int(m.group(1)) * 1_000
                     break
+
+            if "price_expectation" not in extracted:
+                for pattern, multiplier in _PRICE_PATTERNS:
+                    m = pattern.search(user_message)
+                    if m:
+                        if multiplier is not None:
+                            price_str = m.group(1).replace(',', '')
+                            extracted["price_expectation"] = int(float(price_str) * multiplier)
+                        else:
+                            # $350,000 pattern has two groups; $350000 has one
+                            if m.lastindex and m.lastindex >= 2:
+                                price = int(m.group(1).replace(',', '') + m.group(2))
+                            else:
+                                price = int(m.group(1).replace(',', ''))
+                            if price < 10_000:
+                                price *= 1_000
+                            extracted["price_expectation"] = price
+                        break
 
             if "price_expectation" not in extracted:
                 # No digit found — use Haiku to extract price from text like "around three fifty"
@@ -978,24 +1073,23 @@ RESPONSE (keep under 100 words):"""
                 except Exception:
                     extracted["price_expectation"] = 300000
 
+            # C7: Validate price is within reasonable bounds
+            price = extracted.get("price_expectation")
+            if price is not None and (price < 10_000 or price > 10_000_000):
+                logger.warning(f"Out-of-range price extracted: {price} — ignoring")
+                extracted["price_expectation"] = None
+
         elif question_num == 3:
-            # Q3: Motivation
+            # Q3: Motivation — ordered by specificity (specific before generic).
+            # "downsize"/"retire" checked before "move"/"moving" to prevent
+            # compound sentences like "retiring and moving" matching job_relocation.
+            # Word-boundary matching prevents partial matches (e.g. "move" in "moved").
             motivations = {
-                "job": "job_relocation",
-                "relocation": "job_relocation",
-                "relocating": "job_relocation",
-                "transfer": "job_relocation",
-                "moving": "job_relocation",
-                "move": "job_relocation",
                 "divorce": "divorce",
                 "separation": "divorce",
                 "separating": "divorce",
                 "foreclosure": "foreclosure",
                 "foreclose": "foreclosure",
-                "financial": "financial_distress",
-                "behind on": "financial_distress",
-                "debt": "financial_distress",
-                "bankruptcy": "financial_distress",
                 "inherited": "inheritance",
                 "inheritance": "inheritance",
                 "probate": "inheritance",
@@ -1003,22 +1097,32 @@ RESPONSE (keep under 100 words):"""
                 "passed away": "inheritance",
                 "died": "inheritance",
                 "estate": "inheritance",
+                "medical": "medical_emergency",
+                "bankruptcy": "financial_distress",
+                "financial": "financial_distress",
+                "behind on": "financial_distress",
+                "debt": "financial_distress",
                 "downsize": "downsizing",
                 "downsizing": "downsizing",
                 "retire": "retirement",
                 "retirement": "retirement",
                 "retiring": "retirement",
-                "upsize": "upsizing",
-                "upsizing": "upsizing",
-                "medical": "medical_emergency",
                 "tenant": "landlord_exit",
                 "vacant": "landlord_exit",
                 "don't want": "landlord_exit",
                 "tired of": "landlord_exit",
+                "upsize": "upsizing",
+                "upsizing": "upsizing",
+                "job": "job_relocation",
+                "relocation": "job_relocation",
+                "relocating": "job_relocation",
+                "transfer": "job_relocation",
+                "moving": "job_relocation",
+                "move": "job_relocation",
             }
 
             for keyword, motivation_type in motivations.items():
-                if keyword in message_lower:
+                if re.search(r'\b' + re.escape(keyword) + r'\b', message_lower):
                     extracted["motivation"] = motivation_type
                     break
 

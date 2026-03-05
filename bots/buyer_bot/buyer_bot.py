@@ -6,6 +6,7 @@ Q0 Greeting -> Q1 Preferences -> Q2 Pre-approval -> Q3 Timeline -> Q4 Motivation
 """
 from __future__ import annotations
 
+import re
 import time as _time
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
@@ -30,6 +31,20 @@ from database.repository import (
 )
 
 logger = get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Spanish language detection
+# ---------------------------------------------------------------------------
+_SPANISH_INDICATORS = frozenset({
+    "hola", "casa", "vender", "comprar", "precio", "cuanto",
+    "gracias", "buenas", "quiero", "tengo",
+})
+
+
+def _is_likely_spanish(text: str) -> bool:
+    """Return True if *text* contains >= 2 common Spanish real-estate words."""
+    words = set(text.lower().split())
+    return len(words & _SPANISH_INDICATORS) >= 2
 
 
 class BuyerStatus:
@@ -172,6 +187,26 @@ class JorgeBuyerBot:
                 actions_taken=[],
                 next_steps="Jorge handling manually (Jorge-Active tag set)",
                 analytics={},
+                matches=[],
+            )
+
+        # --- Spanish language detection ---
+        if _is_likely_spanish(message):
+            logger.info(f"Spanish detected for buyer {contact_id} — routing to bilingual")
+            bilingual_msg = (
+                "Hola! Soy Jorge. Lamentablemente no hablo espanol bien. "
+                "Voy a tener a mi asistente bilingue que se comunique contigo. / "
+                "Hi! I'm Jorge — I'll have my bilingual assistant reach out to you shortly."
+            )
+            return BuyerResult(
+                response_message=bilingual_msg,
+                buyer_temperature="cold",
+                questions_answered=0,
+                qualification_complete=False,
+                actions_taken=[{"type": "add_tag", "tag": "needs-bilingual"}],
+                next_steps="Routed to bilingual assistant",
+                analytics={},
+                matches=[],
             )
 
         try:
@@ -273,7 +308,7 @@ class JorgeBuyerBot:
                 pass
 
             return BuyerResult(
-                response_message=sanitize_bot_response(response["message"] + scheduling_append),
+                response_message=sanitize_bot_response(response["message"] + scheduling_append, bot_type="buyer"),
                 buyer_temperature=temperature,
                 questions_answered=state.questions_answered,
                 qualification_complete=state.questions_answered >= 4,
@@ -296,7 +331,7 @@ class JorgeBuyerBot:
             except Exception:
                 pass
             return BuyerResult(
-                response_message="",
+                response_message="Hey! Let me get back to you shortly — I want to make sure I find the right options for you.",
                 buyer_temperature="cold",
                 questions_answered=0,
                 qualification_complete=False,
@@ -490,7 +525,6 @@ class JorgeBuyerBot:
         extracted: Dict[str, Any] = {}
 
         if question_num == 1:
-            import re
             bed_match = re.search(r"(\d+)\s*(bed|beds|br)", msg)
             bath_match = re.search(r"(\d+(?:\.\d+)?)\s*(bath|baths|ba)", msg)
             sqft_match = re.search(r"(\d{3,5})\s*(sqft|square feet|sq ft)", msg)
@@ -546,7 +580,6 @@ class JorgeBuyerBot:
                 extracted["preapproved"] = False
 
         elif question_num == 3:
-            import re
             tl = None
             # Check "not interested in buying soon" phrases first (most specific)
             if any(phrase in msg for phrase in ["browsing", "just looking", "no rush", "not sure"]):
@@ -584,27 +617,23 @@ class JorgeBuyerBot:
             extracted["timeline_days"] = tl if tl is not None else 90
 
         elif question_num == 4:
+            # Ordered by specificity: "downsizing"/"retirement" before "kids"/"family"
+            # to prevent "Kids moved out, downsizing" matching growing_family first.
+            # Word-boundary matching prevents partial matches (e.g. "moving" in "kids moved").
             motivations = {
-                "job": "job_relocation",
-                "relocation": "job_relocation",
-                "relocating": "job_relocation",
-                "moving": "job_relocation",
-                "transfer": "job_relocation",
-                "closer": "job_relocation",
-                "military": "job_relocation",
-                "family": "growing_family",
-                "kids": "growing_family",
-                "baby": "growing_family",
-                "growing": "growing_family",
+                "downsizing": "downsizing",
+                "downsize": "downsizing",
+                "retirement": "downsizing",
+                "retiring": "downsizing",
                 "investment": "investment",
                 "rental": "investment",
                 "renting": "investment",
                 "school": "school_district",
                 "district": "school_district",
-                "downsizing": "downsizing",
-                "downsize": "downsizing",
-                "retirement": "downsizing",
-                "retiring": "downsizing",
+                "family": "growing_family",
+                "kids": "growing_family",
+                "baby": "growing_family",
+                "growing": "growing_family",
                 "upsizing": "upsizing",
                 "upsize": "upsizing",
                 "upgrade": "upsizing",
@@ -613,9 +642,16 @@ class JorgeBuyerBot:
                 "starter": "first_time_buyer",
                 "first home": "first_time_buyer",
                 "first-time": "first_time_buyer",
+                "job": "job_relocation",
+                "relocation": "job_relocation",
+                "relocating": "job_relocation",
+                "moving": "job_relocation",
+                "transfer": "job_relocation",
+                "closer": "job_relocation",
+                "military": "job_relocation",
             }
             for keyword, value in motivations.items():
-                if keyword in msg:
+                if re.search(r'\b' + re.escape(keyword) + r'\b', msg):
                     extracted["motivation"] = value
                     break
             if "motivation" not in extracted:

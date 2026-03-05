@@ -4,6 +4,7 @@ Claude AI Client for Jorge's Real Estate Bots.
 Simplified version of EnterpriseHub's LLM client, focused on Claude only.
 Provides intelligent routing, prompt caching, and async support.
 """
+import time as _time
 from dataclasses import dataclass
 from enum import Enum
 from typing import AsyncGenerator, Dict, List, Optional
@@ -148,6 +149,7 @@ class ClaudeClient:
             LLMResponse with content and metadata
         """
         self._init_async_client()
+        _start = _time.time()
 
         # Route to appropriate model
         target_model = self._get_routed_model(complexity)
@@ -195,7 +197,7 @@ class ClaudeClient:
                 savings_pct = (cache_read / (input_tokens or 1)) * 100
                 logger.info(f"Cache hit! Read {cache_read} tokens ({savings_pct:.1f}% savings)")
 
-            return LLMResponse(
+            result = LLMResponse(
                 content=response.content[0].text,
                 model=target_model,
                 input_tokens=input_tokens,
@@ -204,6 +206,16 @@ class ClaudeClient:
                 cache_read_input_tokens=cache_read,
                 finish_reason=response.stop_reason
             )
+
+            try:
+                from bots.shared.performance_tracker import PerformanceTracker
+                _perf = PerformanceTracker()
+                _duration_ms = (_time.time() - _start) * 1000
+                await _perf.record_ai_call(response_time_ms=_duration_ms)
+            except Exception:
+                pass  # never break the client
+
+            return result
 
         except Exception as e:
             logger.error(f"Claude API error: {e}")
@@ -263,6 +275,7 @@ class ClaudeClient:
             LLMResponse with content and metadata
         """
         self._init_client()
+        _start = _time.time()
 
         target_model = self._get_routed_model(complexity)
 
@@ -276,6 +289,20 @@ class ClaudeClient:
 
         input_tokens = response.usage.input_tokens if hasattr(response, 'usage') else None
         output_tokens = response.usage.output_tokens if hasattr(response, 'usage') else None
+
+        try:
+            from bots.shared.performance_tracker import PerformanceTracker
+            _perf = PerformanceTracker()
+            _duration_ms = (_time.time() - _start) * 1000
+            # record_ai_call is async; fire-and-forget in sync context
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_perf.record_ai_call(response_time_ms=_duration_ms))
+            except RuntimeError:
+                asyncio.run(_perf.record_ai_call(response_time_ms=_duration_ms))
+        except Exception:
+            pass  # never break the client
 
         return LLMResponse(
             content=response.content[0].text,

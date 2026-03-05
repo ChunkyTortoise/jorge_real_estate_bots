@@ -9,12 +9,13 @@ Production enhancements from jorge_deployment_package/jorge_fastapi_lead_bot.py:
 - Background task processing
 - Additional analysis endpoints
 """
+import asyncio
 import base64
 import hashlib
 import hmac
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
@@ -24,6 +25,7 @@ from sqlalchemy import text
 from bots.buyer_bot.buyer_bot import JorgeBuyerBot
 from bots.lead_bot.models import LeadAnalysisResponse, LeadMessage, PerformanceStatus
 from bots.lead_bot.routes_admin import router as admin_router, settings_load
+from bots.lead_bot.routes_dashboard import router as dashboard_router
 from bots.lead_bot.routes_productization import router as productization_router
 from bots.lead_bot.routes_realtime import router as realtime_router
 from bots.lead_bot.routes_webhook import router as webhook_router
@@ -101,6 +103,58 @@ def verify_ghl_signature(payload: bytes, signature: Optional[str]) -> bool:
     return True
 
 
+async def check_stalled_conversations() -> None:
+    """Hourly background task: mark conversations with no activity for 48h as STALLED."""
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            from database.models import ContactModel, ConversationModel
+            from database.session import AsyncSessionFactory
+            from sqlalchemy import select
+
+            from bots.shared.stall_reengagement import StallReengagementService
+
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+            async with AsyncSessionFactory() as session:
+                result = await session.execute(
+                    select(ConversationModel).where(
+                        ConversationModel.last_activity < cutoff,
+                        ConversationModel.stage.notin_(["QUALIFIED", "STALLED"]),
+                    )
+                )
+                stalled = result.scalars().all()
+                # Capture original stages before overwriting to STALLED
+                original_stages = {conv.contact_id: (conv.stage or "Q0") for conv in stalled}
+                for conv in stalled:
+                    conv.stage = "STALLED"
+                await session.commit()
+                if stalled:
+                    logger.info(f"Marked {len(stalled)} conversations as STALLED")
+
+                # Send re-engagement SMS for each newly stalled conversation
+                reengagement = StallReengagementService()
+                for conv in stalled:
+                    try:
+                        contact_result = await session.execute(
+                            select(ContactModel).where(ContactModel.contact_id == conv.contact_id)
+                        )
+                        contact = contact_result.scalar_one_or_none()
+                        name = (contact.name if contact and contact.name else "there")
+                        location_id = (contact.location_id if contact and contact.location_id else settings.ghl_location_id)
+                        address = (conv.extracted_data or {}).get("address", "")
+                        await reengagement.trigger_reengagement(
+                            contact_id=conv.contact_id,
+                            stage=original_stages.get(conv.contact_id, "Q0"),
+                            name=name,
+                            location_id=location_id,
+                            address=address,
+                        )
+                    except Exception as e:
+                        logger.error(f"Re-engagement failed for {conv.contact_id}: {e}")
+        except Exception as e:
+            logger.error(f"Error in stall detection: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle management for FastAPI app."""
@@ -138,8 +192,12 @@ async def lifespan(app: FastAPI):
 
     logger.info("Lead Bot ready!")
 
+    # Start background stall detection (hourly scan for 48h-inactive conversations)
+    _stall_task = asyncio.create_task(check_stalled_conversations())
+
     yield
 
+    _stall_task.cancel()
     logger.info("Shutting down Lead Bot...")
 
     try:
@@ -217,6 +275,7 @@ async def performance_monitor(request: Request, call_next):
 app.include_router(webhook_router)
 app.include_router(realtime_router)
 app.include_router(admin_router)
+app.include_router(dashboard_router)
 app.include_router(productization_router)
 
 # Test endpoints — only in non-production environments
@@ -255,8 +314,8 @@ async def aggregate_health():
     results["buyer_bot"] = "ok"
 
     try:
-        if event_broker._redis:
-            await event_broker._redis.ping()
+        if event_broker.redis_client:
+            await event_broker.redis_client.ping()
             results["redis"] = "ok"
         else:
             results["redis"] = "not_configured"
@@ -270,6 +329,15 @@ async def aggregate_health():
             results["postgres"] = "ok"
     except Exception:
         results["postgres"] = "down"
+
+    # Feed SMS delivery metrics to alerting service
+    try:
+        from bots.shared.sms_metrics_collector import SmsMetricsCollector
+        from bots.shared.alerting_service import AlertingService
+        sms_stats = await SmsMetricsCollector().get_delivery_stats()
+        AlertingService().record_metric("sms.delivery_rate", sms_stats["delivery_rate"])
+    except Exception:
+        pass
 
     overall = "healthy" if all(v in ("ok", "not_configured") for v in results.values()) else "degraded"
     return {"status": overall, "services": results, "timestamp": datetime.now(timezone.utc).isoformat()}

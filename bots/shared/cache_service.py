@@ -51,6 +51,16 @@ class AbstractCache(ABC):
         """Remove one or more values from a set."""
         pass
 
+    @abstractmethod
+    async def setnx(self, key: str, value: Any, ttl: int = 300) -> bool:
+        """Set value only if key does not exist. Returns True if set, False if already exists."""
+        pass
+
+    @abstractmethod
+    async def increment(self, key: str, amount: int = 1, ttl: Optional[int] = None) -> int:
+        """Atomic increment operation with optional TTL. Returns new value."""
+        pass
+
 
 class MemoryCache(AbstractCache):
     """In-memory cache fallback."""
@@ -130,6 +140,19 @@ class MemoryCache(AbstractCache):
 
         return removed
 
+    async def setnx(self, key: str, value: Any, ttl: int = 300) -> bool:
+        existing = await self.get(key)
+        if existing is not None:
+            return False
+        await self.set(key, value, ttl)
+        return True
+
+    async def increment(self, key: str, amount: int = 1, ttl: Optional[int] = None) -> int:
+        current = await self.get(key)
+        new_value = (int(current) if current is not None else 0) + amount
+        await self.set(key, new_value, ttl or 300)
+        return new_value
+
 
 class RedisCache(AbstractCache):
     """Redis-based cache for production."""
@@ -187,6 +210,19 @@ class RedisCache(AbstractCache):
             return result > 0
         except Exception as e:
             logger.error(f"Redis delete error for key {key}: {e}")
+            return False
+
+    async def setnx(self, key: str, value: Any, ttl: int = 300) -> bool:
+        """Set value only if key does not exist (atomic). Returns True if set, False if already exists."""
+        if not self.enabled:
+            return False
+
+        try:
+            data = pickle.dumps(value)
+            result = await self.redis.set(key, data, nx=True, ex=ttl)
+            return result is not None
+        except Exception as e:
+            logger.error(f"Redis setnx error for key {key}: {e}")
             return False
 
     async def increment(self, key: str, amount: int = 1, ttl: Optional[int] = None) -> int:
@@ -323,14 +359,25 @@ class CacheService:
             logger.error(f"Cache delete error: {e}")
             return False
 
+    async def setnx(self, key: str, value: Any, ttl: int = 300) -> bool:
+        """Set value only if key does not exist (atomic)."""
+        try:
+            return await self.backend.setnx(key, value, ttl)
+        except Exception as e:
+            logger.error(f"Cache setnx error: {e}")
+            if self.fallback_backend != self.backend:
+                return await self.fallback_backend.setnx(key, value, ttl)
+            return False
+
     async def increment(self, key: str, amount: int = 1, ttl: Optional[int] = None) -> int:
         """Atomic increment operation."""
-        if hasattr(self.backend, 'increment'):
+        try:
             return await self.backend.increment(key, amount, ttl)
-        current = await self.get(key) or 0
-        new_value = int(current) + amount
-        await self.set(key, new_value, ttl or 300)
-        return new_value
+        except Exception as e:
+            logger.error(f"Cache increment error: {e}")
+            if self.fallback_backend != self.backend:
+                return await self.fallback_backend.increment(key, amount, ttl)
+            return 0
 
     async def sadd(self, key: str, *values: str, ttl: Optional[int] = None) -> int:
         """Add one or more values to a set in cache backends."""

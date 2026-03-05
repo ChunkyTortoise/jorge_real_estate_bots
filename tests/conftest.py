@@ -56,6 +56,7 @@ def _make_mock_session():
 _ASYNC_SESSION_FACTORY_LOCATIONS = [
     "database.session.AsyncSessionFactory",
     "database.repository.AsyncSessionFactory",
+    "bots.lead_bot.routes_dashboard.AsyncSessionFactory",
     "bots.shared.dashboard_data_service.AsyncSessionFactory",
     "bots.shared.metrics_service.AsyncSessionFactory",
     "bots.shared.auth_service.AsyncSessionFactory",

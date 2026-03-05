@@ -9,6 +9,7 @@ import re
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from bots.shared.cache_service import get_cache_service
 from bots.shared.config import settings
 from bots.shared.logger import get_logger
 
@@ -35,6 +36,7 @@ class CalendarBookingService:
         # In-process slot cache: {contact_id: [slot_dict, ...]}
         # Cleared on server restart — handled gracefully in book_appointment.
         self._pending_slots: Dict[str, List[Dict]] = {}
+        self.cache = get_cache_service()
 
     # ------------------------------------------------------------------
     # Public API
@@ -72,6 +74,7 @@ class CalendarBookingService:
 
         selected = slots[:2]
         self._pending_slots[contact_id] = selected
+        await self.cache.set(f"calendar:pending_slots:{contact_id}", selected, ttl=86400)
         return {
             "message": self._format_slot_options(selected),
             "slots": selected,
@@ -96,6 +99,8 @@ class CalendarBookingService:
               - message: str — confirmation or error SMS text
         """
         slots = self._pending_slots.get(contact_id)
+        if not slots:
+            slots = await self.cache.get(f"calendar:pending_slots:{contact_id}")
         if not slots:
             return {
                 "success": False,
@@ -147,6 +152,7 @@ class CalendarBookingService:
 
         if result.get("success"):
             self._pending_slots.pop(contact_id, None)
+            await self.cache.delete(f"calendar:pending_slots:{contact_id}")
             appointment = result.get("data", {})
             return {
                 "success": True,
