@@ -525,7 +525,7 @@ class JorgeBuyerBot:
         extracted: Dict[str, Any] = {}
 
         if question_num == 1:
-            bed_match = re.search(r"(\d+)\s*(bed|beds|br)", msg)
+            bed_match = re.search(r"(\d+)\s*(bed|beds|br|bd)", msg)
             bath_match = re.search(r"(\d+(?:\.\d+)?)\s*(bath|baths|ba)", msg)
             sqft_match = re.search(r"(\d{3,5})\s*(sqft|square feet|sq ft)", msg)
             if bed_match:
@@ -535,11 +535,18 @@ class JorgeBuyerBot:
             if sqft_match:
                 extracted["sqft_min"] = int(sqft_match.group(1))
 
-            # Price extraction: require explicit k-suffix, $-prefix, or 6+ digit bare numbers
-            # to avoid matching zip codes (5 digits), bedroom counts, or sqft values
+            # Price extraction: require explicit k-suffix, $-prefix, 6+ digit bare numbers,
+            # or a 3-digit number preceded by a qualifier word (e.g. "under 600" → $600k)
             k_prices = re.findall(r'\$?([\d,]+)\s*[kK]\b', msg)
             dollar_prices = re.findall(r'\$([\d,]+)\b', msg)
             bare_large = re.findall(r'\b(\d{6,})\b', msg) if not k_prices and not dollar_prices else []
+            qualifier_prices: list[int] = []
+            if not k_prices and not dollar_prices:
+                for m in re.finditer(
+                    r'\b(under|over|around|about|like|maybe|roughly|close to|up to)\s+(\d{3})\b',
+                    msg,
+                ):
+                    qualifier_prices.append(int(m.group(2)) * 1000)
 
             price_values = []
             for val in k_prices:
@@ -548,6 +555,7 @@ class JorgeBuyerBot:
                 price_values.append(int(val.replace(",", "")))
             for val in bare_large:
                 price_values.append(int(val))
+            price_values.extend(qualifier_prices)
 
             if price_values:
                 if len(price_values) >= 2:
@@ -661,8 +669,9 @@ class JorgeBuyerBot:
 
     def _should_advance_question(self, extracted_data: Dict[str, Any], current_q: int) -> bool:
         if current_q == 1:
-            # Require at least a price or bedroom/sqft count to advance — location name alone is insufficient
-            return any(k in extracted_data for k in ["beds_min", "sqft_min", "price_max", "price_min"])
+            # Require at least one preference field to advance. baths_min alone is accepted
+            # as a fallback so "4bd 2ba" with unrecognized bed/price still advances.
+            return any(k in extracted_data for k in ["beds_min", "sqft_min", "price_max", "price_min", "baths_min"])
         if current_q == 2:
             return "preapproved" in extracted_data
         if current_q == 3:

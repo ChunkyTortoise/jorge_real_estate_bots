@@ -682,9 +682,21 @@ class JorgeSellerBot:
             # IMPORTANT: calendar must NOT fire until the cash offer has been presented (Q4).
             # offer_presented is set when Q3→Q4 transitions; current_question >= 4 handles
             # states restored from Redis that predate this field.
+            # Don't offer scheduling when the current message is an explicit hesitation/rejection
+            # (e.g. "let me think about it") — the lead hasn't committed yet.
+            _hesitation_phrases = [
+                "let me think", "think about it", "not sure", "maybe later",
+                "need to think", "get back to you", "i'll think", "ill think",
+                "hmm", "i don't know", "i dont know",
+            ]
+            _lead_hesitating = (
+                state.current_question >= 4
+                and any(phrase in message.lower() for phrase in _hesitation_phrases)
+            )
             _offer_scheduling = (
                 not state.scheduling_offered
                 and state.questions_answered >= 4
+                and not _lead_hesitating
                 and temperature in (SellerStatus.HOT.value, SellerStatus.WARM.value)
             )
             if _offer_scheduling:
