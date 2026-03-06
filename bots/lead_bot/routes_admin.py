@@ -35,7 +35,7 @@ async def get_admin_or_apikey(
     """Accept either X-Admin-Key header or valid JWT Bearer token."""
     if x_admin_key is not None:
         if not settings.admin_api_key:
-            return  # dev mode — no key configured, open access
+            raise HTTPException(status_code=503, detail="Admin API key not configured")
         if hmac.compare_digest(x_admin_key, settings.admin_api_key):
             return
         raise HTTPException(status_code=403, detail="Invalid admin key")

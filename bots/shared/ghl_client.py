@@ -510,19 +510,19 @@ class GHLClient:
         Returns:
             Created appointment data
         """
-        return await self._make_request("POST", "calendars/events", data=appointment_data)
+        return await self._make_request("POST", "calendars/events/appointments", data=appointment_data)
 
     async def get_appointment(self, appointment_id: str) -> Dict:
         """Get appointment by ID."""
-        return await self._make_request("GET", f"calendars/events/{appointment_id}")
+        return await self._make_request("GET", f"calendars/events/appointments/{appointment_id}")
 
     async def update_appointment(self, appointment_id: str, updates: Dict) -> Dict:
         """Update appointment."""
-        return await self._make_request("PUT", f"calendars/events/{appointment_id}", data=updates)
+        return await self._make_request("PUT", f"calendars/events/appointments/{appointment_id}", data=updates)
 
     async def delete_appointment(self, appointment_id: str) -> Dict:
         """Delete appointment."""
-        return await self._make_request("DELETE", f"calendars/events/{appointment_id}")
+        return await self._make_request("DELETE", f"calendars/events/appointments/{appointment_id}")
 
     # ========== BATCH OPERATIONS ==========
 

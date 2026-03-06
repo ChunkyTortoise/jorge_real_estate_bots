@@ -866,12 +866,19 @@ class JorgeSellerBot:
 
         # Q3 → Q4: Present cash offer directly — no AI acknowledgment, keeps message to 1 SMS segment
         if current_q == 3:
-            offer_amount = int((state.price_expectation or 300000) * 0.75)
-            q4_text = self._questions[4].format(offer_amount=f"${offer_amount:,}")
             extracted_data = await self._extract_qualification_data(
                 user_message=user_message,
                 question_num=current_q
             )
+            # Price guard: if price_expectation still None after extraction, re-ask instead of using bad default
+            if state.price_expectation is None:
+                return {
+                    "message": "Hey, just so I can give you the right number -- what do you think the house is worth as-is? Even a rough ballpark helps.",
+                    "extracted_data": extracted_data,
+                    "should_advance": False,
+                }
+            offer_amount = int(state.price_expectation * 0.75)
+            q4_text = self._questions[4].format(offer_amount=f"${offer_amount:,}")
             return {
                 "message": q4_text,
                 "extracted_data": extracted_data,

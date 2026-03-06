@@ -447,3 +447,164 @@ def test_normalize_bot_type(raw: str, expected: str) -> None:
     from bots.lead_bot.routes_webhook import _normalize_bot_type
 
     assert _normalize_bot_type(raw) == expected
+
+
+# ---------------------------------------------------------------------------
+# Phase 3E — Additional webhook edge-case tests
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyMessageBody:
+    """Empty message body → webhook is skipped, no bot response."""
+
+    @pytest.mark.asyncio
+    async def test_empty_string_body_skipped(self, app):
+        state, mock_seller, mock_buyer, _, _ = _make_state()
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(body="", bot_type="seller"),
+                    headers={"Content-Type": "application/json"},
+                )
+        assert r.status_code == 200
+        assert r.json()["status"] == "skipped"
+        assert r.json()["reason"] == "empty message"
+        mock_seller.process_seller_message.assert_not_awaited()
+        mock_buyer.process_buyer_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only_body_skipped(self, app):
+        state, mock_seller, mock_buyer, _, _ = _make_state()
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(body="   \n\t  ", bot_type="buyer"),
+                    headers={"Content-Type": "application/json"},
+                )
+        assert r.status_code == 200
+        assert r.json()["status"] == "skipped"
+        mock_buyer.process_buyer_message.assert_not_awaited()
+
+
+class TestMessageTruncation:
+    """Message longer than 2000 chars → gets truncated before bot processing."""
+
+    @pytest.mark.asyncio
+    async def test_long_message_truncated_to_2000(self, app):
+        long_body = "A" * 3000
+        state, mock_seller, _, _, _ = _make_state()
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(body=long_body, bot_type="seller", contact_id="trunc-c"),
+                    headers={"Content-Type": "application/json"},
+                )
+        assert r.status_code == 200
+        # The seller bot should have been called — verify the message was truncated
+        mock_seller.process_seller_message.assert_awaited_once()
+        call_args = mock_seller.process_seller_message.call_args
+        # message is the 3rd positional arg (contact_id, location_id, message, ...)
+        actual_message = call_args.kwargs.get("message") or call_args.args[2] if len(call_args.args) > 2 else ""
+        assert len(actual_message) <= 2000
+
+
+class TestMessageDeduplication:
+    """Same message from same contact within 5 minutes → deduped."""
+
+    @pytest.mark.asyncio
+    async def test_duplicate_message_skipped(self, app):
+        cache = MockCache()
+        state, mock_seller, _, _, _ = _make_state(cache=cache)
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                # First message — processed
+                r1 = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(body="hello world", bot_type="seller", contact_id="dedup-c"),
+                    headers={"Content-Type": "application/json"},
+                )
+                # Same message, same contact — should be deduped
+                r2 = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(body="hello world", bot_type="seller", contact_id="dedup-c"),
+                    headers={"Content-Type": "application/json"},
+                )
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+        assert r2.json()["status"] == "skipped"
+        assert r2.json()["reason"] == "duplicate"
+        # Seller bot only called once (not for the duplicate)
+        assert mock_seller.process_seller_message.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_different_message_not_deduped(self, app):
+        cache = MockCache()
+        state, mock_seller, _, _, _ = _make_state(cache=cache)
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(body="first message", bot_type="seller", contact_id="dedup-diff"),
+                    headers={"Content-Type": "application/json"},
+                )
+                r2 = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(body="second message", bot_type="seller", contact_id="dedup-diff"),
+                    headers={"Content-Type": "application/json"},
+                )
+        # Both should process (second is not a duplicate — different content)
+        assert r2.json().get("status") != "skipped"
+
+
+class TestPerContactRateLimit:
+    """Per-contact rate limit: 11th message in the window → throttled."""
+
+    @pytest.mark.asyncio
+    async def test_11th_message_throttled(self, app):
+        cache = MockCache()
+        state, mock_seller, _, _, _ = _make_state(cache=cache)
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                last_response = None
+                for i in range(12):
+                    last_response = await c.post(
+                        "/api/ghl/webhook",
+                        content=_body(
+                            body=f"message number {i}",
+                            bot_type="seller",
+                            contact_id="rate-c",
+                        ),
+                        headers={"Content-Type": "application/json"},
+                    )
+        assert last_response is not None
+        assert last_response.status_code == 200
+        assert last_response.json()["status"] == "throttled"
+        assert last_response.json()["reason"] == "per_contact_rate_limit"
+
+
+class TestBotTypeFromCustomData:
+    """customData.bot_type = 'seller' → routes to seller bot."""
+
+    @pytest.mark.asyncio
+    async def test_customdata_seller_routes_to_seller(self, app):
+        state, mock_seller, mock_buyer, _, _ = _make_state()
+        payload = json.dumps({
+            "contactId": "cd-seller",
+            "locationId": "loc-test",
+            "body": "Hi there",
+            "customData": {"bot_type": "seller"},
+        }).encode()
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+        assert r.status_code == 200
+        assert r.json()["bot_type"] == "seller"
+        mock_seller.process_seller_message.assert_awaited_once()
+        mock_buyer.process_buyer_message.assert_not_awaited()

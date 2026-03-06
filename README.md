@@ -6,7 +6,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-350%2B_passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1330%2B_passing-brightgreen)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
 ## What This Solves
@@ -19,15 +19,17 @@
 
 | Metric | Value |
 |--------|-------|
-| Tests | **350+ passing** |
+| Tests | **1330+ passing** |
 | Bots | 3 specialized (Lead, Buyer, Seller) |
 | Cross-Bot Handoff | 0.7 confidence threshold, circular prevention, rate limiting |
 | CRM Integration | GoHighLevel real-time sync |
 | Temperature Scoring | Hot/Warm/Cold with automated tag publishing |
 | AI Routing | Claude Haiku/Sonnet model selection |
-| Docker | Full compose stack (Postgres, Redis, 3 bots, dashboard) |
+| Deploy | Render (single unified app) + Docker Compose |
 
 ## Architecture
+
+All three bots run as a single FastAPI application using the APIRouter pattern. Incoming webhooks are routed to the correct bot via the unified dispatcher.
 
 ```mermaid
 flowchart TB
@@ -37,37 +39,39 @@ flowchart TB
     API["REST API"]
   end
 
-  subgraph BotLayer["Bot Layer"]
-    Lead["Lead Bot :8001\n5-min SLA enforcement\nQ0-Q4 qualification"]
-    Buyer["Buyer Bot :8003\nFinancial readiness\nPre-approval check\nProperty matching"]
-    Seller["Seller Bot :8002\nFRS/PCS scoring\nCMA analysis\nPricing strategy"]
+  subgraph App["Unified App :8001"]
+    Webhook["routes_webhook.py\nUnified dispatcher"]
+    Dashboard["routes_dashboard.py\n12 dashboard endpoints"]
+    Admin["routes_admin.py\nBot config & state"]
+    Realtime["routes_realtime.py\nWebSocket events"]
+    Lead["Lead Analyzer\n5-min SLA, scoring"]
+    Buyer["Buyer Bot\nQ0-Q4, property matching"]
+    Seller["Seller Bot\nQ1-Q4, CMA, pricing"]
   end
 
   subgraph Intelligence["AI & Decision Engine"]
     Intent["Intent Decoder\nRegex + semantic analysis"]
-    Temp["Temperature Scoring\nHot ≥80 | Warm 40-79 | Cold <40"]
+    Temp["Temperature Scoring\nHot >=80 | Warm 40-79 | Cold <40"]
     Claude["Claude AI\nHaiku/Sonnet routing"]
-    Handoff["Handoff Service\n0.7 confidence threshold\nCircular prevention\nRate limit: 3/hr, 10/day"]
+    Funnel["Funnel Attribution\nRedis sorted sets, 30-day TTL"]
   end
 
   subgraph Infra["Infrastructure"]
-    FastAPI["FastAPI Routes"]
-    Postgres[(PostgreSQL)]
     Redis[(Redis Cache)]
     GHL["GoHighLevel CRM\nTag publishing\nWorkflow triggers"]
   end
 
-  subgraph Dashboard["Monitoring"]
-    CC["Command Center :8501\nStreamlit dashboard"]
+  subgraph Dashboard_UI["Monitoring"]
+    Lyrio["Lyrio Dashboard\nStreamlit Cloud"]
   end
 
-  Web --> FastAPI
-  GHLHook --> FastAPI
-  API --> FastAPI
+  Web --> Webhook
+  GHLHook --> Webhook
+  API --> Webhook
 
-  FastAPI --> Lead
-  FastAPI --> Buyer
-  FastAPI --> Seller
+  Webhook --> Lead
+  Webhook --> Buyer
+  Webhook --> Seller
 
   Lead --> Intent
   Buyer --> Intent
@@ -76,23 +80,13 @@ flowchart TB
   Intent --> Temp
   Intent --> Claude
 
-  Lead <-->|"buyer signals"| Handoff
-  Buyer <-->|"seller signals"| Handoff
-  Seller <-->|"lead signals"| Handoff
-  Handoff --> Lead
-  Handoff --> Buyer
-  Handoff --> Seller
-
-  Temp --> GHL
-  Lead --> Postgres
-  Buyer --> Postgres
-  Seller --> Postgres
   Lead --> Redis
   Buyer --> Redis
   Seller --> Redis
+  Funnel --> Redis
 
-  CC --> Postgres
-  CC --> Redis
+  Temp --> GHL
+  Lyrio --> Dashboard
 ```
 
 ## Quick Start
@@ -102,25 +96,24 @@ git clone https://github.com/ChunkyTortoise/jorge_real_estate_bots.git
 cd jorge_real_estate_bots
 pip install -r requirements.txt
 
-# Demo mode — no API keys needed, pre-seeded sample leads
-python jorge_launcher.py --demo
+# Start the unified app
+uvicorn bots.lead_bot.main:app --host 0.0.0.0 --port 8001
 ```
 
-### Full Setup (with external services)
+### Docker
 
 ```bash
 cp .env.example .env
 # Edit .env with your API keys
 
-# Launch all services
-python jorge_launcher.py
-
-# Or launch individually
-uvicorn bots.lead_bot.main:app --port 8001
-uvicorn bots.seller_bot.main:app --port 8002
-uvicorn bots.buyer_bot.main:app --port 8003
-streamlit run command_center/dashboard_v3.py
+docker compose up
+# App on :8001, Dashboard on :8501
 ```
+
+### Render Deployment
+
+The repo includes `render.yaml` for Render Blueprint deployment. Connect the repo and configure the `jorge-env` environment group with:
+`REDIS_URL`, `GHL_API_KEY`, `ADMIN_API_KEY`, `ANTHROPIC_API_KEY`, `GHL_LOCATION_ID`, `JORGE_USER_ID`, `JORGE_CALENDAR_ID`
 
 ## Bot Capabilities
 
@@ -128,69 +121,80 @@ streamlit run command_center/dashboard_v3.py
 
 **Seller Bot** -- Confrontational qualification engine using a structured Q1-Q4 question flow. Generates comparative market analyses, provides pricing strategy recommendations, and handles seller objections with configurable escalation paths.
 
-**Buyer Bot** -- Full qualification flow (Q0-Q4), preference extraction, temperature scoring, and weighted property matching against Postgres listings. Writes buyer preferences and conversation history to the database and triggers GHL workflows when qualified.
+**Buyer Bot** -- Full qualification flow (Q0-Q4), preference extraction, temperature scoring, and weighted property matching. Writes buyer preferences and conversation history to Redis and triggers GHL workflows when qualified.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| API | FastAPI, Pydantic, uvicorn |
-| Dashboard | Streamlit, Plotly |
+| API | FastAPI (APIRouter pattern), Pydantic, uvicorn |
+| Dashboard | Streamlit (Lyrio), Plotly |
 | AI | Claude (Haiku/Sonnet routing) |
-| Database | PostgreSQL, SQLAlchemy (async), Alembic |
-| Cache | Redis with in-memory fallback |
+| Cache | Redis (sorted sets, rate limiting, bot state, funnel attribution) |
 | CRM | GoHighLevel (webhooks, custom fields, workflows) |
-| Testing | pytest, pytest-asyncio (350+ tests) |
+| Testing | pytest, pytest-asyncio (1330+ tests) |
 
 ## Project Structure
 
 ```
 jorge_real_estate_bots/
 ├── bots/
-│   ├── shared/           # Config, Claude client, GHL client, cache, auth
-│   ├── lead_bot/         # Semantic analysis, 5-min rule, webhook handlers
-│   ├── seller_bot/       # Q1-Q4 qualification, CMA engine
-│   └── buyer_bot/        # Buyer qualification + property matching
-├── database/             # SQLAlchemy models, async session, repository
-├── command_center/       # Streamlit dashboard + monitoring components
-├── benchmarks/           # Performance benchmarks (bot response, handoff)
-├── tests/                # 350+ tests
-├── jorge_launcher.py     # Single-command startup for all services
-└── docker-compose.yml
+│   ├── shared/              # Config, Claude client, GHL client, cache, auth,
+│   │                        # funnel_attribution, stall_reengagement,
+│   │                        # bot_metrics_collector, alerting_service,
+│   │                        # sms_metrics_collector, response_filter
+│   ├── lead_bot/
+│   │   ├── main.py          # FastAPI app, includes all routers
+│   │   ├── routes_webhook.py     # GHL webhook dispatcher (unified + new-lead)
+│   │   ├── routes_dashboard.py   # 12 dashboard/alert endpoints
+│   │   ├── routes_admin.py       # Bot settings, reassign, reset state
+│   │   ├── routes_realtime.py    # WebSocket events, recent events
+│   │   ├── routes_productization.py  # Playbooks, reports
+│   │   └── routes_test_endpoints.py  # Hardening test endpoints
+│   ├── seller_bot/          # Q1-Q4 qualification, CMA engine
+│   └── buyer_bot/           # Buyer qualification + property matching
+├── database/                # SQLAlchemy models, async session
+├── command_center/          # Streamlit dashboard components
+├── tests/                   # 1330+ tests
+├── docker-compose.yml       # Redis + app + dashboard
+├── render.yaml              # Render Blueprint config
+└── Dockerfile
 ```
 
-## API Documentation
+## API Endpoints
 
-Each bot exposes a FastAPI server with auto-generated interactive docs:
+All endpoints are served from a single app on port 8001.
 
-| Bot | Port | Swagger UI | ReDoc |
-|-----|------|-----------|-------|
-| Lead Bot | 8001 | [http://localhost:8001/docs](http://localhost:8001/docs) | [http://localhost:8001/redoc](http://localhost:8001/redoc) |
-| Seller Bot | 8002 | [http://localhost:8002/docs](http://localhost:8002/docs) | [http://localhost:8002/redoc](http://localhost:8002/redoc) |
-| Buyer Bot | 8003 | [http://localhost:8003/docs](http://localhost:8003/docs) | [http://localhost:8003/redoc](http://localhost:8003/redoc) |
+### Webhooks (`routes_webhook.py`)
+- `POST /ghl/webhook/new-lead` -- New lead webhook from GHL
+- `POST /api/ghl/webhook` -- Unified dispatcher (routes to Lead/Buyer/Seller by bot_type)
+- `POST /api/ghl/webhook/message-status` -- SMS delivery status callbacks
 
-### Key Endpoints
+### Dashboard (`routes_dashboard.py`)
+- `GET /api/dashboard/metrics` -- System + performance metrics
+- `GET /api/dashboard/leads/summary` -- Hero metrics + conversation summary
+- `GET /api/dashboard/leads` -- Paginated lead list (filterable by temperature)
+- `GET /api/dashboard/leads/{contact_id}` -- Single lead detail
+- `GET /api/dashboard/handoffs` -- Recent handoff events (with contact_id)
+- `GET /api/dashboard/conversations/{contact_id}` -- Q&A transcript
+- `GET /api/dashboard/costs` -- Cost/ROI data, commission pipeline
+- `GET /api/dashboard/sms-metrics` -- SMS delivery stats (7-day rolling)
+- `GET /api/dashboard/funnel` -- Funnel conversion by stage (AWARENESS through CONVERSION)
+- `GET /api/dashboard/stall-stats` -- Stall re-engagement stats (optional ?contact_id filter)
+- `GET /api/alerts/active` -- Active alerts
+- `POST /api/alerts/{alert_id}/acknowledge` -- Acknowledge an alert
 
-**Lead Bot** `:8001`
-- `POST /ghl/webhook/new-lead` -- Receive new lead webhooks from GoHighLevel
-- `POST /analyze-lead` -- Analyze and score a lead (returns temperature, qualification)
-- `GET /health` -- Health check
-- `GET /performance` -- Bot performance metrics
-- `GET /metrics` -- Detailed system metrics
+### Admin (`routes_admin.py`)
+- `GET /admin/settings` -- Current bot settings
+- `POST /admin/reassign-bot` -- Reassign contact to different bot
 - `PUT /admin/settings/{bot}` -- Update bot configuration
+- `DELETE /admin/reset-state/{bot}/{contact_id}` -- Reset conversation state
 
-**Seller Bot** `:8002`
-- `POST /api/jorge-seller/process` -- Process seller conversation message
-- `GET /api/jorge-seller/{contact_id}/progress` -- Get seller qualification progress
-- `GET /api/jorge-seller/active` -- List active seller conversations
-- `DELETE /api/jorge-seller/{contact_id}/state` -- Reset seller conversation state
-
-**Buyer Bot** `:8003`
-- `POST /api/jorge-buyer/process` -- Process buyer conversation message
-- `GET /api/jorge-buyer/{contact_id}/progress` -- Get buyer qualification progress
-- `GET /api/jorge-buyer/preferences/{contact_id}` -- Get extracted buyer preferences
-- `GET /api/jorge-buyer/matches/{contact_id}` -- Get property matches for buyer
-- `GET /api/jorge-buyer/active` -- List active buyer conversations
+### Real-time (`routes_realtime.py`)
+- `GET /api/events/recent` -- Recent events (filterable, since_minutes, event_types)
+- `GET /api/events/ws-status` -- WebSocket connection health
+- `GET /api/events/health` -- Event system health (Redis check)
+- `WS /ws/events` -- Live event stream
 
 ### curl Examples
 
@@ -208,36 +212,16 @@ curl -X POST http://localhost:8001/analyze-lead \
   }'
 ```
 
-**Process a seller conversation message:**
+**Get funnel conversion data:**
 ```bash
-curl -X POST http://localhost:8002/api/jorge-seller/process \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contact_id": "seller456",
-    "message": "I want to sell my 4BR/3BA house in Brickell. Bought it for $480k in 2019.",
-    "conversation_id": "conv-001"
-  }'
+curl http://localhost:8001/api/dashboard/funnel \
+  -H "X-Admin-Key: YOUR_ADMIN_KEY"
 ```
 
-**Get buyer property matches:**
+**Get stall stats:**
 ```bash
-curl http://localhost:8003/api/jorge-buyer/matches/buyer789
-```
-
-## Architecture Decisions
-
-| ADR | Title | Status |
-|-----|-------|--------|
-| [ADR-0001](docs/adr/0001-three-bot-separation.md) | Three Separate Bots Instead of One Unified Bot | Accepted |
-| [ADR-0002](docs/adr/0002-confidence-threshold-handoff.md) | 0.7 Confidence Threshold for Cross-Bot Handoff | Accepted |
-| [ADR-0003](docs/adr/0003-temperature-tag-publishing.md) | Lead Temperature Scoring and GHL Tag Automation | Accepted |
-
-## Benchmarks
-
-See [BENCHMARKS.md](BENCHMARKS.md) for performance methodology and results. Run locally:
-
-```bash
-python benchmarks/run_all.py
+curl http://localhost:8001/api/dashboard/stall-stats \
+  -H "X-Admin-Key: YOUR_ADMIN_KEY"
 ```
 
 ## Troubleshooting
@@ -247,11 +231,10 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for solutions to common i
 ## Testing
 
 ```bash
-pytest tests/ -v                    # Full suite (350+ tests)
+pytest tests/ -v                    # Full suite (1330+ tests)
 pytest tests/shared/ -v             # Shared services
-pytest tests/seller_bot/ -v         # Seller qualification
-pytest tests/buyer_bot/ -v          # Buyer qualification
-pytest tests/command_center/ -v     # Dashboard components
+pytest tests/api/ -v                # Dashboard & API routes
+pytest tests/lead_bot/ -v           # Realtime events
 ```
 
 ## Changelog
@@ -261,12 +244,8 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 ## Related Projects
 
 - [EnterpriseHub](https://github.com/ChunkyTortoise/EnterpriseHub) -- Full real estate AI platform this was extracted from, with BI dashboards and CRM integration
+- [Lyrio Dashboard](https://github.com/ChunkyTortoise/lyrio-dashboard) -- Streamlit analytics dashboard with AI concierge, connected to Jorge API
 - [ai-orchestrator](https://github.com/ChunkyTortoise/ai-orchestrator) -- AgentForge: unified async LLM interface (Claude, Gemini, OpenAI, Perplexity)
-- [Revenue-Sprint](https://github.com/ChunkyTortoise/Revenue-Sprint) -- AI-powered freelance pipeline: job scanning, proposal generation, prompt injection testing
-- [insight-engine](https://github.com/ChunkyTortoise/insight-engine) -- Upload CSV/Excel, get instant dashboards, predictive models, and reports
-- [docqa-engine](https://github.com/ChunkyTortoise/docqa-engine) -- RAG document Q&A with hybrid retrieval and prompt engineering lab
-- [scrape-and-serve](https://github.com/ChunkyTortoise/scrape-and-serve) -- Web scraping, price monitoring, Excel-to-web apps, and SEO tools
-- [Portfolio](https://chunkytortoise.github.io) -- Project showcase and services
 
 ## License
 

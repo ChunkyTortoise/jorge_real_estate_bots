@@ -176,6 +176,17 @@ class RedisCache(AbstractCache):
             logger.error(f"Redis connection failed: {e}")
             self.enabled = False
 
+    async def validate_connection(self) -> bool:
+        """Ping Redis to confirm connectivity. Disables cache on failure."""
+        try:
+            await self.redis.ping()  # type: ignore[misc]
+            logger.info("Redis connected successfully")
+            return True
+        except Exception as e:
+            logger.critical(f"Redis connection failed, falling back to MemoryCache: {e}")
+            self.enabled = False
+            return False
+
     async def get(self, key: str) -> Optional[Any]:
         if not self.enabled:
             return None
@@ -303,7 +314,7 @@ class CacheService:
             try:
                 self.backend = RedisCache(settings.redis_url)
                 if not getattr(self.backend, 'enabled', False):
-                    logger.warning("Redis unavailable, using memory cache")
+                    logger.warning("Redis unavailable, falling back to MemoryCache")
                     self.backend = self.fallback_backend
                 else:
                     logger.info("Redis cache initialized with memory fallback")

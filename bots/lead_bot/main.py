@@ -99,7 +99,8 @@ def verify_ghl_signature(payload: bytes, signature: Optional[str]) -> bool:
         return hmac.compare_digest(computed_b64, sig)
 
     # No signature config set -- allow all requests (pass-through mode)
-    logger.debug("Webhook signature verification skipped: no secret configured")
+    if settings.environment == "production":
+        logger.warning("Unsigned webhook accepted (no verification configured)")
     return True
 
 
@@ -199,6 +200,13 @@ async def lifespan(app: FastAPI):
 
     _stall_task.cancel()
     logger.info("Shutting down Lead Bot...")
+
+    if _ghl_client:
+        try:
+            await _ghl_client.close()
+            logger.info("GHL client closed")
+        except Exception as e:
+            logger.error(f"GHL client close error: {e}")
 
     try:
         await websocket_manager.shutdown()

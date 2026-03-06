@@ -42,13 +42,14 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GHL_API_KEY: ${{ secrets.GHL_API_KEY }}
           GHL_LOCATION_ID: ${{ secrets.GHL_LOCATION_ID }}
-          GHL_WEBHOOK_SECRET: ${{ secrets.GHL_WEBHOOK_SECRET }}
           GHL_CALENDAR_ID: ${{ secrets.GHL_CALENDAR_ID }}
           JORGE_USER_ID: ${{ secrets.JORGE_USER_ID }}
           JORGE_CALENDAR_ID: ${{ secrets.JORGE_CALENDAR_ID }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           REDIS_URL: ${{ secrets.REDIS_URL }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         run: |
           # Update the image URL (note: this may reset env vars, so we re-set them below)
           curl -sf -X PATCH \
@@ -66,7 +67,6 @@ jobs:
               {\"key\": \"ANTHROPIC_API_KEY\", \"value\": \"${ANTHROPIC_API_KEY}\"},
               {\"key\": \"GHL_API_KEY\", \"value\": \"${GHL_API_KEY}\"},
               {\"key\": \"GHL_LOCATION_ID\", \"value\": \"${GHL_LOCATION_ID}\"},
-              {\"key\": \"GHL_WEBHOOK_SECRET\", \"value\": \"${GHL_WEBHOOK_SECRET}\"},
               {\"key\": \"GHL_CALENDAR_ID\", \"value\": \"${GHL_CALENDAR_ID}\"},
               {\"key\": \"GHL_ALLOW_UNSIGNED_WEBHOOKS\", \"value\": \"true\"},
               {\"key\": \"JORGE_USER_ID\", \"value\": \"${JORGE_USER_ID}\"},
@@ -74,8 +74,11 @@ jobs:
               {\"key\": \"JORGE_SELLER_MODE\", \"value\": \"true\"},
               {\"key\": \"JWT_SECRET\", \"value\": \"${JWT_SECRET}\"},
               {\"key\": \"REDIS_URL\", \"value\": \"${REDIS_URL}\"},
-              {\"key\": \"ENVIRONMENT\", \"value\": \"staging\"},
-              {\"key\": \"ADMIN_API_KEY\", \"value\": \"${ADMIN_API_KEY}\"}
+              {\"key\": \"ENVIRONMENT\", \"value\": \"production\"},
+              {\"key\": \"ADMIN_API_KEY\", \"value\": \"${ADMIN_API_KEY}\"},
+              {\"key\": \"DATABASE_URL\", \"value\": \"${DATABASE_URL}\"},
+              {\"key\": \"ADMIN_PASSWORD\", \"value\": \"${ADMIN_PASSWORD}\"},
+              {\"key\": \"JORGE_BUYER_MODE\", \"value\": \"true\"}
             ]"
 
           # Trigger a deploy
@@ -84,3 +87,9 @@ jobs:
             -H "Authorization: Bearer ${RENDER_API_KEY}" \
             -H "Content-Type: application/json" \
             -d "{\"clearCache\": \"do_not_clear\"}"
+
+      - name: Post-deploy health check
+        run: |
+          echo "Waiting 90s for service to boot..."
+          sleep 90
+          curl -sf "https://jorge-realty-ai-xxdf.onrender.com/health/aggregate" || exit 1
