@@ -136,6 +136,8 @@ async def test_dashboard_handoffs_with_data(client):
         import threading
         from dataclasses import dataclass
 
+        from typing import Optional
+
         @dataclass
         class FakeHandoff:
             source: str = "lead"
@@ -143,6 +145,7 @@ async def test_dashboard_handoffs_with_data(client):
             success: bool = True
             duration_ms: float = 150.0
             timestamp: float = 1000.0
+            contact_id: Optional[str] = None
 
         instance = MockCollector.return_value
         instance._data_lock = threading.Lock()

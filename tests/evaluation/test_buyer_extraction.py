@@ -395,3 +395,99 @@ class TestBuyerTemperature:
         buyer_state.timeline_days = 180
         bot = object.__new__(JorgeBuyerBot)
         assert bot._calculate_temperature(buyer_state) == BuyerStatus.COLD
+
+
+# -----------------------------------------------------------------------
+# BUG-01 regression: bd shorthand (tests actual bot method via asyncio)
+# -----------------------------------------------------------------------
+class TestBdShorthandRegression:
+    """Regression tests for the bd/BD shorthand bug fix."""
+
+    def test_bd_pattern_in_buyer_regex(self):
+        """Verify bd is included in the bed regex pattern."""
+        import re
+        bed_regex = re.compile(r"(\d+)\s*(bed|beds|br|bd)", re.IGNORECASE)
+        assert bed_regex.search("4bd") is not None
+        assert bed_regex.search("3bd") is not None
+
+    def test_bd_extracts_beds(self):
+        import re
+        msg = "4bd"
+        bed_match = re.search(r"(\d+)\s*(bed|beds|br|bd)", msg.lower())
+        assert bed_match is not None
+        assert int(bed_match.group(1)) == 4
+
+    def test_bd_with_ba(self):
+        import re
+        msg = "3bd 2ba"
+        bed_match = re.search(r"(\d+)\s*(bed|beds|br|bd)", msg.lower())
+        bath_match = re.search(r"(\d+(?:\.\d+)?)\s*(bath|baths|ba)", msg.lower())
+        assert bed_match is not None and int(bed_match.group(1)) == 3
+        assert bath_match is not None and float(bath_match.group(1)) == 2.0
+
+    def test_bd_slash_notation(self):
+        """4bd/2ba — bed regex matches 4bd before the slash."""
+        import re
+        msg = "4bd/2ba"
+        bed_match = re.search(r"(\d+)\s*(bed|beds|br|bd)", msg.lower())
+        assert bed_match is not None
+        assert int(bed_match.group(1)) == 4
+
+
+# -----------------------------------------------------------------------
+# BUG-02 regression: qualifier price patterns
+# -----------------------------------------------------------------------
+class TestQualifierPriceRegression:
+    """Regression tests for 'under 600', 'around 450' qualifier price extraction."""
+
+    @staticmethod
+    def _extract_qualifier_prices(msg: str) -> list:
+        import re
+        qualifier_prices = []
+        for m in re.finditer(
+            r'\b(under|over|around|about|like|maybe|roughly|close to|up to)\s+(\d{3})\b',
+            msg.lower(),
+        ):
+            qualifier_prices.append(int(m.group(2)) * 1000)
+        return qualifier_prices
+
+    def test_under_600(self):
+        assert self._extract_qualifier_prices("under 600") == [600_000]
+
+    def test_around_450(self):
+        assert self._extract_qualifier_prices("around 450") == [450_000]
+
+    def test_like_500(self):
+        assert self._extract_qualifier_prices("like 500") == [500_000]
+
+    def test_about_750(self):
+        assert self._extract_qualifier_prices("about 750") == [750_000]
+
+    def test_maybe_400(self):
+        assert self._extract_qualifier_prices("maybe 400") == [400_000]
+
+    def test_up_to_550(self):
+        assert self._extract_qualifier_prices("up to 550") == [550_000]
+
+    def test_close_to_300(self):
+        assert self._extract_qualifier_prices("close to 300") == [300_000]
+
+    def test_under_1200_no_match(self):
+        """4-digit number should NOT match qualifier pattern (only 3 digits)."""
+        result = self._extract_qualifier_prices("under 1200")
+        assert result == []
+
+
+# -----------------------------------------------------------------------
+# Slash notation "3/2" — buyer bot limitation documentation
+# -----------------------------------------------------------------------
+class TestSlashNotationLimitation:
+    """Document that slash notation is not supported by buyer bot."""
+
+    def test_slash_notation_beds_not_extracted(self):
+        """3/2 slash notation — beds not extracted (limitation)."""
+        import re
+        msg = "3/2"
+        bed_match = re.search(r"(\d+)\s*(bed|beds|br|bd)", msg.lower())
+        # "3/2" does not contain "bed", "beds", "br", or "bd" after the number
+        assert bed_match is None

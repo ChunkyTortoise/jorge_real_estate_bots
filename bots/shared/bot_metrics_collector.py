@@ -45,6 +45,7 @@ class _HandoffRecord:
     success: bool
     duration_ms: float
     timestamp: float
+    contact_id: Optional[str] = None
 
 
 class BotMetricsCollector:
@@ -122,6 +123,7 @@ class BotMetricsCollector:
         target: str,
         success: bool,
         duration_ms: float,
+        contact_id: Optional[str] = None,
     ) -> None:
         """Record a cross-bot handoff event.
 
@@ -130,6 +132,7 @@ class BotMetricsCollector:
             target: Target bot type (e.g. "buyer").
             success: Whether the handoff completed successfully.
             duration_ms: Handoff latency in milliseconds.
+            contact_id: Optional contact ID for the handoff.
         """
         record = _HandoffRecord(
             source=source,
@@ -137,6 +140,7 @@ class BotMetricsCollector:
             success=success,
             duration_ms=duration_ms,
             timestamp=time.time(),
+            contact_id=contact_id,
         )
 
         with self._data_lock:

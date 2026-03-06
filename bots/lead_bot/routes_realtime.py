@@ -5,8 +5,8 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
+from bots.lead_bot.routes_admin import get_admin_or_apikey
 from bots.lead_bot.websocket_manager import websocket_manager
-from bots.shared.auth_middleware import get_current_active_user
 from bots.shared.auth_service import get_auth_service
 from bots.shared.event_broker import event_broker
 from bots.shared.logger import get_logger
@@ -58,7 +58,7 @@ async def get_recent_events(
     since_minutes: int = Query(5, description="Get events from last N minutes"),
     event_types: Optional[str] = Query(None, description="Comma-separated event types to filter"),
     limit: int = Query(100, description="Maximum number of events to return"),
-    user=Depends(get_current_active_user()),
+    _=Depends(get_admin_or_apikey),
 ):
     """HTTP polling fallback for WebSocket events."""
     try:
@@ -104,7 +104,7 @@ async def get_recent_events(
 
 
 @router.get("/api/websocket/status")
-async def websocket_status(user=Depends(get_current_active_user())):
+async def websocket_status(_=Depends(get_admin_or_apikey)):
     """Get WebSocket manager status and metrics."""
     try:
         health_data = await websocket_manager.health_check()
@@ -127,7 +127,7 @@ async def websocket_status(user=Depends(get_current_active_user())):
 
 
 @router.get("/api/events/health")
-async def event_system_health(user=Depends(get_current_active_user())):
+async def event_system_health(_=Depends(get_admin_or_apikey)):
     """Combined health check for event broker + WebSocket manager."""
     try:
         broker_health = await event_broker.health_check()

@@ -298,6 +298,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                                     target=bot_type_lower,
                                     success=True,
                                     duration_ms=0,
+                                    contact_id=contact_id,
                                 )
                             except Exception:
                                 pass

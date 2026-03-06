@@ -161,3 +161,63 @@ class TestPriceEdgeCases:
 
     def test_case_insensitive_k(self):
         assert _extract_price("$350K") == 350_000
+
+
+# -----------------------------------------------------------------------
+# Bare 3-digit numbers with qualifiers (buyer context)
+# -----------------------------------------------------------------------
+class TestBareNumberQualifiers:
+    """Buyer bot qualifier prices: 'under 600' → 600_000 (3-digit * 1000)."""
+
+    @staticmethod
+    def _buyer_qualifier_price(msg: str):
+        """Replicate buyer bot qualifier price logic."""
+        import re
+        for m in re.finditer(
+            r'\b(under|over|around|about|like|maybe|roughly|close to|up to)\s+(\d{3})\b',
+            msg.lower(),
+        ):
+            return int(m.group(2)) * 1000
+        return None
+
+    def test_under_500(self):
+        assert self._buyer_qualifier_price("under 500") == 500_000
+
+    def test_around_350(self):
+        assert self._buyer_qualifier_price("around 350") == 350_000
+
+    def test_like_400(self):
+        assert self._buyer_qualifier_price("like 400") == 400_000
+
+    def test_four_digit_no_match(self):
+        """'under 1200' — 4 digits, no qualifier match."""
+        assert self._buyer_qualifier_price("under 1200") is None
+
+    def test_two_digit_no_match(self):
+        """'under 50' — 2 digits, no qualifier match."""
+        assert self._buyer_qualifier_price("under 50") is None
+
+
+# -----------------------------------------------------------------------
+# Mid/high/low hundreds patterns — seller colloquial (coverage check)
+# -----------------------------------------------------------------------
+class TestColloquialCoverage:
+    """Verify colloquial patterns that are NOT in _COLLOQUIAL_PRICES fall through to None."""
+
+    def test_mid_threes_not_in_colloquial(self):
+        """'mid threes' is not a registered pattern → returns None."""
+        assert _extract_price("mid threes") is None
+
+    def test_low_sevens_not_in_colloquial(self):
+        """'low sevens' is not a registered pattern → returns None."""
+        assert _extract_price("low sevens") is None
+
+    def test_high_fours_not_in_colloquial(self):
+        """'high fours' is not a registered pattern → returns None."""
+        assert _extract_price("high fours") is None
+
+    def test_low_four_hundreds_with_space(self):
+        """Pattern requires no space: 'low fourhundreds' matches but 'low four hundreds' does not."""
+        # The regex is: low\s+(?:four|4)hundreds? — no \s* between four and hundreds
+        assert _extract_price("low four hundreds") is None  # space between "four" and "hundreds" breaks match
+        assert _extract_price("low fourhundreds") == 425_000  # no space works

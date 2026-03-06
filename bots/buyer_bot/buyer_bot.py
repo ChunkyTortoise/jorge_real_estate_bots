@@ -73,6 +73,7 @@ class BuyerQualificationState:
     preapproved: Optional[bool] = None
     timeline_days: Optional[int] = None
     motivation: Optional[str] = None
+    q4_attempts: int = 0
 
     matches: List[Dict[str, Any]] = field(default_factory=list)
     conversation_history: List[Dict[str, Any]] = field(default_factory=list)
@@ -254,6 +255,36 @@ class JorgeBuyerBot:
                 except Exception as db_err:
                     self.logger.warning(f"DB upsert_contact skipped (schema not ready?): {db_err}")
 
+            # Q4 loop limit — if buyer has responded to Q4 three times without
+            # advancing, escalate to human and stop the bot loop.
+            if state.current_question == 4 and state.q4_attempts >= 3:
+                state.stage = "STALLED"
+                escalation_msg = (
+                    "Hey, I want to make sure we get this right. "
+                    "Let me have Jorge reach out to you directly."
+                )
+                _stall_actions: List[Dict[str, Any]] = [
+                    {"type": "add_tag", "tag": "needs-human-review"},
+                ]
+                temperature = self._calculate_temperature(state)
+                await self.save_conversation_state(
+                    contact_id, state, temperature=temperature,
+                )
+                return BuyerResult(
+                    response_message=sanitize_bot_response(escalation_msg, bot_type="buyer"),
+                    buyer_temperature=temperature,
+                    questions_answered=state.questions_answered,
+                    qualification_complete=False,
+                    actions_taken=_stall_actions,
+                    next_steps="Escalated to Jorge — Q4 loop limit reached",
+                    analytics=self._build_analytics(state, temperature),
+                    matches=state.matches,
+                )
+
+            # Increment Q4 attempt counter when processing a Q4 response
+            if state.current_question == 4:
+                state.q4_attempts += 1
+
             original_q = state.current_question
             response = await self._generate_response(state, message)
 
@@ -414,6 +445,7 @@ class JorgeBuyerBot:
             "preapproved": state.preapproved,
             "timeline_days": state.timeline_days,
             "motivation": state.motivation,
+            "q4_attempts": state.q4_attempts,
             "matches": state.matches,
             "conversation_history": state.conversation_history,
             "extracted_data": state.extracted_data,

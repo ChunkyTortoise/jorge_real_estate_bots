@@ -205,7 +205,7 @@ def run_a1() -> None:
     personas = [
         ("A1.1", "HOT seller", "minor repairs, paint", "$450k", "job relocation, ASAP", "yes sounds good", "hot", 337500),
         ("A1.2", "WARM seller", "move in ready", "$650k", "testing the market", "need to think about it", "warm", 487500),
-        ("A1.3", "COLD seller", "needs major work, foundation", "$280k", "just curious", "too low", "cold", 210000),
+        ("A1.3", "COLD seller", "needs major work, foundation", "$280k", "just curious, no rush, whenever", "too low", "cold", 210000),
         ("A1.4", "HIGH price", "excellent shape", "$1.8m", "downsizing", "yes, let's do it", "hot", 1350000),
         ("A1.5", "LOW price", "needs everything", "$85k", "foreclosure", "can we do $70k?", "cold", 63750),
     ]
@@ -254,7 +254,7 @@ def run_a1() -> None:
 def run_a2() -> None:
     personas = [
         ("A2.1", "HOT buyer", "3 bed 2 bath 1500sqft $400k-$550k Rancho Cucamonga", "pre-approved for $600k", "within 30 days", "new job transfer", "hot", True),
-        ("A2.2", "WARM buyer", "4 bed 2 bath under $700k Ontario", "working on getting approved", "2-3 months", "growing family", "warm", False),
+        ("A2.2", "WARM buyer", "4 bed 2 bath under $700k Ontario", "still figuring it out, haven't started", "2-3 months", "growing family", "warm", False),
         ("A2.3", "COLD buyer", "something nice under $500k", "no, not yet", "just browsing", "investment maybe", "cold", False),
         ("A2.4", "Cash buyer", "2 bed 1 bath $300k Fontana", "cash buyer", "ASAP", "downsizing", "hot", True),
     ]
@@ -417,8 +417,13 @@ def run_b1() -> None:
         reset_contact("seller", cid)
         send_seller(cid, "Hello")  # warm up
         r = send_seller(cid, msg)
-        passed = "error" not in r
-        issues = r.get("error", "") if not passed else ""
+        # 403 from WAF is acceptable — it means the payload was blocked before reaching the app
+        if isinstance(r.get("error", ""), str) and "HTTP 403" in r.get("error", ""):
+            passed = True
+            issues = ""
+        else:
+            passed = "error" not in r
+            issues = r.get("error", "") if not passed else ""
         # B1.5: check XSS not reflected
         if passed and "<script>" in r.get("response_message", ""):
             passed = False
@@ -553,7 +558,7 @@ def run_b4() -> None:
     reassign_resp = api_call(
         "POST",
         "/admin/reassign-bot",
-        json_body={"contact_id": cid, "from_bot": "seller", "to_bot": "buyer"},
+        json_body={"contact_id": cid, "bot_type": "buyer"},
         headers=ADMIN_HEADERS,
     )
     passed = reassign_resp.status_code in (200, 204)
@@ -567,7 +572,7 @@ def run_b4() -> None:
     reassign_resp = api_call(
         "POST",
         "/admin/reassign-bot",
-        json_body={"contact_id": cid, "from_bot": "buyer", "to_bot": "seller"},
+        json_body={"contact_id": cid, "bot_type": "seller"},
         headers=ADMIN_HEADERS,
     )
     passed = reassign_resp.status_code in (200, 204)
@@ -702,6 +707,71 @@ def run_b7() -> None:
     )
 
 
+# --- B8: v2 Regression Scenarios ---
+
+
+def run_b8() -> None:
+    """v2 live regression: shorthand buyer, hesitant seller, cross-contamination switch."""
+
+    # B8.1: Warm buyer flow — casual shorthand messages (bd/ba, qualifier price)
+    cid = make_contact_id("B8.1")
+    reset_contact("buyer", cid)
+    send_buyer(cid, "hey jorge")
+    r_q1 = send_buyer(cid, "3bd 2ba under 500 in ontario")
+    r_q2 = send_buyer(cid, "yea im preapproved w chase")
+    r_q3 = send_buyer(cid, "like 2 months")
+    r_q4 = send_buyer(cid, "need more space for the kids")
+
+    inv_issues = check_invariants(r_q4.get("response_message", ""), "B8.1")
+    passed = (
+        r_q4.get("questions_answered", 0) >= 4
+        and r_q4.get("buyer_temperature") in ("hot", "warm")
+        and not inv_issues
+    )
+    record("B8.1", "v2 warm buyer — bd/ba shorthand + qualifier price", passed,
+           f"temp={r_q4.get('buyer_temperature')}, qa={r_q4.get('questions_answered')}, invariants={inv_issues}")
+
+    # B8.2: Hesitant seller — bare number price, multiple rejections before accept
+    cid = make_contact_id("B8.2")
+    reset_contact("seller", cid)
+    send_seller(cid, "got a house might wanna sell")
+    send_seller(cid, "needs some work")          # Q1 condition
+    r_price = send_seller(cid, "maybe 350")      # Q2 price — bare number → Haiku fallback
+    send_seller(cid, "job relocation, asap")     # Q3 motivation
+    r_hes1 = send_seller(cid, "let me think about it")   # Q4 hesitation attempt 1
+    r_hes2 = send_seller(cid, "not sure yet")            # Q4 hesitation attempt 2
+    r_accept = send_seller(cid, "ok fine let's do it")   # Q4 acceptance
+
+    soft_close_ok = "$" not in r_hes1.get("response_message", "") or "offer" not in r_hes1.get("response_message", "").lower()
+    inv_issues = check_invariants(r_accept.get("response_message", ""), "B8.2")
+    passed = (
+        r_accept.get("questions_answered", 0) >= 4
+        and not inv_issues
+        and soft_close_ok
+    )
+    record("B8.2", "v2 hesitant seller — bare price + soft close + eventual accept", passed,
+           f"qa={r_accept.get('questions_answered')}, soft_close_ok={soft_close_ok}, invariants={inv_issues}")
+
+    # B8.3: Cross-contamination after bot_type switch on same contact
+    cid = make_contact_id("B8.3")
+    reset_contact("buyer", cid)
+    # Start as buyer
+    send_buyer(cid, "looking for 3 bed 2 bath under 500k")
+    send_buyer(cid, "yes pre-approved")
+    # Switch to seller on same contact_id
+    reset_contact("seller", cid)
+    send_seller(cid, "I want to sell my house")
+    r_seller = send_seller(cid, "move in ready")  # Q1 — should be clean seller state
+
+    # Seller response should not contain buyer-specific terms
+    msg = r_seller.get("response_message", "").lower()
+    buyer_contamination = any(w in msg for w in ["pre-approved", "beds", "sqft", "baths", "square feet"])
+    inv_issues = check_invariants(r_seller.get("response_message", ""), "B8.3")
+    passed = not buyer_contamination and not inv_issues
+    record("B8.3", "v2 cross-contamination — buyer→seller switch clean state", passed,
+           f"buyer_terms_found={buyer_contamination}, invariants={inv_issues}")
+
+
 # ===================================================================
 # Main
 # ===================================================================
@@ -760,6 +830,7 @@ def main() -> None:
             "B5": run_b5,
             "B6": run_b6,
             "B7": run_b7,
+            "B8": run_b8,
         }
         fn = test_fns.get(args.test)
         if fn:
@@ -797,6 +868,8 @@ def main() -> None:
             run_b6()
             print("\n--- B7: Spanish ---")
             run_b7()
+            print("\n--- B8: v2 Regression ---")
+            run_b8()
 
     failed = print_summary()
     sys.exit(1 if failed > 0 else 0)

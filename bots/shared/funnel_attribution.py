@@ -8,8 +8,10 @@ to bots using first-touch, last-touch, linear, and time-decay models.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from typing import Any, Optional
 
 
 # Funnel stage constants
@@ -58,11 +60,57 @@ class FunnelTracker:
 
     Records events as contacts progress through the funnel, and provides
     aggregated statistics on conversion rates and stage distribution.
+
+    Optionally persists events to Redis sorted sets for cross-process durability.
     """
 
-    def __init__(self) -> None:
+    _REDIS_TTL = 2_592_000  # 30 days
+
+    def __init__(self, redis_client: Optional[Any] = None) -> None:
         self.events: list[FunnelEvent] = []
         self.journeys: dict[str, list[FunnelEvent]] = {}
+        self._redis = redis_client
+
+    def _redis_key(self, contact_id: str) -> str:
+        return f"funnel:events:{contact_id}"
+
+    @staticmethod
+    def _serialize_event(event: FunnelEvent) -> str:
+        """Serialize a FunnelEvent to JSON for Redis storage."""
+        data = {
+            "contact_id": event.contact_id,
+            "stage": event.stage,
+            "bot_name": event.bot_name,
+            "timestamp": event.timestamp.isoformat(),
+            "metadata": event.metadata,
+        }
+        return json.dumps(data)
+
+    @staticmethod
+    def _deserialize_event(raw: str) -> FunnelEvent:
+        """Deserialize a JSON string back to a FunnelEvent."""
+        data = json.loads(raw)
+        return FunnelEvent(
+            contact_id=data["contact_id"],
+            stage=data["stage"],
+            bot_name=data["bot_name"],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            metadata=data.get("metadata", {}),
+        )
+
+    async def _persist_to_redis(self, event: FunnelEvent) -> None:
+        """Write event to a Redis sorted set keyed by contact_id."""
+        key = self._redis_key(event.contact_id)
+        score = event.timestamp.timestamp()
+        member = self._serialize_event(event)
+        await self._redis.zadd(key, {member: score})
+        await self._redis.expire(key, self._REDIS_TTL)
+
+    async def _load_from_redis(self, contact_id: str) -> list[FunnelEvent]:
+        """Read all events for a contact from Redis sorted set."""
+        key = self._redis_key(contact_id)
+        members = await self._redis.zrangebyscore(key, "-inf", "+inf")
+        return [self._deserialize_event(m) for m in members]
 
     def record_event(self, event: FunnelEvent) -> None:
         """Store a funnel event and update the contact's journey."""
@@ -71,10 +119,28 @@ class FunnelTracker:
             self.journeys[event.contact_id] = []
         self.journeys[event.contact_id].append(event)
 
+    async def record_event_async(self, event: FunnelEvent) -> None:
+        """Store a funnel event, persisting to Redis if configured."""
+        self.record_event(event)
+        if self._redis is not None:
+            await self._persist_to_redis(event)
+
     def get_journey(self, contact_id: str) -> list[FunnelEvent]:
-        """Return ordered events for a contact."""
+        """Return ordered events for a contact (in-memory only)."""
         events = self.journeys.get(contact_id, [])
         return sorted(events, key=lambda e: e.timestamp)
+
+    async def get_journey_async(self, contact_id: str) -> list[FunnelEvent]:
+        """Return ordered events, reading from Redis if available."""
+        if self._redis is not None:
+            try:
+                events = await self._load_from_redis(contact_id)
+                if events:
+                    return sorted(events, key=lambda e: e.timestamp)
+            except Exception:
+                pass
+        # Fall back to in-memory
+        return self.get_journey(contact_id)
 
     def get_funnel_stats(self) -> dict:
         """
