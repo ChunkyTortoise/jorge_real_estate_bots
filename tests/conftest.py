@@ -9,6 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from bots.shared.rate_limit_middleware import _memory_counters
+from bots.shared.cache_service import CacheService
+
 from database.base import Base
 from database import billing_models  # noqa: F401
 from database import session as db_session_module
@@ -61,6 +64,31 @@ _ASYNC_SESSION_FACTORY_LOCATIONS = [
     "bots.shared.metrics_service.AsyncSessionFactory",
     "bots.shared.auth_service.AsyncSessionFactory",
 ]
+
+
+@pytest.fixture(autouse=True)
+def _clear_rate_limit_counters():
+    """Clear in-memory rate limit counters before/after each test to prevent bleed."""
+    _memory_counters.clear()
+    # Also clear the CacheService singleton's MemoryCache to prevent rate-limit bleed
+    if CacheService._instance is not None:
+        svc = CacheService._instance
+        if hasattr(svc, 'backend') and hasattr(svc.backend, '_cache'):
+            svc.backend._cache.clear()
+            svc.backend._expiry.clear()
+        if hasattr(svc, 'fallback_backend') and hasattr(svc.fallback_backend, '_cache'):
+            svc.fallback_backend._cache.clear()
+            svc.fallback_backend._expiry.clear()
+    yield
+    _memory_counters.clear()
+    if CacheService._instance is not None:
+        svc = CacheService._instance
+        if hasattr(svc, 'backend') and hasattr(svc.backend, '_cache'):
+            svc.backend._cache.clear()
+            svc.backend._expiry.clear()
+        if hasattr(svc, 'fallback_backend') and hasattr(svc.fallback_backend, '_cache'):
+            svc.fallback_backend._cache.clear()
+            svc.fallback_backend._expiry.clear()
 
 
 @pytest.fixture(autouse=True)

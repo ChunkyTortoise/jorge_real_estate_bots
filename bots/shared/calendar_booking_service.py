@@ -144,11 +144,19 @@ class CalendarBookingService:
             result = await self.ghl_client.create_appointment(appointment_data)
         except Exception as exc:
             logger.error(f"create_appointment error for {contact_id}: {exc}")
+            result = {"success": False}
             return {
                 "success": False,
                 "appointment": None,
                 "message": "I wasn't able to book that slot. Let me find other times for you.",
             }
+
+        if not result.get("success") and result.get("status_code") == 404:
+            logger.error(
+                "GHL calendar booking 404 — likely missing 'calendars.write' scope on "
+                "the Private Integration API key. Go to GHL > Settings > Integrations > "
+                "Private Integration and enable Calendars (Write) scope."
+            )
 
         if result.get("success"):
             self._pending_slots.pop(contact_id, None)
