@@ -17,6 +17,7 @@ sqlalchemy==2.0.46
 alembic==1.18.1
 psycopg2-binary==2.9.11
 asyncpg==0.31.0
+aiosqlite==0.22.1
 
 # ========== CACHING ==========
 redis==7.1.0
