@@ -8,8 +8,8 @@
 
 - Date: 2026-03-06
 - Tester: Codex / Cayman Roden
-- Deploy version / commit: `sha-5db0d45f21cf629dd57a50bd86831d00592f7481` (Phase 7-10) — new image `sha-production-fix-2026-03-06` being built to resolve startup failure
-- Current live container: `sha-0641f91d47ccd849357ce3d01a6e5c135d0f9d3c` (deployed 2026-03-05, Phase 6)
+- Deploy version / commit: `b9d4d8cda671b4ab8d2f4f21d4e37d6bc19dbcb7` (fix7 whitelist DB creation)
+- Current live container: `sha-b9d4d8cda671b4ab8d2f4f21d4e37d6bc19dbcb7` (deployed 2026-03-06, dep-d6lq8ntactks73fm2fd0)
 - Environment: `https://jorge-realty-ai-xxdf.onrender.com`
 - Handoff decision: `not ready`
 - Repo validation baseline: `1655 passed, 21 skipped` (2026-03-06)
@@ -27,10 +27,10 @@
 | Check | Result | Notes |
 |---|---|---|
 | Health endpoint | Pass | `/health` returns HTTP 200 and `status = healthy`. |
-| Environment identity | Fail | Running container reports `environment = staging`. Render env var `ENVIRONMENT = production` is set but was not picked up by the old container. Fix in progress: new Docker image being deployed. |
-| Aggregate health | Fail | `/health/aggregate` reports `status = degraded`. Root cause: `DATABASE_URL` was empty. Fix applied — awaiting redeploy to confirm. |
-| Production DB reachable | Fail | `postgres = down` in aggregate health. Fix applied: `DATABASE_URL` updated to internal Render postgres URL. Verification pending after redeploy. |
-| Canonical migration applied | Blocked | Live `DATABASE_URL` not available for external schema check (Render postgres IP allowlist = internal only). Proxy verification: `postgres = ok` in health after redeploy, plus DB-backed dashboard data returning non-zero. |
+| Environment identity | Pass | Running container reports `environment = production`. Confirmed 2026-03-06. |
+| Aggregate health | Pass | `/health/aggregate` reports `postgres = ok, redis = ok`. Confirmed 2026-03-06. |
+| Production DB reachable | Pass | `postgres = ok`. 9 Jorge tables created: contacts, conversations, leads, deals, commissions, properties, buyer_preferences, playbook_applications, roi_reports. Confirmed 2026-03-06. |
+| Canonical migration applied | Pass | Proxy verification: `postgres = ok` in health; all 9 Jorge tables exist (`contacts_count = 0`); dashboard endpoints return 200. Render postgres IP allowlist = internal only (no external psql). |
 | Redis reachable | Pass | Aggregate health reports `redis = ok`. Redis URL = `redis://red-d6d54jfpm1nc739jgnm0:6379`. |
 | Redis fallback risk accepted | Pass | Redis is healthy; fallback is not active. |
 | Anthropic billing active | Pass | `ANTHROPIC_API_KEY` is set (confirmed via Render API env var read). Active billing assumed. |
@@ -39,7 +39,7 @@
 | Default location ID configured | Pass | `GHL_LOCATION_ID = 3xt4qayAh35BlDLaUv7P` resolves to live location `Lyrio`. |
 | Calendar ID configured | Pass | `JORGE_CALENDAR_ID = RxIM6Mfeipj2dpmUG79W` confirmed in Render env vars. |
 | Webhook signature mode verified | Note | `GHL_ALLOW_UNSIGNED_WEBHOOKS = true` is set. Unsigned webhooks are accepted. This is the known and accepted production config for the current GHL integration. |
-| Deploy failure root cause identified | Pass | sha-5db0d45 Dockerfile CMD uses `&&` for alembic — if alembic fails, uvicorn never starts. New image uses `||` (fault-tolerant alembic). |
+| Deploy failure root cause identified | Pass | Root cause: shared postgres DB had EnterpriseHub tables with FK type conflict. Fix: whitelist-only `create_all` for 9 Jorge-specific tables. Deployed 2026-03-06. |
 
 ## GHL Configuration Validation
 
@@ -63,12 +63,12 @@
 | `GET /api/dashboard/metrics` | Pass | Returns system and per-bot interaction metrics. |
 | `GET /api/dashboard/handoffs` | Pass | Returns `[]` (no handoffs; expected when DB is down). |
 | `GET /api/dashboard/sms-metrics` | Pass | Returns delivery/read rate metrics (all zeros). |
-| `GET /api/dashboard/leads` | Fail | HTTP 500 — postgres down. Will pass after redeploy with DATABASE_URL fix. |
+| `GET /api/dashboard/leads` | Pass | HTTP 200 `{"leads":[],"total":0}`. Confirmed 2026-03-06. |
 | `GET /admin/conversations/{contact_id}` | Blocked | Requires a live contact ID with DB records. |
 | `GET /api/dashboard/leads/{contact_id}` | Blocked | Requires a live contact ID. |
 | `GET /api/dashboard/conversations/{contact_id}` | Blocked | Requires a live contact ID. |
-| `GET /api/dashboard/funnel` | Fail | HTTP 404 — old image running (endpoint added in Phase 7-10). Will pass after new image deploys. |
-| `GET /api/dashboard/stall-stats` | Fail | HTTP 404 — old image running. Will pass after new image deploys. |
+| `GET /api/dashboard/funnel` | Pass | HTTP 200 with stage breakdown. Confirmed 2026-03-06. |
+| `GET /api/dashboard/stall-stats` | Pass | HTTP 200. Confirmed 2026-03-06. |
 | Reassign works safely | Blocked | Requires authenticated live operator action with a real contact. |
 | Reset works safely | Blocked | Requires authenticated live operator action. |
 | Suppression/handoff reasons visible | Blocked | Requires live handoff scenarios with DB records. |
@@ -77,15 +77,15 @@
 
 | Scenario | Result | Evidence / Notes |
 |---|---|---|
-| Seller lead | Blocked | Awaiting healthy postgres. |
-| Buyer lead | Blocked | Awaiting healthy postgres. |
-| Ambiguous lead | Blocked | Awaiting healthy postgres. |
-| Bilingual handoff | Blocked | Awaiting healthy postgres. |
-| Manual takeover | Blocked | Tag exists live. Awaiting healthy postgres for canonical state recording. |
+| Seller lead | Blocked | Awaiting live GHL webhook test. Postgres healthy as of 2026-03-06. |
+| Buyer lead | Blocked | Awaiting live GHL webhook test. |
+| Ambiguous lead | Blocked | Awaiting live GHL webhook test. |
+| Bilingual handoff | Blocked | Awaiting live GHL webhook test. |
+| Manual takeover | Blocked | Tag exists live. Awaiting live GHL webhook test. |
 | Resume after takeover | Blocked | Depends on manual takeover validation. |
-| Duplicate/race safety | Blocked | Awaiting healthy postgres. |
-| Qualified outcome side effects | Blocked | Awaiting healthy postgres. |
-| Scheduling or fallback | Blocked | Awaiting healthy postgres. |
+| Duplicate/race safety | Blocked | Awaiting live GHL webhook test. |
+| Qualified outcome side effects | Blocked | Awaiting live GHL webhook test. |
+| Scheduling or fallback | Blocked | Awaiting live GHL webhook test. Booking 404 (GHL calendars.write scope) is a known open bug. |
 
 ## Compatibility Shims Accepted At Handoff
 
@@ -97,31 +97,30 @@
 
 ## Known Limitations
 
-- Currently running container (sha-0641f91) was deployed 2026-03-05 and reports `environment = staging`. This is the baseline container, not the latest code.
-- sha-5db0d45 image fails to deploy because the Dockerfile CMD uses `&&` for alembic — if alembic fails (e.g., DB not reachable), uvicorn never starts. New image (`sha-production-fix-2026-03-06`) uses `||` to handle alembic failures gracefully.
-- `DATABASE_URL` was empty before this session. Updated 2026-03-06.
-- Postgres is currently down from the app perspective. Will resolve after redeploy with the DATABASE_URL fix.
+- Shared postgres DB (`jorge_realty`) contains EnterpriseHub tables. Jorge's `Base.metadata` includes billing models (`invoices`, `subscriptions`) that would conflict. Fix: startup uses whitelist-only `create_all` limited to 9 Jorge-safe tables. Billing tables excluded.
+- GitHub Actions `deploy.yml` "Re-set all required env vars" step (PUT) is destructive — if any GitHub secret is empty, it overwrites the Render env var with an empty string. `DATABASE_URL` secret was not set, causing a crash. Fixed by removing the env var reset step from `deploy.yml` (image-only PATCH + deploy trigger now).
 - Workflow inventory cannot be automated through the current GHL API path. Must be done via GHL UI.
-- Live scenario validation is fully blocked until postgres is healthy and the new image deploys.
+- Live scenario validation blocked until live GHL webhook tests are performed with a real contact.
+- Booking 404: GHL `POST /calendars/events` returns 404 — likely needs `calendars.write` scope. Scheduling fallback (prose + human handoff) is in place. Booking itself is an open bug.
 - `jorge-realty-db` free tier expires 2026-03-24. Must upgrade plan before handoff or risk data loss.
 
 ## Post-Handoff Follow-Up Items
 
-1. Upgrade `jorge-realty-db` from free tier before 2026-03-24 expiry.
-2. Confirm new Docker image deploys and health reports `environment = production` and `postgres = ok`.
-3. Run `/api/dashboard/leads` and confirm DB-backed data returns after redeploy.
-4. Complete GHL legacy tag/field manual review — especially high-risk items.
-5. Complete GHL workflow manual inventory via GHL UI.
-6. Execute live scenario validation checklist once postgres is healthy.
-7. Validate admin/dashboard surfaces with live contact IDs.
-8. Finalize compatibility shim disposition after production verification.
+1. **URGENT**: Upgrade `jorge-realty-db` from free tier before 2026-03-24 expiry.
+2. Complete GHL legacy tag/field manual review — especially: `ai off`, `ai-off`, `agent bot`, `Bot Type`, `Buyer/Seller`, `AI Last Bot`, `AI Bot Trigger`.
+3. Complete GHL workflow manual inventory via GHL UI.
+4. Execute live scenario validation checklist (9 scenarios) using real GHL webhooks/SMS.
+5. Validate admin/dashboard surfaces with live contact IDs after first real lead comes in.
+6. Finalize compatibility shim disposition after live scenario validation.
+7. Investigate GHL `calendars.write` scope for booking 404 fix.
 
 ## Rollback / Remediation Notes
 
-- If new image fails: rollback to sha-0641f91 (last stable) using Render deploy history.
-- If postgres remains down after redeploy: verify DATABASE_URL in Render env vars, check Render postgres service status.
+- If new image fails: rollback via Render deploy history (last stable: sha-b9d4d8c / dep-d6lq8ntactks73fm2fd0).
+- If postgres goes down: verify `DATABASE_URL` in Render env vars — must be internal Render URL `postgresql://jorge_realty:...@dpg-d6d54hn5r7bs73aq6rkg-a/jorge_realty`. External (non `-a` suffix) won't work inside Render network.
 - If `jorge-realty-db` expires: upgrade plan before 2026-03-24 to avoid data loss.
 - If GHL workflows conflict with app routing: disable or rewrite before enabling full live messaging.
+- Do NOT push to `main` until `DATABASE_URL` GitHub secret is set in repo settings — `deploy.yml` now skips the env var reset step, but verifying the secret prevents future regressions if the step is re-added.
 
 ## Approval
 
