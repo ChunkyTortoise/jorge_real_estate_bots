@@ -190,7 +190,6 @@ async def test_admin_get_conversation_returns_canonical_debug_fields(client, mon
     assert data["mode_version"] == 1
     assert data["qualification_summary"] == {"price_expectation": 450000}
     assert data["canonical_cache_mode"] == "seller"
-    assert data["assignment_cache_mode"] == "buyer"
 
 
 # ---------------------------------------------------------------------------

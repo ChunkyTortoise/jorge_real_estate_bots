@@ -120,7 +120,7 @@ async def admin_reassign_bot(request: Request, _=Depends(get_admin_or_apikey)):
        or {"contact_id": "...", "mode": "seller" | "buyer" | "lead_intake" |
                                   "bilingual_handoff" | "human_handoff"}
 
-    Overwrites the assigned_bot Redis key so the next inbound message
+    Overwrites the canonical conversation:mode Redis key so the next inbound message
     is routed to the new bot immediately.
     """
     from bots.lead_bot import main as _m
@@ -223,16 +223,11 @@ async def admin_get_conversation(contact_id: str, _=Depends(get_admin_or_apikey)
     canonical = extract_canonical_view(latest)
     cache = _m._webhook_cache
     canonical_cache_mode = None
-    assignment_cache_mode = None
     if cache:
         try:
             canonical_cache_mode = await cache.get(f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}")
         except Exception:
             canonical_cache_mode = None
-        try:
-            assignment_cache_mode = await cache.get(f"assigned_bot:{contact_id}")
-        except Exception:
-            assignment_cache_mode = None
     return {
         "contact_id": contact_id,
         "mode": canonical["mode"],
@@ -249,7 +244,6 @@ async def admin_get_conversation(contact_id: str, _=Depends(get_admin_or_apikey)
         "last_outbound_at": canonical.get("last_outbound_at"),
         "temperature": canonical.get("temperature"),
         "canonical_cache_mode": canonical_cache_mode,
-        "assignment_cache_mode": assignment_cache_mode,
         "latest_bot_type": latest.bot_type,
         "latest_stage": latest.stage,
         "questions_answered": latest.questions_answered,

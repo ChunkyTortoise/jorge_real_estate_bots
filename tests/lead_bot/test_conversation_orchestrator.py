@@ -135,21 +135,6 @@ class TestResolveMode:
         assert decision.mode == ConversationMode.BUYER
         assert decision.source == "canonical_cache"
 
-    @pytest.mark.asyncio
-    async def test_assignment_cache_used_when_canonical_miss(self):
-        cache = AsyncMock()
-        canonical_key = f"{CONVERSATION_MODE_CACHE_PREFIX}c1"
-
-        async def get_side_effect(key):
-            if key == canonical_key:
-                return None
-            return "seller"
-
-        cache.get = AsyncMock(side_effect=get_side_effect)
-        msg = self._make_msg()
-        decision = await resolve_mode(payload=msg, cache=cache, ghl_client=None)
-        assert decision.mode == ConversationMode.SELLER
-        assert decision.source == "assignment_cache"
 
     @pytest.mark.asyncio
     async def test_cache_failure_continues_to_ghl(self):

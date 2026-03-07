@@ -245,7 +245,7 @@ class TestBotAssignmentExclusivity:
         Payload without explicit bot_type (GHL API returns nothing) → buyer honoured.
         """
         cache = MockCache()
-        await cache.set("assigned_bot:excl-c", "buyer", ttl=604800)
+        await cache.set("conversation:mode:excl-c", "buyer", ttl=604800)
         state, mock_seller, mock_buyer, _, _ = _make_state(cache=cache)
         # No bot_type in payload → _bot_type_explicit = False → stored assignment wins
         with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
@@ -267,7 +267,7 @@ class TestBotAssignmentExclusivity:
         Explicit bot_type=seller in payload → assignment updated, seller bot fires.
         """
         cache = MockCache()
-        await cache.set("assigned_bot:switch-c", "buyer", ttl=604800)
+        await cache.set("conversation:mode:switch-c", "buyer", ttl=604800)
         state, mock_seller, mock_buyer, _, _ = _make_state(cache=cache)
         with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -381,7 +381,7 @@ class TestNewLeadBotLocking:
     @pytest.mark.asyncio
     async def test_new_lead_then_reply_stays_on_lead_bot(self, app):
         """
-        Contact created via new-lead → assigned_bot='lead'.
+        Contact created via new-lead → conversation:mode='lead_intake'.
         Follow-up reply with no explicit bot_type, even if GHL API returns 'seller',
         must still route to lead bot (redis_cache takes precedence).
         """
@@ -849,7 +849,6 @@ class TestManualTakeoverCacheUpdate:
         """Jorge-Active tag should re-write Redis caches to HUMAN_HANDOFF."""
         cache = MockCache()
         # Pre-seed cache with a seller assignment
-        await cache.set("assigned_bot:jorge-takeover", "seller", ttl=604800)
         await cache.set("conversation:mode:jorge-takeover", "seller", ttl=604800)
 
         state, mock_seller, mock_buyer, mock_ghl, mock_lead = _make_state(cache=cache)

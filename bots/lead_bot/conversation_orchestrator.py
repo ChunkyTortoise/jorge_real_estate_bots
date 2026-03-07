@@ -98,18 +98,14 @@ async def resolve_mode(
         return RoutingDecision(mode=payload.explicit_mode, source="payload", explicit=True)
 
     if cache:
-        for key, source in (
-            (f"{CONVERSATION_MODE_CACHE_PREFIX}{payload.contact_id}", "canonical_cache"),
-            (f"assigned_bot:{payload.contact_id}", "assignment_cache"),  # LEGACY: remove after 2026-03-14 (7-day TTL expiry)
-        ):
-            try:
-                cached = await cache.get(key)
-            except Exception:
-                cached = None
-            if cached:
-                if isinstance(cached, bytes):
-                    cached = cached.decode("utf-8")
-                return RoutingDecision(mode=normalize_conversation_mode(cached), source=source)
+        try:
+            cached = await cache.get(f"{CONVERSATION_MODE_CACHE_PREFIX}{payload.contact_id}")
+        except Exception:
+            cached = None
+        if cached:
+            if isinstance(cached, bytes):
+                cached = cached.decode("utf-8")
+            return RoutingDecision(mode=normalize_conversation_mode(cached), source="canonical_cache")
 
     _ghl_contact: Optional[Dict[str, Any]] = None
     if ghl_client:
