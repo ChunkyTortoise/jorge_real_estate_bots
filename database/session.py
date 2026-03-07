@@ -43,6 +43,7 @@ def _build_engine():
         max_overflow=0,
         pool_pre_ping=True,
         pool_timeout=30,
+        pool_recycle=3600,
     )
 
 

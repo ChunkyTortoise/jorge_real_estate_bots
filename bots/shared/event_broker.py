@@ -277,9 +277,18 @@ class EventBroker:
                 "payload": event.payload
             }
 
-            with open(fallback_file, "a") as f:
-                f.write(json.dumps(event_data) + "\n")
+            import os
+            if os.path.getsize(fallback_file) > 10_485_760 if os.path.exists(fallback_file) else False:
+                logger.warning("Fallback event file exceeds 10MB, skipping")
+                return
 
+            line = json.dumps(event_data) + "\n"
+
+            def _write():
+                with open(fallback_file, "a") as f:
+                    f.write(line)
+
+            await asyncio.to_thread(_write)
             logger.warning(f"Event {event.event_type} logged to fallback file")
 
         except Exception as e:

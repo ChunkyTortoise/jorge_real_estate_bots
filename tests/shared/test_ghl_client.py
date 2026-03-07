@@ -571,9 +571,10 @@ async def test_health_check_failure(ghl_client, mock_httpx_client):
     assert "checked_at" in result
 
 
-def test_check_health_sync_success(ghl_client):
-    """Test synchronous health check success."""
-    with patch("httpx.Client") as mock_client_class:
+@pytest.mark.asyncio
+async def test_check_health_sync_success(ghl_client):
+    """Test health check (now async via asyncio.to_thread)."""
+    with patch("bots.shared.ghl_client.httpx.Client") as mock_client_class:
         mock_client = MagicMock()
         mock_response = Mock()
         mock_response.status_code = 200
@@ -582,7 +583,7 @@ def test_check_health_sync_success(ghl_client):
         mock_client.__exit__.return_value = False
         mock_client_class.return_value = mock_client
 
-        result = ghl_client.check_health_sync()
+        result = await ghl_client.check_health_sync()
 
         assert result["healthy"] is True
         assert result["status_code"] == 200

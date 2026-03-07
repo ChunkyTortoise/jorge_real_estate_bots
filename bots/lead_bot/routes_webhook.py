@@ -382,6 +382,13 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 )
                 deferred_actions = [a for a in result.actions_taken if a.get("type") in ("add_tag", "remove_tag", "trigger_workflow")]
                 post_send_actions = [a for a in result.actions_taken if a.get("type") not in ("add_tag", "remove_tag", "trigger_workflow")]
+                if result.qualification_complete:
+                    deferred_actions.append({"type": "add_tag", "tag": "jorge-qualified-seller"})
+                    temp = result.seller_temperature or "warm"
+                    deferred_actions.append({"type": "add_tag", "tag": f"jorge-temp-{temp}"})
+                    for stale_temp in ("hot", "warm", "cold"):
+                        if stale_temp != temp:
+                            deferred_actions.append({"type": "remove_tag", "tag": f"jorge-temp-{stale_temp}"})
                 handoff_reason = None
                 if any(a.get("tag") == "needs-human-review" for a in result.actions_taken):
                     handoff_reason = HandoffReason.NEEDS_HUMAN_REVIEW.value
@@ -440,6 +447,13 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 )
                 deferred_actions = [a for a in result.actions_taken if a.get("type") in ("add_tag", "remove_tag", "trigger_workflow")]
                 post_send_actions = [a for a in result.actions_taken if a.get("type") not in ("add_tag", "remove_tag", "trigger_workflow")]
+                if result.qualification_complete:
+                    deferred_actions.append({"type": "add_tag", "tag": "jorge-qualified-buyer"})
+                    temp = result.buyer_temperature or "warm"
+                    deferred_actions.append({"type": "add_tag", "tag": f"jorge-temp-{temp}"})
+                    for stale_temp in ("hot", "warm", "cold"):
+                        if stale_temp != temp:
+                            deferred_actions.append({"type": "remove_tag", "tag": f"jorge-temp-{stale_temp}"})
                 handoff_reason = None
                 if any(a.get("tag") == "needs-human-review" for a in result.actions_taken):
                     handoff_reason = HandoffReason.NEEDS_HUMAN_REVIEW.value

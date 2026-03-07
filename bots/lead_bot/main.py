@@ -19,7 +19,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import or_, text
 
 from bots.buyer_bot.buyer_bot import JorgeBuyerBot
@@ -211,6 +213,11 @@ async def lifespan(app: FastAPI):
         import traceback
         logger.error(f"DB table creation failed: {e}\n{traceback.format_exc()}")
 
+    if not settings.ghl_webhook_public_key and not settings.ghl_webhook_secret:
+        logger.warning(
+            "Webhook signature verification DISABLED — set GHL_WEBHOOK_SECRET or GHL_WEBHOOK_PUBLIC_KEY to enable"
+        )
+
     lead_analyzer = LeadAnalyzer()
     _webhook_cache = get_cache_service()
     logger.info("Webhook cache initialized")
@@ -288,6 +295,27 @@ app.add_middleware(
 # IP-based rate limit middleware (adds X-RateLimit-* headers, returns 429 when exceeded)
 from bots.shared.rate_limit_middleware import RateLimitMiddleware  # noqa: E402
 app.add_middleware(RateLimitMiddleware)
+
+
+# S2: Global exception handlers — strip internal details from 500 responses
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(status_code=500, content={"error": "internal_error"})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": "validation_error"})
+
+
+# S4: Request body size limit (1MB)
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > 1_048_576:
+        return JSONResponse(status_code=413, content={"error": "payload_too_large"})
+    return await call_next(request)
 
 
 # Middleware: Enhanced performance monitoring for 5-minute rule

@@ -226,16 +226,11 @@ class RedisCache(AbstractCache):
             data = await self.redis.get(key)
             if not data:
                 return None
-            # Try JSON first; fall back to pickle for legacy values
             try:
                 return _cache_loads(data)
             except (json.JSONDecodeError, UnicodeDecodeError):
-                import pickle as _pickle
-                logger.warning(f"Legacy pickle value for key {key}, re-saving as JSON")
-                value = _pickle.loads(data)
-                # Re-save in JSON format so future reads are safe
-                await self.set(key, value)
-                return value
+                logger.warning(f"Non-JSON cache value for key {key}, discarding")
+                return None
         except Exception as e:
             logger.error(f"Redis get error for key {key}: {e}")
             return None

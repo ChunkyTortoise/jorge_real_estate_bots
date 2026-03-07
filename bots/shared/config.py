@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     app_name: str = "Jorge's Real Estate AI Bots"
     version: str = "1.0.0"
     debug: bool = False
-    cors_origins: list[str] = ["http://localhost:8501", "http://localhost:3000"]
+    cors_origins: list[str] = ["https://jorge-realty-ai-xxdf.onrender.com", "http://localhost:8501", "http://localhost:3000"]
 
     # ========== SECURITY ==========
     jwt_secret: str = ""

@@ -15,6 +15,7 @@ Features:
 - Batch operations
 - Health monitoring
 """
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -32,6 +33,7 @@ def _is_retryable_ghl_error(exc: BaseException) -> bool:
 
 from bots.shared.config import settings
 from bots.shared.event_broker import event_broker
+from bots.shared.ghl_constants import GHL_FIELD_MAP
 from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
@@ -286,8 +288,9 @@ class GHLClient:
         Returns:
             True if successful, False otherwise
         """
+        resolved_key = GHL_FIELD_MAP.get(field_key, field_key)
         result = await self.update_contact(contact_id, {
-            "customField": {field_key: field_value}
+            "customField": {resolved_key: field_value}
         })
         return result.get("success", False)
 
@@ -689,9 +692,9 @@ class GHLClient:
                 "checked_at": datetime.now(timezone.utc).isoformat()
             }
 
-    def check_health_sync(self) -> Dict:
+    def _check_health_sync_impl(self) -> Dict:
         """
-        Synchronous health check (for non-async contexts).
+        Synchronous health check implementation (runs in a thread).
 
         Returns:
             Health status
@@ -716,6 +719,15 @@ class GHLClient:
                 "error": str(e),
                 "checked_at": datetime.now(timezone.utc).isoformat()
             }
+
+    async def check_health_sync(self) -> Dict:
+        """
+        Non-blocking health check that delegates to a thread.
+
+        Returns:
+            Health status
+        """
+        return await asyncio.to_thread(self._check_health_sync_impl)
 
     async def close(self):
         """Close the httpx client."""

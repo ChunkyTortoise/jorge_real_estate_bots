@@ -53,6 +53,22 @@ async def test_memory_cache_set_and_get():
     assert result == {"score": 99}
 
 
+async def test_redis_cache_returns_none_on_non_json_bytes():
+    """RedisCache.get() returns None (not pickle) when cache has non-JSON binary data."""
+    from unittest.mock import AsyncMock
+    from bots.shared.cache_service import RedisCache
+
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = b"\x80\x04\x95"  # raw pickle header bytes
+
+    cache = RedisCache.__new__(RedisCache)
+    cache.redis = mock_redis
+    cache.enabled = True
+
+    result = await cache.get("test-key")
+    assert result is None
+
+
 async def test_memory_cache_setnx_only_first_wins():
     cache = MemoryCache()
     first = await cache.setnx("k", "first", ttl=60)

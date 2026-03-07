@@ -26,7 +26,7 @@ from bots.shared.conversation_contract import (
 from bots.shared.logger import get_logger
 from database.models import ConversationModel
 from database.session import AsyncSessionFactory
-from sqlalchemy import select
+from sqlalchemy import select, text as _text
 
 logger = get_logger(__name__)
 
@@ -340,3 +340,30 @@ async def admin_calendar_debug(_=Depends(get_admin_or_apikey)):
         result["write_error"] = str(exc)
 
     return result
+
+
+@router.get("/health/schema-check")
+async def schema_check(x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")):
+    """Check that required DB tables and columns exist."""
+    if not x_admin_key or not hmac.compare_digest(x_admin_key, settings.admin_api_key):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    required_tables = [
+        "contacts", "conversations", "leads", "deals", "commissions",
+        "properties", "buyer_preferences", "playbook_applications", "roi_reports",
+    ]
+    results = {}
+    try:
+        async with AsyncSessionFactory() as session:
+            for table in required_tables:
+                row = await session.execute(
+                    _text("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = :t"),
+                    {"t": table},
+                )
+                exists = row.scalar() > 0
+                results[table] = {"exists": exists}
+    except Exception as e:
+        return {"status": "error", "detail": str(e), "tables": results}
+
+    all_ok = all(v["exists"] for v in results.values())
+    return {"status": "ok" if all_ok else "degraded", "tables": results}
