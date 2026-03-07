@@ -252,3 +252,93 @@ async def test_get_stats_empty(
     assert stats["total_attempts"] == 0
     assert stats["replies"] == 0
     assert stats["reply_rate"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# T4: Opt-out keyword detection, recording, and lookup
+# ---------------------------------------------------------------------------
+
+class TestOptOut:
+    """T4: is_opt_out_message, record_opt_out, is_opted_out."""
+
+    # -- is_opt_out_message --------------------------------------------------
+
+    @pytest.mark.parametrize("text", ["stop", "STOP", "Stop", "unsubscribe", "opt out", "optout", "cancel", "quit"])
+    def test_opt_out_keywords_return_true(self, text: str, service: StallReengagementService) -> None:
+        assert service.is_opt_out_message(text) is True
+
+    @pytest.mark.parametrize("text", ["hello", "yes", "no thanks", "stop it please", "stopping by"])
+    def test_non_opt_out_returns_false(self, text: str, service: StallReengagementService) -> None:
+        assert service.is_opt_out_message(text) is False
+
+    def test_opt_out_strips_whitespace(self, service: StallReengagementService) -> None:
+        assert service.is_opt_out_message("  stop  ") is True
+
+    # -- record_opt_out ------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_record_opt_out_sets_redis_key(
+        self, service: StallReengagementService, mock_redis: AsyncMock
+    ) -> None:
+        await service.record_opt_out("contact-99")
+
+        mock_redis.set.assert_awaited_once()
+        args = mock_redis.set.call_args
+        assert args.args[0] == "stall_optout:contact-99"
+        assert args.args[1] == "1"
+        assert args.kwargs["ex"] == 86400 * 365
+
+    # -- is_opted_out --------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_is_opted_out_true_for_string_one(
+        self, service: StallReengagementService, mock_redis: AsyncMock
+    ) -> None:
+        mock_redis.get.return_value = "1"
+        assert await service.is_opted_out("contact-99") is True
+
+    @pytest.mark.asyncio
+    async def test_is_opted_out_true_for_bytes_one(
+        self, service: StallReengagementService, mock_redis: AsyncMock
+    ) -> None:
+        mock_redis.get.return_value = b"1"
+        assert await service.is_opted_out("contact-99") is True
+
+    @pytest.mark.asyncio
+    async def test_is_opted_out_false_for_none(
+        self, service: StallReengagementService, mock_redis: AsyncMock
+    ) -> None:
+        mock_redis.get.return_value = None
+        assert await service.is_opted_out("contact-99") is False
+
+    @pytest.mark.asyncio
+    async def test_is_opted_out_false_for_other_value(
+        self, service: StallReengagementService, mock_redis: AsyncMock
+    ) -> None:
+        mock_redis.get.return_value = '{"attempts": 1}'
+        assert await service.is_opted_out("contact-99") is False
+
+    # -- opted-out contact skipped by trigger_reengagement -------------------
+
+    @pytest.mark.asyncio
+    async def test_trigger_skips_opted_out_contact(
+        self, service: StallReengagementService, mock_redis: AsyncMock, mock_ghl: AsyncMock
+    ) -> None:
+        """trigger_reengagement returns False without sending SMS when opted out."""
+        # get() for opt-out key returns "1"; get() for reengagement data returns None
+        async def _get(key):
+            if "stall_optout" in key:
+                return "1"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=_get)
+
+        result = await service.trigger_reengagement(
+            contact_id="opted-out-contact",
+            stage="Q1",
+            name="Jane",
+            location_id="loc1",
+        )
+
+        assert result is False
+        mock_ghl.send_message.assert_not_awaited()

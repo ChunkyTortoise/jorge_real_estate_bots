@@ -5,6 +5,7 @@ Tests multi-touch attribution models, funnel event recording,
 journey tracking, stage counting, and report generation.
 """
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -339,3 +340,128 @@ class TestGenerateFunnelReport:
     def test_report_cost_per_conversion_is_none(self, tracker_with_data):
         report = generate_funnel_report(tracker_with_data)
         assert report.cost_per_conversion is None
+
+
+# -- T7: FunnelTracker with Redis ------------------------------------------
+
+class TestFunnelTrackerRedis:
+    """T7: record_event_async and get_journey_async with Redis persistence."""
+
+    @pytest.fixture
+    def mock_redis(self):
+        redis = MagicMock()
+        redis.zadd = AsyncMock()
+        redis.expire = AsyncMock()
+        redis.zrangebyscore = AsyncMock(return_value=[])
+        return redis
+
+    @pytest.fixture
+    def tracker(self, mock_redis):
+        return FunnelTracker(redis_client=mock_redis)
+
+    @pytest.mark.asyncio
+    async def test_record_event_async_persists_to_redis(self, tracker, mock_redis):
+        """record_event_async calls zadd and expire on the Redis client."""
+        ev = _event(contact_id="c1", stage=STAGE_AWARENESS)
+        await tracker.record_event_async(ev)
+
+        mock_redis.zadd.assert_awaited_once()
+        mock_redis.expire.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_record_event_async_uses_correct_key(self, tracker, mock_redis):
+        ev = _event(contact_id="c-redis-1", stage=STAGE_INTEREST)
+        await tracker.record_event_async(ev)
+
+        key = mock_redis.zadd.call_args.args[0]
+        assert key == "funnel:events:c-redis-1"
+
+    @pytest.mark.asyncio
+    async def test_record_event_async_score_is_timestamp(self, tracker, mock_redis):
+        """The zadd score must equal the event's Unix timestamp."""
+        ev = _event(contact_id="c1", stage=STAGE_AWARENESS, offset_hours=0)
+        await tracker.record_event_async(ev)
+
+        mapping = mock_redis.zadd.call_args.args[1]
+        member, score = next(iter(mapping.items()))
+        assert score == pytest.approx(ev.timestamp.timestamp(), rel=1e-3)
+
+    @pytest.mark.asyncio
+    async def test_record_event_async_member_is_valid_json(self, tracker, mock_redis):
+        """The zadd member must be deserializable JSON containing stage and bot_name."""
+        import json as _json
+        ev = _event(contact_id="c1", stage=STAGE_CONSIDERATION, bot_name="buyer_bot")
+        await tracker.record_event_async(ev)
+
+        mapping = mock_redis.zadd.call_args.args[1]
+        member = next(iter(mapping))
+        data = _json.loads(member)
+        assert data["stage"] == STAGE_CONSIDERATION
+        assert data["bot_name"] == "buyer_bot"
+        assert data["contact_id"] == "c1"
+
+    @pytest.mark.asyncio
+    async def test_record_event_async_sets_30_day_ttl(self, tracker, mock_redis):
+        """expire must be called with the 30-day TTL constant."""
+        ev = _event()
+        await tracker.record_event_async(ev)
+
+        _, ttl = mock_redis.expire.call_args.args
+        assert ttl == FunnelTracker._REDIS_TTL  # 2_592_000 (30 days)
+
+    @pytest.mark.asyncio
+    async def test_record_event_async_also_stores_in_memory(self, tracker, mock_redis):
+        """In-memory store is updated regardless of Redis."""
+        ev = _event(contact_id="c1")
+        await tracker.record_event_async(ev)
+
+        assert len(tracker.events) == 1
+        assert "c1" in tracker.journeys
+
+    @pytest.mark.asyncio
+    async def test_get_journey_async_reads_from_redis(self, tracker, mock_redis):
+        """get_journey_async uses Redis data when available."""
+        import json as _json
+        ev = _event(contact_id="c1", stage=STAGE_AWARENESS)
+        serialized = FunnelTracker._serialize_event(ev)
+        mock_redis.zrangebyscore = AsyncMock(return_value=[serialized])
+
+        journey = await tracker.get_journey_async("c1")
+
+        assert len(journey) == 1
+        assert journey[0].stage == STAGE_AWARENESS
+        assert journey[0].contact_id == "c1"
+
+    @pytest.mark.asyncio
+    async def test_get_journey_async_falls_back_to_memory_on_empty_redis(self, tracker, mock_redis):
+        """Falls back to in-memory store when Redis returns no results."""
+        ev = _event(contact_id="c1", stage=STAGE_INTEREST)
+        tracker.record_event(ev)
+        mock_redis.zrangebyscore = AsyncMock(return_value=[])
+
+        journey = await tracker.get_journey_async("c1")
+
+        assert len(journey) == 1
+        assert journey[0].stage == STAGE_INTEREST
+
+    @pytest.mark.asyncio
+    async def test_get_journey_async_falls_back_on_redis_error(self, tracker, mock_redis):
+        """Falls back to in-memory store when Redis raises an exception."""
+        ev = _event(contact_id="c1", stage=STAGE_CONSIDERATION)
+        tracker.record_event(ev)
+        mock_redis.zrangebyscore = AsyncMock(side_effect=ConnectionError("redis down"))
+
+        journey = await tracker.get_journey_async("c1")
+
+        assert len(journey) == 1
+        assert journey[0].stage == STAGE_CONSIDERATION
+
+    @pytest.mark.asyncio
+    async def test_record_event_async_no_redis(self):
+        """record_event_async without Redis skips persistence (no error)."""
+        tracker_no_redis = FunnelTracker(redis_client=None)
+        ev = _event(contact_id="c1")
+        await tracker_no_redis.record_event_async(ev)
+        assert len(tracker_no_redis.events) == 1
+
+

@@ -614,5 +614,120 @@ async def test_client_close(ghl_client):
     assert ghl_client._client is None
 
 
+# ---------------------------------------------------------------------------
+# T5: Retry-After header handling in _make_request
+# ---------------------------------------------------------------------------
+
+def _make_429_response(retry_after: str | None = None):
+    """Build a mock httpx response with status 429."""
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+    mock_response.content = b"rate limited"
+    headers = {}
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    mock_response.headers = headers
+    return mock_response
+
+
+def _make_200_response():
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.content = b'{"ok": true}'
+    mock_response.json = MagicMock(return_value={"ok": True})
+    mock_response.raise_for_status = MagicMock()
+    return mock_response
+
+
+class TestRetryAfterHeader:
+    """T5: _make_request respects Retry-After header on 429 responses."""
+
+    def _client_with_sequence(self, responses):
+        """Returns a mock HTTP client that yields responses in order."""
+        call_count = [0]
+        mock_req_obj = MagicMock()
+
+        async def _request(**kwargs):
+            resp = responses[call_count[0]]
+            call_count[0] += 1
+            if resp.status_code != 200:
+                resp.raise_for_status = MagicMock(
+                    side_effect=httpx.HTTPStatusError(
+                        "error", request=mock_req_obj, response=resp
+                    )
+                )
+                resp.raise_for_status()
+            return resp
+
+        mock_http = AsyncMock()
+        mock_http.request = _request
+        return mock_http
+
+    @pytest.mark.asyncio
+    async def test_retry_after_integer_sleeps_that_many_seconds(self, mock_settings):
+        """Retry-After: 5 → asyncio.sleep(5)."""
+        client = GHLClient(api_key="k", location_id="l")
+        client._client = self._client_with_sequence([
+            _make_429_response(retry_after="5"),
+            _make_200_response(),
+        ])
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await client._make_request("GET", "contacts/test")
+
+        mock_sleep.assert_any_call(5)
+
+    @pytest.mark.asyncio
+    async def test_retry_after_large_value_capped_at_60(self, mock_settings):
+        """Retry-After: 120 → asyncio.sleep(60) (cap at 60)."""
+        client = GHLClient(api_key="k", location_id="l")
+        client._client = self._client_with_sequence([
+            _make_429_response(retry_after="120"),
+            _make_200_response(),
+        ])
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await client._make_request("GET", "contacts/test")
+
+        mock_sleep.assert_any_call(60)
+
+    @pytest.mark.asyncio
+    async def test_retry_after_non_integer_handled_gracefully(self, mock_settings):
+        """Retry-After: abc (non-integer) → ValueError caught, no sleep for Retry-After."""
+        client = GHLClient(api_key="k", location_id="l")
+        client._client = self._client_with_sequence([
+            _make_429_response(retry_after="abc"),
+            _make_200_response(),
+        ])
+
+        # Should not raise; the ValueError from int("abc") is swallowed
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await client._make_request("GET", "contacts/test")
+
+        # tenacity exponential backoff sleep may be called, but not with a specific value
+        # The key assertion: no unhandled exception
+        assert result.get("success") is True
+
+    @pytest.mark.asyncio
+    async def test_no_retry_after_header_no_sleep(self, mock_settings):
+        """429 without Retry-After header → asyncio.sleep not called for rate-limit wait."""
+        client = GHLClient(api_key="k", location_id="l")
+        client._client = self._client_with_sequence([
+            _make_429_response(retry_after=None),
+            _make_200_response(),
+        ])
+
+        sleep_calls = []
+
+        async def _track_sleep(delay):
+            sleep_calls.append(delay)
+
+        with patch("asyncio.sleep", side_effect=_track_sleep):
+            await client._make_request("GET", "contacts/test")
+
+        # Only tenacity backoff sleeps may occur — verify none match 5 or 60
+        assert not any(s in (5, 60) for s in sleep_calls)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=bots.shared.ghl_client", "--cov-report=term-missing"])

@@ -235,3 +235,117 @@ class TestCheckThreshold:
     ])
     def test_operator(self, value, op, threshold, expected):
         assert AlertingService._check_threshold(value, op, threshold) == expected
+
+
+# ---------------------------------------------------------------------------
+# T1: push_alert_outbound webhook delivery
+# ---------------------------------------------------------------------------
+
+import logging
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from bots.shared.alerting_service import push_alert_outbound
+
+
+class TestPushAlertOutbound:
+    """T1: push_alert_outbound POSTs a Slack-compatible payload to the webhook URL."""
+
+    def _make_client_ctx(self, post_side_effect=None):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(
+            return_value=mock_resp if post_side_effect is None else None,
+            side_effect=post_side_effect,
+        )
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        return mock_client
+
+    @pytest.mark.asyncio
+    async def test_posts_to_webhook_url(self):
+        """Happy path: POST is sent to the provided webhook URL."""
+        alert = {
+            "rule_name": "high_error_rate",
+            "metric": "error_rate",
+            "value": 0.05,
+            "operator": "gt",
+            "threshold": 0.01,
+            "severity": "critical",
+        }
+        mock_client = self._make_client_ctx()
+
+        with patch("bots.shared.alerting_service.httpx.AsyncClient", return_value=mock_client):
+            await push_alert_outbound(alert, "https://hooks.slack.com/test")
+
+        mock_client.post.assert_awaited_once()
+        assert mock_client.post.call_args.args[0] == "https://hooks.slack.com/test"
+
+    @pytest.mark.asyncio
+    async def test_payload_contains_rule_name_and_severity(self):
+        alert = {
+            "rule_name": "high_error_rate",
+            "metric": "error_rate",
+            "value": 0.05,
+            "operator": "gt",
+            "threshold": 0.01,
+            "severity": "critical",
+        }
+        mock_client = self._make_client_ctx()
+
+        with patch("bots.shared.alerting_service.httpx.AsyncClient", return_value=mock_client):
+            await push_alert_outbound(alert, "https://hooks.slack.com/test")
+
+        payload = mock_client.post.call_args.kwargs["json"]
+        assert "high_error_rate" in payload["text"]
+        assert "critical" in payload["text"]
+        assert "error_rate" in payload["text"]
+
+    @pytest.mark.asyncio
+    async def test_critical_uses_red_circle_emoji(self):
+        alert = {
+            "rule_name": "r",
+            "metric": "m",
+            "value": 1.0,
+            "operator": "gt",
+            "threshold": 0.0,
+            "severity": "critical",
+        }
+        mock_client = self._make_client_ctx()
+        with patch("bots.shared.alerting_service.httpx.AsyncClient", return_value=mock_client):
+            await push_alert_outbound(alert, "https://x")
+        assert ":red_circle:" in mock_client.post.call_args.kwargs["json"]["text"]
+
+    @pytest.mark.asyncio
+    async def test_warning_uses_warning_emoji(self):
+        alert = {
+            "rule_name": "r",
+            "metric": "m",
+            "value": 1.0,
+            "operator": "gt",
+            "threshold": 0.0,
+            "severity": "warning",
+        }
+        mock_client = self._make_client_ctx()
+        with patch("bots.shared.alerting_service.httpx.AsyncClient", return_value=mock_client):
+            await push_alert_outbound(alert, "https://x")
+        assert ":warning:" in mock_client.post.call_args.kwargs["json"]["text"]
+
+    @pytest.mark.asyncio
+    async def test_delivery_failure_logs_warning_not_raises(self, caplog):
+        """Exception from httpx is caught and logged — function must not raise."""
+        alert = {
+            "rule_name": "test",
+            "metric": "m",
+            "value": 1.0,
+            "operator": "gt",
+            "threshold": 0.0,
+            "severity": "info",
+        }
+        mock_client = self._make_client_ctx(post_side_effect=Exception("network down"))
+
+        with patch("bots.shared.alerting_service.httpx.AsyncClient", return_value=mock_client):
+            with caplog.at_level(logging.WARNING, logger="bots.shared.alerting_service"):
+                await push_alert_outbound(alert, "https://hooks.slack.com/test")
+
+        assert any("Alert webhook delivery failed" in r.message for r in caplog.records)
