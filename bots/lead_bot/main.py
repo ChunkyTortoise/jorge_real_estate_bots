@@ -177,6 +177,15 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"5-Minute Response Timeout: {settings.lead_response_timeout_seconds}s")
 
+    # Fail fast on missing critical env vars
+    _required = ["anthropic_api_key", "ghl_api_key", "ghl_location_id", "redis_url", "admin_api_key"]
+    _missing = [v.upper() for v in _required if not getattr(settings, v, None)]
+    if _missing:
+        msg = f"Missing required env vars: {_missing}"
+        logger.error(msg)
+        if settings.environment == "production":
+            raise RuntimeError(msg)
+
     # Initialise Sentry error tracking if DSN is configured
     if settings.sentry_dsn:
         try:

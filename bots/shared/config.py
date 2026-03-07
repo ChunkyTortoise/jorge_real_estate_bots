@@ -83,8 +83,8 @@ class Settings(BaseSettings):
     rate_limit_per_hour: int = 1000
 
     # ========== WEBHOOK CONFIGURATION ==========
-    base_url: str = "http://localhost:8000"
-    seller_bot_url: str = "http://localhost:8002"
+    base_url: str = "https://jorge-realty-ai-xxdf.onrender.com"
+    seller_bot_url: str = "https://jorge-realty-ai-xxdf.onrender.com"
 
     # ========== SERVICE-TO-SERVICE AUTH ==========
     # Static key used by internal services (dashboard → seller bot).

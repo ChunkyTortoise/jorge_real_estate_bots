@@ -151,6 +151,15 @@ class GHLClient:
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code in (429, 502, 503):
+                if e.response.status_code == 429:
+                    retry_after = e.response.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            wait_secs = min(int(retry_after), 60)
+                            logger.warning(f"GHL rate limited — sleeping {wait_secs}s (Retry-After)")
+                            await asyncio.sleep(wait_secs)
+                        except ValueError:
+                            pass
                 logger.warning(f"GHL retryable error {e.response.status_code}, will retry: {e}")
                 raise  # Let tenacity retry
             logger.error(f"GHL API HTTP error: {e.response.status_code} - {e}")

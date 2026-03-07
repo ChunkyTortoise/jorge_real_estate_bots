@@ -20,6 +20,8 @@ from bots.shared.conversation_contract import (
     mode_to_assignment,
     normalize_conversation_mode,
 )
+import redis.asyncio as _redis_lib
+
 from bots.shared.funnel_attribution import FunnelEvent, FunnelTracker
 from bots.shared.logger import get_logger
 from bots.shared.response_filter import sanitize_bot_response
@@ -32,8 +34,8 @@ from database.repository import (
 
 logger = get_logger(__name__)
 
-# Module-level funnel tracker instance (in-memory, shared across requests)
-_funnel_tracker = FunnelTracker()
+# Funnel tracker backed by Redis for cross-restart durability
+_funnel_tracker = FunnelTracker(redis_client=_redis_lib.from_url(settings.redis_url))
 
 router = APIRouter()
 
@@ -196,7 +198,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
 
         # Funnel: AWARENESS — new message received for this contact
         try:
-            _funnel_tracker.record_event(FunnelEvent(
+            await _funnel_tracker.record_event_async(FunnelEvent(
                 contact_id=contact_id,
                 stage="awareness",
                 bot_name="webhook",
@@ -297,7 +299,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
 
             # Funnel: INTEREST — bot assigned to contact
             try:
-                _funnel_tracker.record_event(FunnelEvent(
+                await _funnel_tracker.record_event_async(FunnelEvent(
                     contact_id=contact_id,
                     stage="interest",
                     bot_name=mode.value,
@@ -410,17 +412,17 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 # Funnel: CONSIDERATION (Q2+), INTENT (qualified), CONVERSION (appointment)
                 try:
                     if result.questions_answered >= 2:
-                        _funnel_tracker.record_event(FunnelEvent(
+                        await _funnel_tracker.record_event_async(FunnelEvent(
                             contact_id=contact_id, stage="consideration",
                             bot_name="seller", timestamp=datetime.now(timezone.utc),
                         ))
                     if result.qualification_complete:
-                        _funnel_tracker.record_event(FunnelEvent(
+                        await _funnel_tracker.record_event_async(FunnelEvent(
                             contact_id=contact_id, stage="intent",
                             bot_name="seller", timestamp=datetime.now(timezone.utc),
                         ))
                     if "Appointment booked" in (result.next_steps or ""):
-                        _funnel_tracker.record_event(FunnelEvent(
+                        await _funnel_tracker.record_event_async(FunnelEvent(
                             contact_id=contact_id, stage="purchase",
                             bot_name="seller", timestamp=datetime.now(timezone.utc),
                         ))
@@ -478,12 +480,12 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 # Funnel: CONSIDERATION (Q2+), INTENT (qualified), CONVERSION (appointment)
                 try:
                     if result.questions_answered >= 2:
-                        _funnel_tracker.record_event(FunnelEvent(
+                        await _funnel_tracker.record_event_async(FunnelEvent(
                             contact_id=contact_id, stage="consideration",
                             bot_name="buyer", timestamp=datetime.now(timezone.utc),
                         ))
                     if result.qualification_complete:
-                        _funnel_tracker.record_event(FunnelEvent(
+                        await _funnel_tracker.record_event_async(FunnelEvent(
                             contact_id=contact_id, stage="intent",
                             bot_name="buyer", timestamp=datetime.now(timezone.utc),
                         ))
