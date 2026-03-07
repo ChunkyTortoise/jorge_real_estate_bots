@@ -60,7 +60,7 @@ jobs:
         run: python -m pip check
 
       - name: Run tests
-        run: pytest -v --tb=short
+        run: pytest -v --tb=short --cov=bots --cov-report=term-missing
 
   integration:
     name: Integration Tests
