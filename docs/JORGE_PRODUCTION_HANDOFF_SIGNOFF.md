@@ -8,10 +8,10 @@
 
 - Date: 2026-03-07
 - Tester: Codex / Cayman Roden
-- Deploy version / commit: `55fdea4` (2026-03-07) — **all T1-T8 tech debt complete; N1+N2+B2+B3 done. 2 blockers remain (B1, B4) — both require Jorge Salas.**
-- Previous: `2d1270d` (fix: unique contact IDs in webhook security tests)
+- Deploy version / commit: `604fea2` (2026-03-07) — **production hardening complete. ADMIN_API_KEY rotated. LOG_FORMAT=json active. 2 blockers remain (B1, B4) — both require Jorge Salas.**
+- Previous: `55fdea4` (fix: B3 suppression bug)
 - Environment: `https://jorge-realty-ai-xxdf.onrender.com`
-- Handoff decision: `not ready`
+- Handoff decision: `not ready` — pending B1 + B4 (Jorge Salas)
 - Repo validation baseline: `1717 passed, 21 skipped` (2026-03-07, b0ef6d9)
 
 ## Evidence Sources

@@ -39,7 +39,7 @@ from bots.shared.cache_service import get_cache_service
 from bots.shared.config import settings
 from bots.shared.event_broker import event_broker
 from bots.shared.ghl_client import GHLClient
-from bots.shared.logger import get_logger, set_contact_id, set_correlation_id
+from bots.shared.logger import get_logger, set_correlation_id
 
 logger = get_logger(__name__)
 
