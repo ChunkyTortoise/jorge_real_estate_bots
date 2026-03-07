@@ -16,6 +16,8 @@ Features:
 - Health monitoring
 """
 import asyncio
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -37,6 +39,49 @@ def _is_retryable_ghl_error(exc: BaseException) -> bool:
     return False
 
 logger = get_logger(__name__)
+
+
+class GHLCircuitBreaker:
+    """Thread-safe circuit breaker: opens after N failures within a time window."""
+
+    def __init__(self, failure_threshold: int = 5, failure_window: float = 60.0, open_duration: float = 30.0):
+        self.failure_threshold = failure_threshold
+        self.failure_window = failure_window
+        self.open_duration = open_duration
+        self._lock = threading.Lock()
+        self._failures: list[float] = []
+        self._opened_at: float | None = None
+
+    def is_open(self) -> bool:
+        with self._lock:
+            if self._opened_at is None:
+                return False
+            if time.monotonic() - self._opened_at >= self.open_duration:
+                self._opened_at = None
+                self._failures.clear()
+                return False
+            return True
+
+    def record_failure(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            cutoff = now - self.failure_window
+            self._failures = [t for t in self._failures if t > cutoff]
+            self._failures.append(now)
+            if len(self._failures) >= self.failure_threshold:
+                self._opened_at = now
+                logger.warning(
+                    f"GHL circuit breaker opened after {len(self._failures)} failures in {self.failure_window}s"
+                )
+
+    def record_success(self) -> None:
+        with self._lock:
+            self._failures.clear()
+            self._opened_at = None
+
+
+# Module-level circuit breaker shared across all GHLClient instances
+_ghl_circuit_breaker = GHLCircuitBreaker(failure_threshold=5, failure_window=60.0, open_duration=30.0)
 
 
 class GHLClient:
@@ -118,7 +163,7 @@ class GHLClient:
         params: Optional[Dict] = None
     ) -> Dict:
         """
-        Make async API request to GHL with retry logic.
+        Make async API request to GHL with retry logic and circuit breaker.
 
         Args:
             method: HTTP method (GET, POST, PUT, DELETE)
@@ -129,6 +174,10 @@ class GHLClient:
         Returns:
             API response as dictionary
         """
+        if _ghl_circuit_breaker.is_open():
+            logger.warning(f"GHL circuit breaker open, rejecting {method} {endpoint}")
+            return {"success": False, "error": "circuit_open"}
+
         url = f"{self.BASE_URL}/{endpoint}"
         client = self._get_client()
 
@@ -143,6 +192,7 @@ class GHLClient:
 
             response.raise_for_status()
 
+            _ghl_circuit_breaker.record_success()
             return {
                 "success": True,
                 "data": response.json() if response.content else {},
@@ -151,6 +201,7 @@ class GHLClient:
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code in (429, 502, 503):
+                _ghl_circuit_breaker.record_failure()
                 if e.response.status_code == 429:
                     retry_after = e.response.headers.get("Retry-After")
                     if retry_after:
@@ -170,9 +221,11 @@ class GHLClient:
                 "details": e.response.json() if e.response.content else {}
             }
         except (httpx.TimeoutException, httpx.NetworkError) as e:
+            _ghl_circuit_breaker.record_failure()
             logger.error(f"GHL network/timeout error: {e}")
             raise  # Retry these
         except Exception as e:
+            _ghl_circuit_breaker.record_failure()
             logger.error(f"GHL request error: {e}")
             return {
                 "success": False,
@@ -339,9 +392,14 @@ class GHLClient:
             message_type: SMS or Email
         """
         try:
+            # Append AI disclosure footer to non-empty messages
+            disclosed_message = message
+            if message and message.strip():
+                disclosed_message = message + "\n[AI-assisted message]"
+
             data = {
                 "contactId": contact_id,
-                "message": message,
+                "message": disclosed_message,
                 "type": message_type
             }
             result = await self._make_request("POST", "conversations/messages", data=data)
