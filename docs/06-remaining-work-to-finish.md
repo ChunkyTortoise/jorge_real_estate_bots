@@ -50,34 +50,21 @@ CAYMAN'S SIDE — DEPLOYMENT
 ========================================
 
 Item 8: Confirm Redis is connected
-    What: The Render service falls back to in-memory cache if Redis rejects
-          the connection (IP allowlist issue). In-memory cache works but resets
-          on restart, which means conversations are lost on every deploy.
-    How: Check Render logs for "Redis connected" vs "Using MemoryCache fallback."
-         If fallback: allow Render outbound IPs in Redis dashboard, or switch to
-         a Redis provider with no IP restriction (Upstash recommended — free tier).
-    Status: Currently running on MemoryCache fallback.
-    Effort: 30 minutes to switch to Upstash if needed.
-    Priority: Medium. System works without it but conversations reset on restart.
+    Status: DONE — 2026-03-07. Redis is fully connected on Render (`redis: ok` in
+            /health/aggregate). Render Redis (red-d6d54jfpm1nc739jgnm0) is reachable
+            with no IP restriction. MemoryCache fallback is NOT active.
+    Priority: Resolved.
 
 Item 9: Wire Lyrio Dashboard to live GHL data
-    What: Add Jorge's GHL API key to Streamlit secrets.
-          Change the data provider from DemoDataProvider to live GHL client.
-    How: Streamlit Cloud > App Settings > Secrets > add ghl_api_key.
-         One config change in command_center/data_provider.py.
-    Status: Dashboard is live on demo data.
-    Effort: 30 minutes.
-    Priority: Low until Jorge reviews the demo and confirms he wants live data.
+    Status: DONE — 2026-03-07. Dashboard is wired to live GHL + Jorge API via
+            JorgeApiDataProvider. Not running on demo data.
+    Priority: Resolved.
 
 Item 10: Database migration
-    What: The database schema exists (Alembic migrations written).
-          Production DB has not been migrated. Currently all state is in cache only.
-    Why this matters: If the Render service restarts and Redis is down, all
-          active conversations are lost. DB migration gives persistent fallback.
-    How: Run alembic upgrade head against the production database.
-    Status: Deferred.
-    Effort: 1-2 hours (migration + verification).
-    Priority: Low for MVP. Revisit if Render restarts cause customer issues.
+    Status: DONE — 2026-03-07. All 9 tables confirmed present via /health/schema-check.
+            Dockerfile runs `alembic upgrade head` on every boot (fail-loud mode —
+            container will not start if Postgres is unreachable, preventing stale schema).
+    Priority: Resolved.
 
 
 ========================================
