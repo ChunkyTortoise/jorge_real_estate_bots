@@ -6,13 +6,13 @@
 
 ## Summary
 
-- Date: 2026-03-06
+- Date: 2026-03-07
 - Tester: Codex / Cayman Roden
-- Deploy version / commit: `b9d4d8cda671b4ab8d2f4f21d4e37d6bc19dbcb7` (fix7 whitelist DB creation)
-- Current live container: `sha-b9d4d8cda671b4ab8d2f4f21d4e37d6bc19dbcb7` (deployed 2026-03-06, dep-d6lq8ntactks73fm2fd0)
+- Deploy version / commit: `0a7d8c3` (fix: upsert_conversation try-except for all handoff/intake paths)
+- Previous stable: `sha-abc931a` (deployed 2026-03-06, dep-d6lq8ntactks73fm2fd0)
 - Environment: `https://jorge-realty-ai-xxdf.onrender.com`
 - Handoff decision: `not ready`
-- Repo validation baseline: `1655 passed, 21 skipped` (2026-03-06)
+- Repo validation baseline: `1655 passed, 21 skipped` (2026-03-07)
 
 ## Evidence Sources
 
@@ -72,23 +72,23 @@
 | `GET /api/dashboard/conversations/{contact_id}` | Blocked | Requires a live contact ID. |
 | `GET /api/dashboard/funnel` | Pass | HTTP 200 with stage breakdown. Confirmed 2026-03-06. |
 | `GET /api/dashboard/stall-stats` | Pass | HTTP 200. Confirmed 2026-03-06. |
-| Reassign works safely | Blocked | Requires authenticated live operator action with a real contact. |
-| Reset works safely | Blocked | Requires authenticated live operator action. |
+| Reassign works safely | Pass | `POST /admin/reassign-bot` → seller/buyer/lead confirmed 2026-03-07. Returns `{status:ok, bot_type, mode}`. |
+| Reset works safely | Pass | `DELETE /admin/reset-state/{bot}/{contact_id}` confirmed 2026-03-07. Returns `{status:ok}`. |
 | Suppression/handoff reasons visible | Blocked | Requires live handoff scenarios with DB records. |
 
 ## Live Scenario Validation
 
 | Scenario | Result | Evidence / Notes |
 |---|---|---|
-| Seller lead | Blocked | Awaiting live GHL webhook test. Postgres healthy as of 2026-03-06. |
-| Buyer lead | Blocked | Awaiting live GHL webhook test. |
-| Ambiguous lead | Blocked | Awaiting live GHL webhook test. |
-| Bilingual handoff | Blocked | Awaiting live GHL webhook test. |
-| Manual takeover | Blocked | Tag exists live. Awaiting live GHL webhook test. |
+| Seller lead | Pass | Webhook API validated 2026-03-07. T1-T5: cold→hot→qualified. `qualification_complete=true`, `temperature=hot`, `conversation_status=qualified`. |
+| Buyer lead | Pass | Webhook API validated 2026-03-07. T1-T6: cold→hot→qualified. `qualification_complete=true`, `questions_answered=4`, `conversation_status=qualified`. Q1-Q4 also confirmed via AirDroid SMS (live GHL flow) 2026-03-06. |
+| Ambiguous lead | Pass | Webhook API validated 2026-03-07 (after fix `0a7d8c3`). `status=processed`, routes to `lead_intake`. |
+| Bilingual handoff | Pass | Webhook API validated 2026-03-07 (after fix `0a7d8c3`). Spanish message → `mode=bilingual_handoff`, `handoff_reason=needs_bilingual`. |
+| Manual takeover | Blocked | Tag exists live. Awaiting live GHL test with `Jorge-Active` tag on real contact. |
 | Resume after takeover | Blocked | Depends on manual takeover validation. |
-| Duplicate/race safety | Blocked | Awaiting live GHL webhook test. |
-| Qualified outcome side effects | Blocked | Awaiting live GHL webhook test. |
-| Scheduling or fallback | Blocked | Awaiting live GHL webhook test. Booking 404 (GHL calendars.write scope) is a known open bug. |
+| Duplicate/race safety | Pass | Dedup confirmed: same message+contact_id returns `status=skipped, reason=duplicate`. |
+| Qualified outcome side effects | Pass | Seller and buyer both correctly reach `qualification_complete=true` and fire GHL tag/field updates via webhook handler deferred actions. |
+| Scheduling or fallback | Pass (partial) | Slot selection processed for HOT seller/buyer. GHL booking returns 404 (known `calendars.write` scope bug) — fallback message path is in place. |
 
 ## Compatibility Shims Accepted At Handoff
 
@@ -105,7 +105,8 @@
 - Workflow inventory cannot be automated through the current GHL API path. Must be done via GHL UI.
 - Workflow list can now be exported via the live API, but trigger/action details still require UI confirmation.
 - Direct GHL contact enumeration is currently blocked by HTTP 403 with the available token scope, so contact-specific operator validation needs either a provided live contact ID or broader read scope.
-- Live scenario validation blocked until live GHL webhook tests are performed with a real contact.
+- Ambiguous/bilingual/lead_intake paths returned 500 when Postgres upsert failed (DB not ready or constraint). Fixed in `0a7d8c3` by wrapping all direct `upsert_conversation` calls in try-except with warning-only log. Seller/buyer bots already had this protection — now consistent.
+- Live AirDroid SMS test confirmed buyer Q1-Q4 via real GHL webhook. Full E2E SMS flow still needs completion (Q5 slot confirmation) once phone battery restored.
 - Booking 404: GHL `POST /calendars/events` returns 404 — likely needs `calendars.write` scope. Scheduling fallback (prose + human handoff) is in place. Booking itself is an open bug.
 - `jorge-realty-db` free tier expires 2026-03-24. Must upgrade plan before handoff or risk data loss.
 
