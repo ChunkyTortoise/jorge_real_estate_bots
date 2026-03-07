@@ -2,7 +2,7 @@
 
 ## What's Included
 
-Three AI bots for GoHighLevel, a Streamlit command center, and a full test suite -- 1330+ tests passing.
+Three AI bots for GoHighLevel, a Streamlit command center, and a full test suite -- 1792 tests passing.
 
 | Component | Port | Purpose |
 |-----------|------|---------|
@@ -47,8 +47,6 @@ Three AI bots for GoHighLevel, a Streamlit command center, and a full test suite
 | `ADMIN_API_KEY` | Yes | API key for admin endpoints (`X-Admin-Key` header) |
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `JWT_SECRET` | Yes | Secret for dashboard JWT auth tokens |
-| `JORGE_SELLER_MODE` | No | Enable seller bot (default: `true`) |
-| `JORGE_BUYER_MODE` | No | Enable buyer bot (default: `true`) |
 | `GHL_WEBHOOK_SECRET` | **Must be EMPTY** | Leave unset in Render. If set, all webhooks return 401. |
 
 Copy `.env.example` to `.env` for local development. On Render, set these in the `jorge-env` environment group.
@@ -76,7 +74,7 @@ Alternatively, use the admin API:
 curl -X POST https://jorge-realty-ai-xxdf.onrender.com/admin/reassign-bot \
   -H "Content-Type: application/json" \
   -H "X-Admin-Key: YOUR_ADMIN_KEY" \
-  -d '{"contact_id": "CONTACT_ID", "target_bot": "buyer"}'
+  -d '{"contact_id": "CONTACT_ID", "mode": "buyer"}'
 ```
 
 ### Manual takeover (bot goes silent)
@@ -122,7 +120,7 @@ docker compose up
 
 ```bash
 pytest tests/ -v
-# 1330+ passing, ~2 min
+# 1792 passing, ~70s
 ```
 
 ---
@@ -156,8 +154,11 @@ See `docs/02-ghl-setup-guide.md` for the full GHL workflow configuration.
 
 ## Current Status
 
-- 1330+ tests passing (as of 2026-03-05)
+- **1792 tests passing** (as of 2026-03-07)
 - All three bots working end-to-end with GHL
+- **Redis connected** (`redis: ok` in `/health/aggregate`) — Render Redis fully reachable, no MemoryCache fallback
+- **All 9 DB tables migrated** — confirmed via `/health/schema-check`. Alembic runs on every boot (fail-loud: container won't start if Postgres is down)
+- **Lyrio Dashboard on live data** — wired to live GHL + Jorge API via `JorgeApiDataProvider`
 - Rate limiting active (Redis-backed, `X-RateLimit-*` headers)
 - Cross-bot handoff with 0.7 confidence threshold and circular prevention
 - CI/CD pipeline active on GitHub Actions

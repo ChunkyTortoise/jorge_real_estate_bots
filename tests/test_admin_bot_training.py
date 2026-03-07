@@ -111,7 +111,6 @@ async def test_admin_reset_state_calls_cache_delete(client):
     deleted = [call.args[0] for call in mock_cache.delete.call_args_list]
     assert "buyer:state:contact-abc" in deleted
     assert "conversation:mode:contact-abc" in deleted
-    assert "assigned_bot:contact-abc" in deleted
 
 
 @pytest.mark.asyncio
@@ -135,8 +134,6 @@ async def test_admin_reassign_accepts_canonical_mode(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["mode"] == "human_handoff"
-    deleted = [call.args[0] for call in mock_cache.delete.call_args_list]
-    assert "assigned_bot:contact-xyz" in deleted
     mock_cache.set.assert_called_with("conversation:mode:contact-xyz", "human_handoff", ttl=604_800)
 
 

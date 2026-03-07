@@ -1,6 +1,8 @@
 """Unit tests for conversation_contract — builder, deriver, extractor, normalizer."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from bots.shared.conversation_contract import (
@@ -10,6 +12,7 @@ from bots.shared.conversation_contract import (
     build_canonical_conversation,
     derive_status,
     extract_canonical_metadata,
+    extract_canonical_view,
     is_likely_spanish,
     mode_to_assignment,
     normalize_conversation_mode,
@@ -248,3 +251,130 @@ class TestIsLikelySpanish:
 
     def test_mixed_two_plus_triggers(self):
         assert is_likely_spanish("tengo gracias money") is True
+
+
+# ---------------------------------------------------------------------------
+# extract_canonical_view
+# ---------------------------------------------------------------------------
+class TestExtractCanonicalView:
+    def _conv(self, **kwargs) -> SimpleNamespace:
+        """Minimal conversation ORM-like object with sensible defaults."""
+        defaults = dict(
+            mode=None, mode_version=None, status=None, handoff_reason=None,
+            human_takeover=None, bilingual_required=None,
+            message_suppression_reason=None, last_inbound_at=None,
+            last_outbound_at=None, next_recommended_action=None,
+            qualification_summary=None, crm_sync_status=None, temperature=None,
+            metadata_json=None,
+        )
+        defaults.update(kwargs)
+        return SimpleNamespace(**defaults)
+
+    def test_column_values_take_precedence_over_metadata(self):
+        conv = self._conv(
+            mode="seller",
+            status="active",
+            metadata_json={"mode": "buyer", "status": "stalled"},
+        )
+        view = extract_canonical_view(conv)
+        assert view["mode"] == "seller"
+        assert view["status"] == "active"
+
+    def test_fallback_to_metadata_when_columns_are_none(self):
+        conv = self._conv(
+            mode=None,
+            status=None,
+            metadata_json={"mode": "buyer", "status": "stalled", "human_takeover": True},
+        )
+        view = extract_canonical_view(conv)
+        assert view["mode"] == "buyer"
+        assert view["status"] == "stalled"
+        assert view["human_takeover"] is True
+
+    def test_empty_metadata_and_no_columns_returns_defaults(self):
+        conv = self._conv()
+        view = extract_canonical_view(conv)
+        assert view["mode"] == ConversationMode.LEAD_INTAKE.value
+        assert view["status"] == ConversationStatus.ACTIVE.value
+        assert view["human_takeover"] is False
+        assert view["bilingual_required"] is False
+        assert view["qualification_summary"] == {}
+        assert view["crm_sync_status"] == "pending"
+
+
+# ---------------------------------------------------------------------------
+# to_columns
+# ---------------------------------------------------------------------------
+class TestToColumns:
+    def _canonical(self, **kwargs):
+        defaults = dict(
+            contact_id="c-1",
+            location_id="loc-1",
+            mode=ConversationMode.SELLER,
+            current_stage="Q2",
+            questions_answered=2,
+            temperature="warm",
+            qualification_complete=False,
+            next_recommended_action="Ask about timeline",
+        )
+        defaults.update(kwargs)
+        return build_canonical_conversation(**defaults)
+
+    def test_returns_expected_keys(self):
+        cols = self._canonical().to_columns()
+        expected_keys = {
+            "mode", "mode_version", "status", "handoff_reason", "human_takeover",
+            "bilingual_required", "message_suppression_reason", "qualification_summary",
+            "next_recommended_action", "crm_sync_status", "last_inbound_at", "last_outbound_at",
+        }
+        assert expected_keys.issubset(set(cols.keys()))
+
+    def test_mode_is_string_value(self):
+        cols = self._canonical(mode=ConversationMode.BUYER).to_columns()
+        assert cols["mode"] == "buyer"
+        assert isinstance(cols["mode"], str)
+
+    def test_status_is_string_value(self):
+        cols = self._canonical().to_columns()
+        assert isinstance(cols["status"], str)
+
+    def test_human_takeover_defaults_false(self):
+        cols = self._canonical().to_columns()
+        assert cols["human_takeover"] is False
+
+    def test_human_takeover_true_when_set(self):
+        cols = self._canonical(human_takeover=True, handoff_reason=HandoffReason.NEEDS_HUMAN_REVIEW.value).to_columns()
+        assert cols["human_takeover"] is True
+        assert cols["handoff_reason"] == "needs_human_review"
+
+    def test_last_inbound_at_parsed_to_datetime(self):
+        cols = self._canonical(last_inbound_at="2025-01-15T10:00:00").to_columns()
+        from datetime import datetime
+        assert isinstance(cols["last_inbound_at"], datetime)
+
+
+# ---------------------------------------------------------------------------
+# ConversationStatus.CLOSED — reserved, not assigned by derive_status
+# ---------------------------------------------------------------------------
+class TestClosedStatusReserved:
+    def test_closed_not_produced_by_derive_status(self):
+        """CLOSED is reserved for external/manual use; derive_status never returns it."""
+        # Exhaustive check of all derive_status paths
+        for stage in [None, "Q0", "Q1", "STALLED", "QUALIFIED"]:
+            for ht in [True, False]:
+                for bil in [True, False]:
+                    for appt in [True, False]:
+                        for supp in [True, False]:
+                            result = derive_status(
+                                current_stage=stage,
+                                qualification_complete=False,
+                                appointment_booked=appt,
+                                human_takeover=ht,
+                                bilingual_required=bil,
+                                suppressed=supp,
+                            )
+                            assert result != ConversationStatus.CLOSED, (
+                                f"derive_status returned CLOSED unexpectedly for "
+                                f"stage={stage} human_takeover={ht} bilingual={bil} "
+                                f"appt={appt} suppressed={supp}"
+                            )

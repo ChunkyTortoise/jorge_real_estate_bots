@@ -18,7 +18,6 @@ from bots.shared.conversation_contract import (
     build_canonical_conversation,
     has_jorge_active_tag,
     mode_to_assignment,
-    normalize_conversation_mode,
 )
 import redis.asyncio as _redis_lib
 
@@ -42,11 +41,6 @@ router = APIRouter()
 
 _ASSIGNED_BOT_TTL = 604_800  # 7 days
 
-
-def _normalize_bot_type(raw: str) -> str:
-    """Map raw bot_type values to canonical: 'seller', 'buyer', or 'lead'."""
-    mode = normalize_conversation_mode(raw)
-    return mode_to_assignment(mode) or "lead"
 
 
 async def _deferred_tag_apply(
@@ -139,13 +133,8 @@ async def handle_new_lead(request: Request):
             f"(Score: {analysis_result.get('score', 0)}, Temp: {analysis_result.get('temperature', 'unknown')})"
         )
 
-        # Lock this contact to the lead bot for 7 days so follow-up replies
-        # don't fall through to the GHL API and get misrouted to seller/buyer.
         _webhook_cache = state._webhook_cache
         if _webhook_cache:
-            await _webhook_cache.set(
-                f"assigned_bot:{contact_id}", "lead", ttl=_ASSIGNED_BOT_TTL,
-            )
             await _webhook_cache.set(
                 f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
                 ConversationMode.LEAD_INTAKE.value,
@@ -299,11 +288,6 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                     mode.value,
                     ttl=_ASSIGNED_BOT_TTL,
                 )
-                assignment = mode_to_assignment(mode)
-                if assignment:
-                    await _webhook_cache.set(f"assigned_bot:{contact_id}", assignment, ttl=_ASSIGNED_BOT_TTL)
-                else:
-                    await _webhook_cache.delete(f"assigned_bot:{contact_id}")
 
             manual_takeover = False
             if state._ghl_client:
@@ -329,7 +313,6 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                                 ConversationMode.HUMAN_HANDOFF.value,
                                 ttl=_ASSIGNED_BOT_TTL,
                             )
-                            await _webhook_cache.delete(f"assigned_bot:{contact_id}")
                 except Exception as e:
                     logger.warning(f"Could not fetch contact tags for {contact_id}: {e}")
 
@@ -576,7 +559,6 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                         ConversationMode.HUMAN_HANDOFF.value,
                         ttl=_ASSIGNED_BOT_TTL,
                     )
-                    await _webhook_cache.delete(f"assigned_bot:{contact_id}")
                 result_meta.update({"temperature": "cold", "questions_answered": 0, "qualification_complete": False})
             elif mode == ConversationMode.HUMAN_HANDOFF:
                 canonical = build_canonical_conversation(

@@ -100,7 +100,7 @@ async def resolve_mode(
     if cache:
         for key, source in (
             (f"{CONVERSATION_MODE_CACHE_PREFIX}{payload.contact_id}", "canonical_cache"),
-            (f"assigned_bot:{payload.contact_id}", "assignment_cache"),
+            (f"assigned_bot:{payload.contact_id}", "assignment_cache"),  # LEGACY: remove after 2026-03-14 (7-day TTL expiry)
         ):
             try:
                 cached = await cache.get(key)

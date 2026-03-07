@@ -130,7 +130,6 @@ async def test_early_switch_purges_buyer_state(bot):
 
     assert "buyer:state:c-1" in deleted_keys
     assert set_keys.get("conversation:mode:c-1") == "seller"
-    assert set_keys.get("assigned_bot:c-1") == "seller"
 
 
 @pytest.mark.asyncio
@@ -205,4 +204,4 @@ async def test_mid_flow_does_not_switch_bot(bot, mock_ghl):
             "c-1", "loc-123", "need to sell my home but also buying"
         )
 
-    assert set_calls.get("assigned_bot:c-1") != "seller"
+    assert set_calls.get("conversation:mode:c-1") != "seller"

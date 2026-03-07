@@ -28,7 +28,7 @@ class ConversationStatus(str, Enum):
     STALLED = "stalled"
     AWAITING_HUMAN = "awaiting_human"
     BOOKED = "booked"
-    CLOSED = "closed"
+    CLOSED = "closed"   # Reserved — set externally/manually only; derive_status never returns this
     SUPPRESSED = "suppressed"
 
 

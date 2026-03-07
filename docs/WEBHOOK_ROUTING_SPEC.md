@@ -1,5 +1,12 @@
 # Jorge Bots — Webhook Routing & Bot-Activation Spec
 
+> **DEPRECATED** — This document describes the multi-service routing fixes from the initial implementation.
+> The canonical source of truth for routing logic is:
+> - `bots/shared/conversation_contract.py` — mode definitions, canonical contract, `build_canonical_conversation()`
+> - `bots/lead_bot/conversation_orchestrator.py` — `resolve_mode()` — single entry point for all routing decisions
+>
+> This spec is retained for historical context only.
+
 ## Context
 
 This spec defines four targeted fixes needed before full production use:

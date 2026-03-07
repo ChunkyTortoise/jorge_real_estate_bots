@@ -138,9 +138,6 @@ async def admin_reassign_bot(request: Request, _=Depends(get_admin_or_apikey)):
 
     cache = _m._webhook_cache
     if cache:
-        await cache.delete(f"assigned_bot:{contact_id}")
-        if new_bot_type:
-            await cache.set(f"assigned_bot:{contact_id}", new_bot_type, ttl=604_800)
         await cache.set(f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}", mode.value, ttl=604_800)
 
     # Sync new mode to DB (best-effort)
@@ -202,7 +199,6 @@ async def admin_reset_state(bot: str, contact_id: str, _=Depends(get_admin_or_ap
     if cache:
         await cache.delete(f"{bot}:state:{contact_id}")
         await cache.delete(f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}")
-        await cache.delete(f"assigned_bot:{contact_id}")
 
     logger.info(f"Admin: reset {bot} bot state for contact {contact_id!r}")
     return {"status": "ok", "bot": bot, "contact_id": contact_id}
@@ -366,3 +362,55 @@ async def schema_check(x_admin_key: Optional[str] = Header(None, alias="X-Admin-
 
     all_ok = all(v["exists"] for v in results.values())
     return {"status": "ok" if all_ok else "degraded", "tables": results}
+
+
+# ---------------------------------------------------------------------------
+# Seller bot admin actions (ported from standalone bots/seller_bot/main.py)
+# ---------------------------------------------------------------------------
+
+def _seller_next_stage(current: str) -> str:
+    progression = {"Q0": "Q1", "Q1": "Q2", "Q2": "Q3", "Q3": "Q4", "Q4": "QUALIFIED"}
+    return progression.get(current, current)
+
+
+@router.post("/admin/seller/trigger-cma")
+async def admin_trigger_cma(
+    request: Request,
+    _=Depends(get_admin_or_apikey),
+):
+    """Trigger CMA generation for a contact (dashboard action)."""
+    body = await request.json()
+    contact_id = body.get("contact_id")
+    if not contact_id:
+        raise HTTPException(status_code=400, detail="contact_id required")
+    from bots.lead_bot import main as _m
+    state = await _m.seller_bot_instance.get_conversation_state(contact_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Contact not found in seller bot")
+    from bots.shared.ghl_client import GHLClient
+    ghl = GHLClient()
+    await ghl.add_tag(contact_id, "cma_requested")
+    logger.info(f"CMA triggered for contact {contact_id}")
+    return {"status": "ok", "contact_id": contact_id, "action": "cma_requested"}
+
+
+@router.post("/admin/seller/{contact_id}/advance-stage")
+async def admin_advance_stage(
+    contact_id: str,
+    request: Request,
+    _=Depends(get_admin_or_apikey),
+):
+    """Advance a contact's seller bot conversation stage (dashboard action)."""
+    body = await request.json()
+    from bots.lead_bot import main as _m
+    state = await _m.seller_bot_instance.get_conversation_state(contact_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Contact not found in seller bot")
+    stage_order = ["Q0", "Q1", "Q2", "Q3", "Q4", "QUALIFIED"]
+    target = body.get("stage") or _seller_next_stage(state.stage)
+    if target not in stage_order:
+        raise HTTPException(status_code=400, detail=f"Invalid stage: {target}")
+    state.stage = target
+    await _m.seller_bot_instance.save_conversation_state(contact_id, state)
+    logger.info(f"Stage advanced to {target} for contact {contact_id}")
+    return {"status": "ok", "contact_id": contact_id, "stage": target}

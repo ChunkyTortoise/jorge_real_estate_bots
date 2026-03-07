@@ -234,7 +234,6 @@ class JorgeBuyerBot:
                         ConversationMode.SELLER.value,
                         ttl=604_800,
                     )
-                    await cache.set(f"assigned_bot:{contact_id}", "seller", ttl=604_800)
                     handoff_msg = (
                         "Sounds like you're looking to sell! Let me switch gears — "
                         "I work with sellers too. What condition is the house in?"

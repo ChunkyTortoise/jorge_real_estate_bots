@@ -226,7 +226,7 @@ class TestWebhookRouting:
 class TestBotAssignmentExclusivity:
     @pytest.mark.asyncio
     async def test_bot_assignment_stored_on_first_contact(self, app):
-        """First webhook for a contact stores its bot type in the cache."""
+        """First webhook for a contact writes conversation:mode: to the canonical cache."""
         cache = MockCache()
         state, _, _, _, _ = _make_state(cache=cache)
         with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
@@ -236,7 +236,7 @@ class TestBotAssignmentExclusivity:
                     content=_body(bot_type="seller", contact_id="assign-new"),
                     headers={"Content-Type": "application/json"},
                 )
-        assert await cache.get("assigned_bot:assign-new") == "seller"
+        assert await cache.get("conversation:mode:assign-new") == "seller"
 
     @pytest.mark.asyncio
     async def test_bot_assignment_exclusivity(self, app):
@@ -279,7 +279,7 @@ class TestBotAssignmentExclusivity:
         assert r.status_code == 200
         mock_seller.process_seller_message.assert_awaited_once()
         mock_buyer.process_buyer_message.assert_not_awaited()
-        assert await cache.get("assigned_bot:switch-c") == "seller"
+        assert await cache.get("conversation:mode:switch-c") == "seller"
 
 
 # ---------------------------------------------------------------------------
@@ -364,8 +364,8 @@ def _new_lead_body(contact_id: str = "nl-test") -> bytes:
 
 class TestNewLeadBotLocking:
     @pytest.mark.asyncio
-    async def test_new_lead_sets_assigned_bot_in_redis(self, app):
-        """POST /ghl/webhook/new-lead must write assigned_bot:<id>='lead' to cache."""
+    async def test_new_lead_sets_mode_in_redis(self, app):
+        """POST /ghl/webhook/new-lead must write conversation:mode:<id> to cache."""
         cache = MockCache()
         state, _, _, _, _ = _make_state(cache=cache)
         with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
@@ -376,7 +376,7 @@ class TestNewLeadBotLocking:
                     headers={"Content-Type": "application/json"},
                 )
         assert r.status_code == 200
-        assert await cache.get("assigned_bot:lock-lead-1") == "lead"
+        assert await cache.get("conversation:mode:lock-lead-1") == "lead_intake"
 
     @pytest.mark.asyncio
     async def test_new_lead_then_reply_stays_on_lead_bot(self, app):
@@ -411,42 +411,6 @@ class TestNewLeadBotLocking:
         assert r.json()["bot_type"] == "lead"
         mock_seller.process_seller_message.assert_not_awaited()
 
-
-# ---------------------------------------------------------------------------
-# _normalize_bot_type unit tests
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        # Canonical values
-        ("seller", "seller"),
-        ("buyer", "buyer"),
-        ("lead", "lead"),
-        # Case variants
-        ("Seller", "seller"),
-        ("SELLER", "seller"),
-        ("Buyer", "buyer"),
-        # Known variant aliases
-        ("seller_bot", "seller"),
-        ("seller-bot", "seller"),
-        ("SELLER_BOT", "seller"),
-        ("buyer_bot", "buyer"),
-        ("buyer-bot", "buyer"),
-        ("new_lead", "lead"),
-        ("new-lead", "lead"),
-        ("lead_bot", "lead"),
-        # Empty / unknown → "lead"
-        ("", "lead"),
-        ("unknown", "lead"),
-        ("foobar", "lead"),
-    ],
-)
-def test_normalize_bot_type(raw: str, expected: str) -> None:
-    from bots.lead_bot.routes_webhook import _normalize_bot_type
-
-    assert _normalize_bot_type(raw) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -902,8 +866,6 @@ class TestManualTakeoverCacheUpdate:
         assert r.status_code == 200
         # Cache should be updated to human_handoff mode
         assert await cache.get("conversation:mode:jorge-takeover") == "human_handoff"
-        # assigned_bot should be deleted
-        assert await cache.get("assigned_bot:jorge-takeover") is None
         # No bot should have fired
         mock_seller.process_seller_message.assert_not_awaited()
         mock_buyer.process_buyer_message.assert_not_awaited()
@@ -988,8 +950,6 @@ class TestBilingualIdempotency:
         # After processing, cache should be set to human_handoff (not bilingual_handoff)
         cached_mode = await cache.get("conversation:mode:bilingual-idem")
         assert cached_mode == "human_handoff"
-        # assigned_bot should be cleared
-        assert await cache.get("assigned_bot:bilingual-idem") is None
 
     @pytest.mark.asyncio
     async def test_second_bilingual_message_is_suppressed(self, app):

@@ -132,14 +132,31 @@ async def check_stalled_conversations() -> None:
                 stalled = result.scalars().all()
                 # Capture original stages before overwriting to STALLED
                 original_stages = {conv.contact_id: (conv.stage or "Q0") for conv in stalled}
+                from bots.shared.conversation_contract import (
+                    build_canonical_conversation,
+                    normalize_conversation_mode,
+                    HandoffReason,
+                )
                 for conv in stalled:
                     merged_metadata = dict(conv.metadata_json or {})
                     merged_metadata.setdefault("stalled_from_stage", conv.stage or "Q0")
                     conv.metadata_json = merged_metadata
+                    canonical = build_canonical_conversation(
+                        contact_id=conv.contact_id,
+                        location_id="",
+                        mode=normalize_conversation_mode(conv.mode or conv.bot_type),
+                        current_stage="STALLED",
+                        questions_answered=conv.questions_answered or 0,
+                        temperature=conv.temperature,
+                        qualification_complete=False,
+                        next_recommended_action="Human review required - stalled",
+                        human_takeover=True,
+                        handoff_reason=HandoffReason.NEEDS_HUMAN_REVIEW.value,
+                    )
+                    for key, value in canonical.to_columns().items():
+                        if hasattr(conv, key):
+                            setattr(conv, key, value)
                     conv.stage = "STALLED"
-                    conv.status = "stalled"
-                    conv.human_takeover = True
-                    conv.handoff_reason = "needs_human_review"
                 await session.commit()
                 if stalled:
                     logger.info(f"Marked {len(stalled)} conversations as STALLED")
@@ -178,7 +195,7 @@ async def check_stalled_conversations() -> None:
                 res = await session.execute(
                     select(ConversationModel).where(
                         ConversationModel.status == "awaiting_human",
-                        ConversationModel.bot_type == "bilingual_handoff",
+                        ConversationModel.mode == "bilingual_handoff",
                     )
                 )
                 overdue = [

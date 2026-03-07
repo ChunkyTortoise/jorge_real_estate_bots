@@ -14,9 +14,65 @@ def _make_overdue_conv(contact_id: str, hours_overdue: float = 2.0) -> MagicMock
     conv = MagicMock()
     conv.contact_id = contact_id
     conv.status = "awaiting_human"
-    conv.bot_type = "bilingual_handoff"
+    conv.bot_type = "lead"
+    conv.mode = "bilingual_handoff"
     conv.last_activity = datetime.now(timezone.utc) - timedelta(hours=hours_overdue)
     return conv
+
+
+@pytest.mark.asyncio
+async def test_sla_query_uses_mode_column_not_bot_type():
+    """SLA query WHERE clause must filter on mode='bilingual_handoff', not bot_type.
+
+    Regression: the old code filtered bot_type=='bilingual_handoff', but
+    bilingual conversations are stored with bot_type='lead' and mode='bilingual_handoff'.
+    This test captures the executed SELECT statement and verifies 'mode' appears
+    in the WHERE clause and 'bot_type' does not.
+    """
+    captured_queries: list = []
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+
+    mock_session = AsyncMock()
+
+    async def _capture_execute(stmt, *args, **kwargs):
+        captured_queries.append(stmt)
+        return mock_result
+
+    mock_session.execute = _capture_execute
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=None)
+    factory = MagicMock(return_value=mock_session)
+
+    with (
+        patch("asyncio.sleep", side_effect=_make_sleep(iterations=1)),
+        patch("database.session.AsyncSessionFactory", factory),
+        patch("bots.lead_bot.main.settings") as mock_settings,
+        patch("bots.shared.alerting_service.AlertingService"),
+    ):
+        mock_settings.alert_webhook_url = None
+        try:
+            await check_stalled_conversations()
+        except asyncio.CancelledError:
+            pass
+
+    # The second session.execute call is the bilingual SLA query (first is the stall query)
+    assert len(captured_queries) >= 2, "Expected at least 2 session.execute calls"
+    bilingual_query = captured_queries[1]
+
+    # Compile and extract just the WHERE clause
+    from sqlalchemy.dialects import postgresql
+    compiled = bilingual_query.compile(dialect=postgresql.dialect())
+    full_sql = str(compiled)
+    where_clause = full_sql.split("WHERE", 1)[-1] if "WHERE" in full_sql else full_sql
+
+    assert "conversations.mode" in where_clause, (
+        f"Bilingual SLA WHERE clause must filter on 'conversations.mode', got:\n{where_clause}"
+    )
+    assert "conversations.bot_type" not in where_clause, (
+        f"Bilingual SLA WHERE clause must NOT filter on 'conversations.bot_type', got:\n{where_clause}"
+    )
 
 
 def _make_session_cm(conversations: list) -> tuple:

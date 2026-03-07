@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # Redis Configuration
-    redis_max_connections: int = 50
+    redis_max_connections: int = 30
     redis_min_connections: int = 10
     redis_socket_timeout: int = 2
     redis_socket_connect_timeout: int = 2
@@ -84,7 +84,6 @@ class Settings(BaseSettings):
 
     # ========== WEBHOOK CONFIGURATION ==========
     base_url: str = "https://jorge-realty-ai-xxdf.onrender.com"
-    seller_bot_url: str = "https://jorge-realty-ai-xxdf.onrender.com"
 
     # ========== SERVICE-TO-SERVICE AUTH ==========
     # Static key used by internal services (dashboard → seller bot).

@@ -87,8 +87,8 @@ async def test_get_conversation_not_found_returns_404(authed_client, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_reset_state_clears_all_three_cache_keys(authed_client):
-    """DELETE /admin/reset-state must clear bot:state, conversation:mode, AND assigned_bot."""
+async def test_reset_state_clears_cache_keys(authed_client):
+    """DELETE /admin/reset-state must clear bot:state and conversation:mode keys."""
     mock_cache = AsyncMock()
     deleted_keys = []
     mock_cache.delete = AsyncMock(side_effect=lambda k: deleted_keys.append(k))
@@ -100,7 +100,3 @@ async def test_reset_state_clears_all_three_cache_keys(authed_client):
     assert resp.status_code == 200
     assert any("seller:state:contact-xyz" in k for k in deleted_keys), deleted_keys
     assert any("conversation:mode:contact-xyz" in k for k in deleted_keys), deleted_keys
-    assert any("assigned_bot:contact-xyz" in k for k in deleted_keys), deleted_keys
-    # Must NOT have duplicate deletes for assigned_bot
-    assigned_bot_deletes = [k for k in deleted_keys if "assigned_bot:contact-xyz" == k]
-    assert len(assigned_bot_deletes) == 1, f"Duplicate delete detected: {deleted_keys}"

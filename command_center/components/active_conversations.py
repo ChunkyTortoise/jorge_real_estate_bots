@@ -449,7 +449,7 @@ class ActiveConversationsComponent:
             headers["X-Admin-Key"] = settings.admin_api_key
         try:
             resp = requests.post(
-                f"{settings.seller_bot_url}/api/jorge-seller/trigger-cma",
+                f"{settings.base_url}/admin/seller/trigger-cma",
                 json={"contact_id": conv.contact_id},
                 headers=headers,
                 timeout=10,
@@ -473,7 +473,7 @@ class ActiveConversationsComponent:
             headers["X-Admin-Key"] = settings.admin_api_key
         try:
             resp = requests.post(
-                f"{settings.seller_bot_url}/api/jorge-seller/{conv.contact_id}/advance-stage",
+                f"{settings.base_url}/admin/seller/{conv.contact_id}/advance-stage",
                 json={"stage": next_stage},
                 headers=headers,
                 timeout=10,
