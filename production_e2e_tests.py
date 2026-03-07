@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -26,7 +27,7 @@ import requests
 # ---------------------------------------------------------------------------
 
 BASE_URL = "https://jorge-realty-ai-xxdf.onrender.com"
-ADMIN_KEY = "REDACTED_ADMIN_KEY"
+ADMIN_KEY = os.environ.get("ADMIN_API_KEY", "")
 ADMIN_HEADERS = {"X-Admin-Key": ADMIN_KEY, "Content-Type": "application/json"}
 RUN_ID = int(time.time())
 REQUEST_DELAY = 1.0  # seconds between requests
