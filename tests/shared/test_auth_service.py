@@ -22,7 +22,8 @@ def _make_auth_service(secret: str = "test-secret-key-for-jwt") -> AuthService:
     mock_cache.increment = AsyncMock(return_value=1)
 
     with patch("bots.shared.auth_service.get_cache_service", return_value=mock_cache), \
-         patch("bots.shared.auth_service.settings") as mock_settings:
+         patch("bots.shared.auth_service.settings") as mock_settings, \
+         patch.dict("os.environ", {"JWT_SECRET": secret}):
         mock_settings.jwt_secret = secret
         mock_settings.environment = "test"
         svc = AuthService()

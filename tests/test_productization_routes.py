@@ -188,9 +188,7 @@ async def test_reports_generate_and_get_db_first_when_index_missing(productizati
 
 
 def test_productization_migration_matches_models():
-    migration_path = Path(
-        "/Users/cave/Projects/jorge-real-estate-bots/alembic/versions/20260303_000002_productization_metadata.py"
-    )
+    migration_path = Path(__file__).parent.parent / "alembic/versions/20260303_000002_productization_metadata.py"
     text = migration_path.read_text()
 
     assert "revision = \"20260303_000002\"" in text
