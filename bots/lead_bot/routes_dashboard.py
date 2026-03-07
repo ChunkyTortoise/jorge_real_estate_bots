@@ -428,6 +428,7 @@ async def dashboard_stall_stats(
         "reengagement_attempts": re_stats.get("total_attempts", 0),
         "reengagement_replies": re_stats.get("replies", 0),
         "reply_rate": re_stats.get("reply_rate", 0.0),
+        "opted_out": re_stats.get("opted_out", 0),
         "by_stage": by_stage,
     }
 

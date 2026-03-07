@@ -53,6 +53,10 @@ class StallReengagementService:
         raw = await self._redis.get(key)
         data = json.loads(raw) if raw else {"attempts": 0, "last_sent": None}
 
+        if await self.is_opted_out(contact_id):
+            logger.info("Re-engagement skipped — opted out: %s", contact_id)
+            return False
+
         if data["attempts"] >= self.MAX_ATTEMPTS:
             logger.info("Re-engagement limit reached for %s", contact_id)
             return False
@@ -82,6 +86,25 @@ class StallReengagementService:
             logger.error("Failed to send re-engagement SMS to %s: %s", contact_id, e)
             return False
 
+    _OPT_OUT_KEYWORDS = frozenset({"stop", "unsubscribe", "opt out", "optout", "cancel", "quit"})
+
+    async def record_opt_out(self, contact_id: str) -> None:
+        """Mark a contact as opted out of re-engagement messages."""
+        key = f"stall_optout:{contact_id}"
+        await self._redis.set(key, "1", ex=86400 * 365)
+        logger.info("Stall re-engagement opt-out recorded for %s", contact_id)
+
+    async def is_opted_out(self, contact_id: str) -> bool:
+        """Return True if the contact has opted out of re-engagement."""
+        key = f"stall_optout:{contact_id}"
+        val = await self._redis.get(key)
+        return val in ("1", b"1")
+
+    def is_opt_out_message(self, text: str) -> bool:
+        """Return True if the message text is an opt-out request."""
+        normalized = text.strip().lower()
+        return normalized in self._OPT_OUT_KEYWORDS
+
     async def record_reply(self, contact_id: str) -> None:
         """Record that a stalled contact replied (for success rate tracking)."""
         key = f"stall_reply:{contact_id}"
@@ -101,9 +124,13 @@ class StallReengagementService:
         reply_keys = []
         async for k in self._redis.scan_iter(match="stall_reply:*", count=100):
             reply_keys.append(k)
+        optout_keys = []
+        async for k in self._redis.scan_iter(match="stall_optout:*", count=100):
+            optout_keys.append(k)
         return {
             "total_contacts_reached": len(keys),
             "total_attempts": total_attempts,
             "replies": len(reply_keys),
             "reply_rate": len(reply_keys) / len(keys) if keys else 0.0,
+            "opted_out": len(optout_keys),
         }

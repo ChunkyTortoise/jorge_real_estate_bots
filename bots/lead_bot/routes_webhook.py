@@ -23,6 +23,7 @@ from bots.shared.conversation_contract import (
 import redis.asyncio as _redis_lib
 
 from bots.shared.funnel_attribution import FunnelEvent, FunnelTracker
+from bots.shared.stall_reengagement import StallReengagementService
 from bots.shared.logger import get_logger
 from bots.shared.response_filter import sanitize_bot_response
 from bots.shared.sms_metrics_collector import SmsMetricsCollector
@@ -195,6 +196,16 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
         if not contact_id:
             logger.error("Unified webhook: missing contactId in payload")
             return {"status": "error", "detail": "missing contactId"}
+
+        # Opt-out detection: record and skip re-engagement for future stall messages
+        if message_body:
+            try:
+                _srs = StallReengagementService()
+                if _srs.is_opt_out_message(message_body):
+                    await _srs.record_opt_out(contact_id)
+                    logger.info("Opt-out recorded for %s — continuing with normal processing", contact_id)
+            except Exception as _oe:
+                logger.debug("Opt-out check failed: %s", _oe)
 
         # Funnel: AWARENESS — new message received for this contact
         try:
