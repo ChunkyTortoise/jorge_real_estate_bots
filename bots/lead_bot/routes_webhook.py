@@ -230,39 +230,53 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
         # Per-minute rate limiting (atomic increment — C4)
         _webhook_cache = state._webhook_cache
         if _webhook_cache:
-            rate_key = f"rate:webhook:{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
-            count = await _webhook_cache.increment(rate_key, ttl=60)
-            if count > settings.rate_limit_per_minute:
-                logger.warning(f"Webhook rate limit exceeded: {count} req/min for contact={contact_id}")
-                return {"status": "throttled", "reason": "rate_limit"}
+            try:
+                rate_key = f"rate:webhook:{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
+                count = await _webhook_cache.increment(rate_key, ttl=60)
+                if count > settings.rate_limit_per_minute:
+                    logger.warning(f"Webhook rate limit exceeded: {count} req/min for contact={contact_id}")
+                    return {"status": "throttled", "reason": "rate_limit"}
+            except Exception as _rl_err:
+                logger.warning(f"Rate limit check failed (allowing through): {_rl_err}")
 
         # Message deduplication — two-phase:
         # Phase 1: 30s guard before processing (prevents concurrent GHL retries during AI call)
         # Phase 2: 300s guard written on success (prevents replays in GHL's 5-min retry window)
         dedup_key: Optional[str] = None
         if _webhook_cache:
-            dedup_key = f"dedup:{contact_id}:{hashlib.sha256(message_body.encode()).hexdigest()}"
-            if await _webhook_cache.get(dedup_key):
-                logger.info(f"Duplicate message skipped: contact={contact_id}")
-                return {"status": "skipped", "reason": "duplicate"}
-            await _webhook_cache.set(dedup_key, "1", ttl=30)
+            try:
+                dedup_key = f"dedup:{contact_id}:{hashlib.sha256(message_body.encode()).hexdigest()}"
+                if await _webhook_cache.get(dedup_key):
+                    logger.info(f"Duplicate message skipped: contact={contact_id}")
+                    return {"status": "skipped", "reason": "duplicate"}
+                await _webhook_cache.set(dedup_key, "1", ttl=30)
+            except Exception as _dd_err:
+                logger.warning(f"Dedup check failed (allowing through): {_dd_err}")
+                dedup_key = None
 
         # Per-contact rate limit (10 messages/minute)
         if _webhook_cache:
-            contact_rate_key = f"rate:contact:{contact_id}:{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
-            contact_count = await _webhook_cache.increment(contact_rate_key, ttl=60)
-            if contact_count > 10:
-                logger.warning(f"Per-contact rate limit exceeded for {contact_id}")
-                return {"status": "throttled", "reason": "per_contact_rate_limit"}
+            try:
+                contact_rate_key = f"rate:contact:{contact_id}:{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
+                contact_count = await _webhook_cache.increment(contact_rate_key, ttl=60)
+                if contact_count > 10:
+                    logger.warning(f"Per-contact rate limit exceeded for {contact_id}")
+                    return {"status": "throttled", "reason": "per_contact_rate_limit"}
+            except Exception as _cr_err:
+                logger.warning(f"Per-contact rate check failed (allowing through): {_cr_err}")
 
         # Per-contact processing lock (atomic setnx — C3)
         _lock_acquired = False
         lock_key = f"lock:{contact_id}"
         if _webhook_cache:
-            _lock_acquired = await _webhook_cache.setnx(lock_key, "1", ttl=90)
-            if not _lock_acquired:
-                logger.warning(f"Processing lock held for contact={contact_id}, throttling")
-                return {"status": "throttled", "reason": "processing_lock"}
+            try:
+                _lock_acquired = await _webhook_cache.setnx(lock_key, "1", ttl=90)
+                if not _lock_acquired:
+                    logger.warning(f"Processing lock held for contact={contact_id}, throttling")
+                    return {"status": "throttled", "reason": "processing_lock"}
+            except Exception as _lk_err:
+                logger.warning(f"Lock check failed (allowing through): {_lk_err}")
+                _lock_acquired = True  # Treat as acquired to avoid blocking
 
         try:
             routing = await resolve_mode(
@@ -292,7 +306,15 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
             if state._ghl_client:
                 try:
                     contact_snapshot = routing.contact_snapshot or await state._ghl_client.get_contact(contact_id)
-                    tags = contact_snapshot.get("tags") or contact_snapshot.get("contact", {}).get("tags") or []
+                    # _make_request wraps responses as {"success": True, "data": {...}}
+                    _inner = contact_snapshot.get("data", contact_snapshot)
+                    tags = (
+                        _inner.get("tags")
+                        or _inner.get("contact", {}).get("tags")
+                        or contact_snapshot.get("tags")
+                        or contact_snapshot.get("contact", {}).get("tags")
+                        or []
+                    )
                     if has_jorge_active_tag(tags):
                         manual_takeover = True
                         mode = ConversationMode.HUMAN_HANDOFF
