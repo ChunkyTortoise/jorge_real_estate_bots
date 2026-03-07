@@ -17,6 +17,9 @@ from bots.shared.config import settings
 # Context variable to store correlation ID for the current task/request
 correlation_id: ContextVar[str] = ContextVar("correlation_id", default="system")
 
+# Context variable to store contact ID for the current request
+contact_id_var: ContextVar[str] = ContextVar("contact_id", default="")
+
 
 class CorrelationFilter(logging.Filter):
     """Logging filter that injects the current correlation_id into the log record."""
@@ -128,3 +131,13 @@ def set_correlation_id(cid: Optional[str] = None) -> str:
 def get_correlation_id() -> str:
     """Get the current correlation ID."""
     return correlation_id.get()
+
+
+def set_contact_id(cid: Optional[str] = None) -> None:
+    """Set the contact ID for the current request context."""
+    contact_id_var.set(cid or "")
+
+
+def get_contact_id() -> str:
+    """Get the current contact ID."""
+    return contact_id_var.get()

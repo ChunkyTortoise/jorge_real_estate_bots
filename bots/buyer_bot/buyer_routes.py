@@ -32,7 +32,7 @@ async def process_buyer_message(request: ProcessMessageRequest, user=Depends(get
             contact_info=request.contact_info,
         )
         return result
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -40,7 +40,7 @@ async def process_buyer_message(request: ProcessMessageRequest, user=Depends(get
 async def get_progress(contact_id: str, location_id: str = Query(...), user=Depends(get_current_active_user())):
     try:
         return await buyer_bot.get_buyer_analytics(contact_id, location_id)
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -48,7 +48,7 @@ async def get_progress(contact_id: str, location_id: str = Query(...), user=Depe
 async def get_preferences(contact_id: str, location_id: str = Query(...), user=Depends(get_current_active_user())):
     try:
         return await buyer_bot.get_preferences(contact_id, location_id)
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -56,7 +56,7 @@ async def get_preferences(contact_id: str, location_id: str = Query(...), user=D
 async def get_matches(contact_id: str, location_id: str = Query(...), user=Depends(get_current_active_user())):
     try:
         return await buyer_bot.get_matches(contact_id, location_id)
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -64,7 +64,7 @@ async def get_matches(contact_id: str, location_id: str = Query(...), user=Depen
 async def get_active_conversations(user=Depends(get_current_active_user())):
     try:
         return await buyer_bot.get_all_active_conversations()
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -77,5 +77,5 @@ async def reset_state(contact_id: str, user=Depends(get_current_active_user())):
         if hasattr(cache, "srem"):
             await cache.srem("buyer:active_contacts", contact_id)
         return {"status": "ok", "contact_id": contact_id, "message": "Buyer bot state cleared"}
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=500, detail="Internal server error")

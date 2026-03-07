@@ -322,7 +322,8 @@ async def test_send_message_passes_correct_payload(ghl_client, mock_response_ok)
     call_kwargs = mock_http.request.call_args
     payload = call_kwargs.kwargs["json"]
     assert payload["contactId"] == "contact_1"
-    assert payload["message"] == "Hello!"
+    assert payload["message"].startswith("Hello!")
+    assert "[AI-assisted message]" in payload["message"]
     assert payload["type"] == "SMS"
 
 
