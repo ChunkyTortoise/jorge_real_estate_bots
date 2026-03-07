@@ -33,7 +33,7 @@ async def process_buyer_message(request: ProcessMessageRequest, user=Depends(get
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/api/jorge-buyer/{contact_id}/progress")
@@ -41,7 +41,7 @@ async def get_progress(contact_id: str, location_id: str = Query(...), user=Depe
     try:
         return await buyer_bot.get_buyer_analytics(contact_id, location_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/api/jorge-buyer/preferences/{contact_id}")
@@ -49,7 +49,7 @@ async def get_preferences(contact_id: str, location_id: str = Query(...), user=D
     try:
         return await buyer_bot.get_preferences(contact_id, location_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/api/jorge-buyer/matches/{contact_id}")
@@ -57,7 +57,7 @@ async def get_matches(contact_id: str, location_id: str = Query(...), user=Depen
     try:
         return await buyer_bot.get_matches(contact_id, location_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/api/jorge-buyer/active")
@@ -65,7 +65,7 @@ async def get_active_conversations(user=Depends(get_current_active_user())):
     try:
         return await buyer_bot.get_all_active_conversations()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/api/jorge-buyer/{contact_id}/state")
@@ -78,4 +78,4 @@ async def reset_state(contact_id: str, user=Depends(get_current_active_user())):
             await cache.srem("buyer:active_contacts", contact_id)
         return {"status": "ok", "contact_id": contact_id, "message": "Buyer bot state cleared"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
