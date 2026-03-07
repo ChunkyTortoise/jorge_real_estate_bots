@@ -167,6 +167,65 @@ async def check_stalled_conversations() -> None:
         except Exception as e:
             logger.error(f"Error in stall detection: {e}")
 
+        # Check bilingual contacts awaiting response for > 1 hour
+        try:
+            from database.models import ConversationModel
+            from database.session import AsyncSessionFactory
+            from sqlalchemy import select
+
+            bilingual_cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+            async with AsyncSessionFactory() as session:
+                res = await session.execute(
+                    select(ConversationModel).where(
+                        ConversationModel.status == "awaiting_human",
+                        ConversationModel.bot_type == "bilingual_handoff",
+                    )
+                )
+                overdue = [
+                    c for c in res.scalars().all()
+                    if c.last_activity and c.last_activity.replace(tzinfo=timezone.utc) < bilingual_cutoff
+                ]
+                if overdue:
+                    logger.warning(
+                        "Bilingual SLA breach: %d contacts awaiting bilingual agent > 1h: %s",
+                        len(overdue),
+                        [c.contact_id for c in overdue],
+                    )
+                    from bots.shared.alerting_service import AlertingService, push_alert_outbound
+                    svc = AlertingService()
+                    svc.record_metric("bilingual.overdue_count", len(overdue))
+                    if settings.alert_webhook_url:
+                        for c in overdue:
+                            await push_alert_outbound(
+                                {
+                                    "rule_name": "bilingual_sla_breach",
+                                    "metric": "bilingual.overdue_count",
+                                    "value": len(overdue),
+                                    "operator": "gt",
+                                    "threshold": 0,
+                                    "severity": "warning",
+                                    "triggered_at": time.time(),
+                                },
+                                settings.alert_webhook_url,
+                            )
+                            break  # one alert per batch, not per contact
+        except Exception as e:
+            logger.error(f"Error in bilingual SLA check: {e}")
+
+
+async def _run_alert_evaluation() -> None:
+    """Every 5 minutes: evaluate alert rules and push triggered alerts outbound."""
+    while True:
+        await asyncio.sleep(300)
+        try:
+            from bots.shared.alerting_service import AlertingService, push_alert_outbound
+            triggered = AlertingService().evaluate_rules()
+            if triggered and settings.alert_webhook_url:
+                for alert in triggered:
+                    await push_alert_outbound(alert, settings.alert_webhook_url)
+        except Exception as e:
+            logger.error(f"Alert evaluation failed: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -257,10 +316,13 @@ async def lifespan(app: FastAPI):
 
     # Start background stall detection (hourly scan for 48h-inactive conversations)
     _stall_task = asyncio.create_task(check_stalled_conversations())
+    # Start background alert evaluation (every 5 min, push to webhook if configured)
+    _alert_task = asyncio.create_task(_run_alert_evaluation())
 
     yield
 
     _stall_task.cancel()
+    _alert_task.cancel()
     logger.info("Shutting down Lead Bot...")
 
     if _ghl_client:

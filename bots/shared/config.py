@@ -130,6 +130,8 @@ class Settings(BaseSettings):
     # ========== MONITORING (Optional) ==========
     sentry_dsn: Optional[str] = None
     datadog_api_key: Optional[str] = None
+    alert_webhook_url: Optional[str] = None   # Slack/webhook for outbound alert push
+    log_format: str = "text"                  # "text" or "json" (set "json" in production)
 
     model_config = SettingsConfigDict(
         env_file=".env",

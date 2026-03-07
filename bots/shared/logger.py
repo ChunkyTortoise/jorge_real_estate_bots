@@ -4,6 +4,7 @@ Logging utility for Jorge's Real Estate AI Bots with Correlation ID support.
 Provides structured logging with correlation tracking for distributed tracing.
 Adapted from EnterpriseHub.
 """
+import json
 import logging
 import re
 import sys
@@ -23,6 +24,29 @@ class CorrelationFilter(logging.Filter):
     def filter(self, record):
         record.correlation_id = correlation_id.get()
         return True
+
+
+class JSONFormatter(logging.Formatter):
+    """JSON structured log formatter for production/machine-readable output."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        record.msg = self.redact(record.getMessage())
+        record.args = ()
+        return json.dumps({
+            "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level": record.levelname,
+            "correlation_id": getattr(record, "correlation_id", "system"),
+            "logger": record.name,
+            "message": record.msg,
+        })
+
+    _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+    _PHONE_RE = re.compile(r"(\+?\d{1,2}[\s.-]?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})")
+
+    @classmethod
+    def redact(cls, msg: str) -> str:
+        msg = cls._EMAIL_RE.sub("[REDACTED_EMAIL]", msg)
+        return cls._PHONE_RE.sub("[REDACTED_PHONE]", msg)
 
 
 class RedactionFilter(logging.Filter):
@@ -65,16 +89,20 @@ def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
         handler = logging.StreamHandler(sys.stdout)
         handler.setLevel(logger.level)
 
-        # Structured Format including Correlation ID
-        formatter = logging.Formatter(
-            "%(asctime)s | %(levelname)-8s | [%(correlation_id)s] | %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
-        )
+        if settings.log_format == "json":
+            formatter: logging.Formatter = JSONFormatter()
+        else:
+            formatter = logging.Formatter(
+                "%(asctime)s | %(levelname)-8s | [%(correlation_id)s] | %(name)s | %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S"
+            )
         handler.setFormatter(formatter)
 
         # Add Filter
         handler.addFilter(CorrelationFilter())
-        handler.addFilter(RedactionFilter())
+        if settings.log_format != "json":
+            # JSONFormatter handles redaction inline; RedactionFilter is for text mode only
+            handler.addFilter(RedactionFilter())
 
         logger.addHandler(handler)
         logger.propagate = False

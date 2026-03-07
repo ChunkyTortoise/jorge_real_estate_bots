@@ -21,6 +21,7 @@ Usage:
     active = service.get_active_alerts()
 """
 
+import json
 import logging
 import threading
 import time
@@ -28,7 +29,28 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+import httpx
+
 logger = logging.getLogger(__name__)
+
+
+async def push_alert_outbound(alert: Dict[str, Any], webhook_url: str) -> None:
+    """POST a single alert to a Slack-compatible incoming webhook URL."""
+    severity_emoji = {"critical": ":red_circle:", "warning": ":warning:", "info": ":information_source:"}
+    emoji = severity_emoji.get(alert.get("severity", "info"), ":bell:")
+    text = (
+        f"{emoji} *Jorge Bot Alert* — `{alert['rule_name']}`\n"
+        f"Metric: `{alert['metric']}` = `{alert['value']}` "
+        f"(threshold: `{alert['operator'] if 'operator' in alert else '?'} {alert['threshold']}`)\n"
+        f"Severity: `{alert['severity']}`"
+    )
+    payload = {"text": text}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(webhook_url, json=payload)
+            resp.raise_for_status()
+    except Exception as e:
+        logger.warning("Alert webhook delivery failed: %s", e)
 
 MAX_STORED_ALERTS = 100
 
@@ -257,6 +279,7 @@ class AlertingService:
                     "rule_name": rule.name,
                     "metric": rule.metric,
                     "value": latest.value,
+                    "operator": rule.operator,
                     "threshold": rule.threshold,
                     "severity": rule.severity,
                     "triggered_at": now,
