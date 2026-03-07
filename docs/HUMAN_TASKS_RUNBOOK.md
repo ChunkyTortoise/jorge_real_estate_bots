@@ -68,7 +68,7 @@ After receiving bot reply:
 
 ```bash
 # Get the contact_id from GHL for phone (310) 982-0492, then:
-curl -H "Authorization: Bearer REDACTED_ADMIN_KEY" \
+curl -H "Authorization: Bearer (see Render dashboard)" \
   https://jorge-realty-ai-xxdf.onrender.com/admin/conversations/<contact_id>
 ```
 
@@ -123,7 +123,7 @@ After Part B: confirm bot reply received within 5 min.
 
 Optionally check suppression log:
 ```bash
-curl -H "Authorization: Bearer REDACTED_ADMIN_KEY" \
+curl -H "Authorization: Bearer (see Render dashboard)" \
   https://jorge-realty-ai-xxdf.onrender.com/admin/conversations/<contact_id>
 ```
 
@@ -235,7 +235,7 @@ Once all 5 tasks above are complete, update the signoff doc:
 | Production URL | `https://jorge-realty-ai-xxdf.onrender.com` |
 | GHL number | `+1 (909) 255-3781` |
 | Test phone | `(310) 982-0492` |
-| Admin API key | `REDACTED_ADMIN_KEY` |
+| Admin API key | `(see Render dashboard)` |
 | Admin header | `Authorization: Bearer <key>` or `X-Admin-Key: <key>` |
 | DB upgrade deadline | 2026-03-24 (free tier expires) |
 | Render dashboard | `https://dashboard.render.com` |

@@ -36,7 +36,7 @@ The deployed service is reachable, reports `environment = production`, aggregate
 
 ### Auth Surface Probe
 
-- `X-Admin-Key: REDACTED_ADMIN_KEY` is the correct admin authentication header.
+- `X-Admin-Key: (see Render dashboard)` is the correct admin authentication header.
 - All authenticated operator surfaces confirmed reachable:
   - `GET /admin/settings` → HTTP 200, returns seller/buyer/lead prompt and config
   - `GET /api/dashboard/leads/summary` → HTTP 200, returns hero, funnel, and summary fields
@@ -71,7 +71,7 @@ The deployed service is reachable, reports `environment = production`, aggregate
 All env vars retrieved via Render API. Full list confirmed:
 ```
 ANTHROPIC_API_KEY  (set)
-GHL_API_KEY        REDACTED_GHL_KEY
+GHL_API_KEY        (see Render dashboard)
 GHL_LOCATION_ID    3xt4qayAh35BlDLaUv7P
 GHL_CALENDAR_ID    RxIM6Mfeipj2dpmUG79W
 JORGE_CALENDAR_ID  RxIM6Mfeipj2dpmUG79W
@@ -79,7 +79,7 @@ JORGE_USER_ID      Or4ImSUxUarPJQyawA5W
 REDIS_URL          redis://red-d6d54jfpm1nc739jgnm0:6379
 DATABASE_URL       (now set to internal postgres URL — was empty)
 ENVIRONMENT        production
-ADMIN_API_KEY      REDACTED_ADMIN_KEY
+ADMIN_API_KEY      (see Render dashboard)
 JWT_SECRET         (set)
 GHL_ALLOW_UNSIGNED_WEBHOOKS  true
 JORGE_BUYER_MODE   true
@@ -184,7 +184,7 @@ All three endpoints return proper 404s with descriptive messages. **Endpoint log
 |---|---|---|
 | Environment identity | Staging (wrong) | Fixed — live `/health` now reports `production` |
 | Postgres health | Down | Fixed — live `/health/aggregate` now reports `postgres = ok` |
-| ADMIN_API_KEY confirmation | Blocked | Confirmed: `REDACTED_ADMIN_KEY` via `X-Admin-Key` |
+| ADMIN_API_KEY confirmation | Blocked | Confirmed: `(see Render dashboard)` via `X-Admin-Key` |
 | Admin/dashboard endpoint auth | Blocked | Pass — all summary/list endpoints return 200 |
 | Repo test baseline | 1653 passed | 1655 passed, 21 skipped |
 | GHL contract re-validation | Prior pass | Re-run: still pass |

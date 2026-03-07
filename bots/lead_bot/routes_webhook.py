@@ -24,7 +24,7 @@ import redis.asyncio as _redis_lib
 
 from bots.shared.funnel_attribution import FunnelEvent, FunnelTracker
 from bots.shared.stall_reengagement import StallReengagementService
-from bots.shared.logger import get_logger
+from bots.shared.logger import get_logger, set_contact_id
 from bots.shared.response_filter import sanitize_bot_response
 from bots.shared.sms_metrics_collector import SmsMetricsCollector
 from database.repository import (
@@ -116,6 +116,7 @@ async def handle_new_lead(request: Request):
         contact_id = payload.get("id")
         if not contact_id:
             raise HTTPException(status_code=400, detail="Missing contact ID")
+        set_contact_id(contact_id)
 
         analysis_start = time.time()
         analysis_result, metrics = await state.lead_analyzer.analyze_lead(payload)
@@ -169,7 +170,7 @@ async def handle_new_lead(request: Request):
 
     except Exception as e:
         logger.error(f"Error processing new lead: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/api/ghl/webhook")
@@ -196,14 +197,16 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
         if not contact_id:
             logger.error("Unified webhook: missing contactId in payload")
             return {"status": "error", "detail": "missing contactId"}
+        set_contact_id(contact_id)
 
-        # Opt-out detection: record and skip re-engagement for future stall messages
+        # Opt-out detection: record and return early — do NOT continue to bot processing
         if message_body:
             try:
                 _srs = StallReengagementService()
                 if _srs.is_opt_out_message(message_body):
                     await _srs.record_opt_out(contact_id)
-                    logger.info("Opt-out recorded for %s — continuing with normal processing", contact_id)
+                    logger.info("Opt-out recorded for %s — stopping processing", contact_id)
+                    return {"status": "opted_out"}
             except Exception as _oe:
                 logger.debug("Opt-out check failed: %s", _oe)
 
@@ -677,10 +680,13 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
             response_message = sanitize_bot_response(response_message, bot_type=bot_type_lower)
             if response_message and state._ghl_client:
                 try:
-                    await state._ghl_client.send_message(contact_id, response_message, "SMS")
-                    logger.info(f"Reply sent to {contact_id} via GHL SMS")
-                    if canonical:
-                        canonical.last_outbound_at = datetime.now(timezone.utc).isoformat()
+                    result = await state._ghl_client.send_message(contact_id, response_message, "SMS")
+                    if not result.get("success"):
+                        logger.warning("SMS send failed", extra={"contact_id": contact_id, "result": result})
+                    else:
+                        logger.info(f"Reply sent to {contact_id} via GHL SMS")
+                        if canonical:
+                            canonical.last_outbound_at = datetime.now(timezone.utc).isoformat()
                 except Exception as e:
                     logger.error(f"Failed to send GHL reply to {contact_id}: {e}")
 

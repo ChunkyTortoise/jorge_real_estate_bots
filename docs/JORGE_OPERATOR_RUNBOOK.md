@@ -194,8 +194,8 @@ For any active issue, verify the UI exposes:
 
 Use the following owner model in the handoff:
 
-- App/runtime owner: [ ] TODO — name of engineering owner of the Render deployment
-- GHL workflow owner: [ ] TODO — name of operator/admin responsible for workflow changes in GHL
-- Billing/API owner: [ ] TODO — name of account owner for Anthropic and GHL credentials
+- App/runtime owner: Cayman Roden — Render deployment, server infrastructure, API keys (Anthropic)
+- GHL workflow owner: Jorge Salas — GHL Lyrio account owner, workflow configuration, Firebase-gated admin access
+- Billing/API owner: Jorge Salas — GHL account billing, Anthropic API billing, GHL Private Integrations scopes
 
 These names must be filled in before handoff is declared complete. Record them in `JORGE_PRODUCTION_HANDOFF_SIGNOFF.md`.

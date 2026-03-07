@@ -31,7 +31,7 @@
 | First live contact processed | ✅ N1 done — contactId `prX3fC1c7UaCjUzwdeyu` processed |
 | DATABASE_URL GitHub secret | ✅ N2 done — secret set via gh CLI |
 | GHL workflow audit | ⚠️ Partial — 9 Jorge workflows confirmed via API; GHL UI blocked (Firebase error) |
-| DB tier | ⚠️ At risk — free tier expires 2026-03-24 |
+| DB tier | ✅ Upgraded — `basic_256mb` via Render API (2026-03-07), no expiry |
 
 ---
 
@@ -60,19 +60,14 @@ These 8 Tier 1 workflows need explicit GHL UI confirmation:
 
 ---
 
-### B2 — DB Tier Upgrade
+### B2 — DB Tier Upgrade ✅ DONE (2026-03-07)
 **Owner**: Cayman Roden
-**Deadline**: Before 2026-03-24 (free tier deletes all data)
 
-The `jorge-realty-db` Render Postgres instance is on the free tier. The app is now writing
-conversation records, leads, and canonical state here.
-
-**Steps**:
-1. Render dashboard → `jorge-realty-db` → Upgrade plan (Starter $7/mo or Standard $20/mo)
-2. Confirm `DATABASE_URL` is unchanged after upgrade
-3. Verify `/health/aggregate` still shows `postgres = ok`
-
-**Acceptance criteria**: `jorge-realty-db` on paid tier, expiry date removed.
+Upgraded via Render API: `PATCH /v1/postgres/dpg-d6d54hn5r7bs73aq6rkg-a` with `{"plan":"basic_256mb"}`.
+- Plan: `basic_256mb` (1GB disk, $7/mo equivalent)
+- `expiresAt`: absent (paid tier — no expiry)
+- `DATABASE_URL` unchanged (internal Render URL preserved)
+- `/health/aggregate` confirmed: `postgres=ok` post-upgrade
 
 ---
 
@@ -279,7 +274,7 @@ Mark `JORGE_PRODUCTION_HANDOFF_SIGNOFF.md` as `ready` when ALL blocking items ar
 - [x] Duplicate / race safety passes
 - [x] 1716 tests passing (T1-T8 coverage, 2026-03-07)
 - [ ] **B1**: GHL Tier 1 workflow audit — all 8 workflows confirmed in GHL UI
-- [ ] **B2**: `jorge-realty-db` upgraded to paid tier
+- [x] **B2**: `jorge-realty-db` upgraded to `basic_256mb` (2026-03-07) — no expiry
 - [ ] **B3**: Manual takeover + resume live test passes
 - [ ] **B4**: Calendar booking works end-to-end (GHL returns 201, not 404)
 
@@ -299,7 +294,7 @@ unchecked ones. All others have been API-validated.
 |---|---|
 | Last stable SHA | `abc931a` |
 | Rollback via | Render dashboard → jorge-realty-ai → Deploys → redeploy previous |
-| Internal postgres URL | `postgresql://jorge_realty:REDACTED_POSTGRES_PASSWORD@dpg-d6d54hn5r7bs73aq6rkg-a/jorge_realty` |
-| Admin key | `REDACTED_ADMIN_KEY` (header `X-Admin-Key`) |
+| Internal postgres URL | (see Render dashboard → jorge-realty-db → Connection String) |
+| Admin key | (see Render dashboard → jorge-realty-ai → Environment → ADMIN_API_KEY) |
 | Redis | `red-d6d54jfpm1nc739jgnm0:6379` |
 | Calendar circuit breaker key | `calendar:write_broken` (Redis, 1h TTL) |

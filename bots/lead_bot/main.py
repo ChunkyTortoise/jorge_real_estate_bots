@@ -39,7 +39,7 @@ from bots.shared.cache_service import get_cache_service
 from bots.shared.config import settings
 from bots.shared.event_broker import event_broker
 from bots.shared.ghl_client import GHLClient
-from bots.shared.logger import get_logger, set_correlation_id
+from bots.shared.logger import get_logger, set_contact_id, set_correlation_id
 
 logger = get_logger(__name__)
 
@@ -219,7 +219,10 @@ async def _run_alert_evaluation() -> None:
         await asyncio.sleep(300)
         try:
             from bots.shared.alerting_service import AlertingService, push_alert_outbound
-            triggered = AlertingService().evaluate_rules()
+            from bots.shared.bot_metrics_collector import BotMetricsCollector
+            alerting = AlertingService()
+            BotMetricsCollector().feed_to_alerting(alerting)
+            triggered = alerting.evaluate_rules()
             if triggered and settings.alert_webhook_url:
                 for alert in triggered:
                     await push_alert_outbound(alert, settings.alert_webhook_url)
@@ -237,7 +240,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"5-Minute Response Timeout: {settings.lead_response_timeout_seconds}s")
 
     # Fail fast on missing critical env vars
-    _required = ["anthropic_api_key", "ghl_api_key", "ghl_location_id", "redis_url", "admin_api_key"]
+    _required = ["anthropic_api_key", "ghl_api_key", "ghl_location_id", "redis_url", "admin_api_key", "database_url"]
     _missing = [v.upper() for v in _required if not getattr(settings, v, None)]
     if _missing:
         msg = f"Missing required env vars: {_missing}"
@@ -562,7 +565,7 @@ async def analyze_lead(lead_msg: LeadMessage, background_tasks: BackgroundTasks,
 
     except Exception as e:
         logger.error(f"Lead analysis error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/performance", response_model=PerformanceStatus)

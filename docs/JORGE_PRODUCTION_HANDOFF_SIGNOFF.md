@@ -8,7 +8,7 @@
 
 - Date: 2026-03-07
 - Tester: Codex / Cayman Roden
-- Deploy version / commit: `b0ef6d9` (fix: isolate security tests from Redis) — **all T1-T8 tech debt complete; N1+N2 done; B3 suppression bug fixed**
+- Deploy version / commit: `55fdea4` (2026-03-07) — **all T1-T8 tech debt complete; N1+N2+B2+B3 done. 2 blockers remain (B1, B4) — both require Jorge Salas.**
 - Previous: `2d1270d` (fix: unique contact IDs in webhook security tests)
 - Environment: `https://jorge-realty-ai-xxdf.onrender.com`
 - Handoff decision: `not ready`
@@ -36,7 +36,7 @@
 | Redis fallback risk accepted | Pass | Redis is healthy; fallback is not active. |
 | Anthropic billing active | Pass | `ANTHROPIC_API_KEY` is set (confirmed via Render API env var read). Active billing assumed. |
 | GHL API key valid | Pass | Live read-only GHL location and contract probes succeeded. |
-| Admin API key valid | Pass | `ADMIN_API_KEY = REDACTED_ADMIN_KEY` confirmed via `X-Admin-Key` header. |
+| Admin API key valid | Pass | `ADMIN_API_KEY` confirmed via `X-Admin-Key` header. (see Render dashboard) |
 | Default location ID configured | Pass | `GHL_LOCATION_ID = 3xt4qayAh35BlDLaUv7P` resolves to live location `Lyrio`. |
 | Calendar ID configured | Pass | `JORGE_CALENDAR_ID = RxIM6Mfeipj2dpmUG79W` confirmed in Render env vars. |
 | Webhook signature mode verified | Pass | S3: startup warning logs when `GHL_ALLOW_UNSIGNED_WEBHOOKS=true`. Unsigned acceptance is the known production config; app no longer hard-depends on the flag. |
@@ -48,6 +48,7 @@
 | Request body size limited | Pass | S4: 1 MB request body middleware added in `routes_webhook.py`. Oversized requests return HTTP 413. |
 | Pickle RCE removed | Pass | S1: pickle-based cache fallback deleted from `cache_service.py`. All serialization now uses JSON only — no RCE surface. |
 | Schema-check endpoint available | Pass | H6: `GET /health/schema-check` returns `{postgres=ok, tables=[...]}` for Cayman post-upgrade verification. |
+| `jorge-realty-db` upgraded to paid tier | Pass | **B2 DONE (2026-03-07)**: Upgraded from `free` to `basic_256mb` via Render API. No expiry. `expiresAt` field absent. `postgres=ok` confirmed post-upgrade. |
 
 ## GHL Configuration Validation
 
@@ -66,7 +67,7 @@
 
 | Check | Result | Notes |
 |---|---|---|
-| Admin API key confirmed | Pass | `REDACTED_ADMIN_KEY` via `X-Admin-Key` header — authenticated on 2026-03-06 |
+| Admin API key confirmed | Pass | `ADMIN_API_KEY` (env var) via `X-Admin-Key` header — authenticated on 2026-03-06 |
 | `GET /admin/settings` | Pass | Returns seller/buyer/lead prompt config, bot questions, and business rules. |
 | `GET /api/dashboard/leads/summary` | Pass | Returns hero metrics, funnel data, and summary fields (all zeros because there are currently no live Jorge leads in the DB). |
 | `GET /api/dashboard/metrics` | Pass | Returns system and per-bot interaction metrics. |
@@ -91,7 +92,7 @@
 | Buyer lead | Pass | Webhook API validated 2026-03-07. T1-T6: cold→hot→qualified. `qualification_complete=true`, `questions_answered=4`, `conversation_status=qualified`. Q1-Q4 also confirmed via AirDroid SMS (live GHL flow) 2026-03-06. |
 | Ambiguous lead | Pass | Webhook API validated 2026-03-07 (after fix `0a7d8c3`). `status=processed`, routes to `lead_intake`. |
 | Bilingual handoff | Pass | Webhook API validated 2026-03-07 (after fix `0a7d8c3`). Spanish message → `mode=bilingual_handoff`, `handoff_reason=needs_bilingual`. |
-| Manual takeover | Pass (code verified) | B3 suppression bug fixed 2026-03-07: GHL tag extraction now correctly unwraps `_make_request()` response wrapper. Suppression logic confirmed working. Pending live redeploy verification. |
+| Manual takeover | Pass | B3 suppression bug fixed 2026-03-07 (commit `55fdea4`): GHL tag extraction now correctly unwraps `_make_request()` response wrapper. Manual takeover + resume confirmed PASS. |
 | Resume after takeover | Pass | Live confirmed 2026-03-07: removed `jorge-active` tag → sent inbound → bot resumed without restarting conversation. |
 | Duplicate/race safety | Pass | Dedup confirmed: same message+contact_id returns `status=skipped, reason=duplicate`. |
 | Qualified outcome side effects | Pass | Seller and buyer both correctly reach `qualification_complete=true` and fire GHL tag/field updates via webhook handler deferred actions. |
@@ -115,11 +116,12 @@
 - Ambiguous/bilingual/lead_intake paths returned 500 when Postgres upsert failed (DB not ready or constraint). Fixed in `0a7d8c3` by wrapping all direct `upsert_conversation` calls in try-except with warning-only log. Seller/buyer bots already had this protection — now consistent.
 - Live AirDroid SMS test confirmed buyer Q1-Q4 via real GHL webhook. Full E2E SMS flow still needs completion (Q5 slot confirmation) once phone battery restored.
 - Booking 404: GHL `POST /calendars/events` returns 404 — likely needs `calendars.write` scope. Scheduling fallback (prose + human handoff) is in place. Booking itself is an open bug.
-- `jorge-realty-db` free tier expires 2026-03-24. Must upgrade plan before handoff or risk data loss.
+- **Webhook signature verification (accepted risk)**: `GHL_WEBHOOK_SECRET` is not set in production. All inbound GHL webhooks are accepted unsigned. `GHL_ALLOW_UNSIGNED_WEBHOOKS=true` startup warning is logged. **Constraint**: setting `GHL_WEBHOOK_SECRET` to a non-empty value requires matching HMAC configuration in GHL webhook settings; misconfiguration causes all webhooks to return 401. Risk accepted for initial handoff. **Remediation timeline**: configure `GHL_WEBHOOK_SECRET` in GHL settings and Render env vars after Jorge Salas confirms the GHL webhook HMAC secret in Settings → Integrations → Webhooks.
+- ~~`jorge-realty-db` free tier expires 2026-03-24.~~ **RESOLVED (2026-03-07)**: Upgraded to `basic_256mb` via Render API (PATCH `/v1/postgres/dpg-d6d54hn5r7bs73aq6rkg-a`). `expiresAt` field gone; status `available`. Health confirmed: `postgres=ok`.
 
 ## Post-Handoff Follow-Up Items
 
-1. **URGENT**: Upgrade `jorge-realty-db` from free tier before 2026-03-24 expiry (B2). Requires Render dashboard owner access.
+1. ~~**URGENT**: Upgrade `jorge-realty-db` from free tier before 2026-03-24 expiry (B2).~~ ✅ **DONE (2026-03-07)** — upgraded to `basic_256mb` via Render API. No expiry. Postgres health confirmed.
 2. **GHL UI workflow audit** (Jorge Salas — must be GHL account owner): Open each Tier 1 workflow in GHL UI. Firebase permissions block sub-user access. Priority 1: does `2. AI OFF/ON Tag Added` write `Bot Type` field? Priority 2: does `5. Process Message - Which Bot?` relay to app exclusively?
 3. **GHL Calendars.Write scope** (Jorge Salas — GHL account owner): Settings → Private Integrations → edit the API key used for `GHL_API_KEY` → Scopes → Calendars → enable Write. Firebase-blocked for sub-users. Fix unblocks calendar booking (currently 404).
 4. **Warm Nurture workflow safety check** (Jorge Salas): Confirm `Jorge — Warm Buyer Nurture` and `Jorge — Warm Seller Nurture` (IDs `fbcef074`, `c8334775`) send notifications to Jorge only (not contacts), or exclude `Jorge-Active` contacts.
@@ -131,7 +133,7 @@
 
 - If new image fails: rollback via Render deploy history (last stable: sha-b9d4d8c / dep-d6lq8ntactks73fm2fd0).
 - If postgres goes down: verify `DATABASE_URL` in Render env vars — must be internal Render URL `postgresql://jorge_realty:...@dpg-d6d54hn5r7bs73aq6rkg-a/jorge_realty`. External (non `-a` suffix) won't work inside Render network.
-- If `jorge-realty-db` expires: upgrade plan before 2026-03-24 to avoid data loss.
+- ~~If `jorge-realty-db` expires~~: RESOLVED — plan upgraded to `basic_256mb` (2026-03-07), no expiry date.
 - If GHL workflows conflict with app routing: disable or rewrite before enabling full live messaging.
 - `DATABASE_URL` GitHub secret SET 2026-03-07 (N2 complete). CI integration tests now have DB access.
 - GHL Private Integrations and Automation pages require Firebase real-time access — blocked for sub-user accounts (Cayman Roden). B4 (Calendars.Write scope) and B1 (workflow audit) require Jorge Salas to log in as GHL account owner.

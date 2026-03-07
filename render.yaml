@@ -1,3 +1,8 @@
+# NOTE: Live deploy uses Docker image via .github/workflows/deploy.yml, NOT this blueprint.
+# This file is kept for reference only. The active service (jorge-realty-ai-xxdf.onrender.com)
+# is deployed as a Docker container using the Dockerfile in this repo.
+# To update deploy config, edit deploy.yml and push to main.
+
 services:
   - type: web
     name: jorge-realty-ai

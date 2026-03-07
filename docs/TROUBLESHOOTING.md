@@ -84,17 +84,16 @@ The bots use an in-memory cache fallback when Redis is unavailable. Features aff
 
 ## Environment Variable Checklist
 
-Required for production:
+Required for production (startup will fail if any of these are missing in `production` environment):
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` |
+| `ANTHROPIC_API_KEY` | Claude API key | `sk-ant-...` |
 | `GHL_API_KEY` | GoHighLevel API key | `eyJ...` |
 | `GHL_LOCATION_ID` | GHL location/sub-account ID | `abc123` |
-| `JORGE_USER_ID` | Jorge's GHL user ID | `4lAS80xUq4MIRbgfQ5vg` |
-| `ANTHROPIC_API_KEY` | Claude API key | `sk-ant-...` |
-| `JWT_SECRET` | Secret for auth tokens | (random 32+ char string) |
-| `ADMIN_PASSWORD` | Dashboard admin password | (strong password) |
+| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` |
+| `ADMIN_API_KEY` | Admin endpoint authentication key | (see Render dashboard) |
+| `DATABASE_URL` | PostgreSQL connection (internal Render URL) | `postgresql://user:pass@host/db` |
 
 Optional:
 
@@ -102,16 +101,18 @@ Optional:
 |----------|-------------|---------|
 | `ENVIRONMENT` | Runtime environment | `production` |
 | `DEMO_MODE` | Run with mock data | `false` |
-| `DATABASE_URL` | PostgreSQL connection | (none -- Postgres features disabled) |
+| `JORGE_USER_ID` | Jorge's GHL user ID for assignments | (none) |
 | `GHL_WEBHOOK_SECRET` | HMAC webhook secret | (none -- verification skipped) |
 | `GHL_WEBHOOK_PUBLIC_KEY` | RSA webhook public key | (none -- verification skipped) |
 | `JORGE_CALENDAR_ID` | Calendar for booking | (none -- booking disabled) |
+| `LOG_FORMAT` | Logging format (`text` or `json`) | `text` (set `json` in production) |
+| `SENTRY_DSN` | Sentry error tracking DSN | (none -- Sentry disabled) |
 
 ### Quick env validation
 
 ```bash
-# Check all required vars are set
-for var in REDIS_URL GHL_API_KEY GHL_LOCATION_ID JORGE_USER_ID ANTHROPIC_API_KEY JWT_SECRET ADMIN_PASSWORD; do
+# Check all required vars are set (matches startup fail-fast check in main.py)
+for var in ANTHROPIC_API_KEY GHL_API_KEY GHL_LOCATION_ID REDIS_URL ADMIN_API_KEY DATABASE_URL; do
   if [ -z "${!var}" ]; then echo "MISSING: $var"; else echo "OK: $var"; fi
 done
 ```
@@ -159,15 +160,18 @@ Common causes:
 
 ### Leads not routing to the correct bot
 
-The unified webhook determines bot type in this order:
+The unified webhook routes via `conversation_orchestrator.resolve_mode()` in this order:
 
-1. `customData.bot_type` in the webhook payload
-2. `customData["Bot Type"]` in the webhook payload
-3. `bot_type` field in the payload root
-4. GHL contact custom field `Bot Type` (fetched via API)
-5. Default: `lead` (Lead Bot)
+1. **Canonical mode cache** (Redis key `conv_mode:{contact_id}`) — fastest path, set after first successful bot interaction
+2. **Database lookup** — reads `conversations.mode` for existing contacts
+3. **GHL contact lookup** — fetches the `Bot Type` custom field via GHL API
+4. **Default**: `lead_intake` (Lead Bot)
 
-**Fix:** Ensure the GHL workflow sets `Bot Type` in the customData before firing the webhook.
+**Fix:** If a contact is routing to the wrong bot, check:
+- Clear the Redis canonical cache: `DEL conv_mode:{contact_id}`
+- Check the `conversations` table for this contact's current mode
+- Verify the GHL contact has the correct `Bot Type` custom field set
+- Use `POST /admin/reassign-bot` to force reassignment to a specific bot
 
 ### Handoff confidence threshold
 
