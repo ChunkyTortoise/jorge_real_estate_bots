@@ -431,7 +431,7 @@ class MetricsService:
             ]
             
             # Calculate validation metrics
-            leads_with_budget = len([l for l in lead_data if l.get('budget_max', 0) > 0])
+            leads_with_budget = len([lead for lead in lead_data if lead.get('budget_max', 0) > 0])
             validation_pass_rate = (leads_with_budget / total_leads) * 100 if total_leads > 0 else 0
             
             return BudgetDistribution(
@@ -536,8 +536,8 @@ class MetricsService:
             # Classify leads by timeline
             for lead in lead_data:
                 timeline_str = lead.get('timeline', 'unknown')
-                lead_score = lead.get('lead_score', 0)
-                
+                _lead_score = lead.get('lead_score', 0)
+
                 # Map timeline strings to Timeline enum
                 if timeline_str in ['immediate', 'asap', '0-30']:
                     timeline = Timeline.IMMEDIATE
@@ -657,7 +657,7 @@ class MetricsService:
             
             for lead in lead_data:
                 budget_max = lead.get('budget_max', 0)
-                lead_score = lead.get('lead_score', 0)
+                _lead_score = lead.get('lead_score', 0)
                 is_qualified = lead.get('is_qualified', False)
                 temperature = lead.get('temperature', 'COLD')
                 
@@ -687,8 +687,8 @@ class MetricsService:
             avg_commission = total_commission_potential / total_leads if total_leads > 0 else 0
             
             # Calculate validation rates
-            budget_validation_rate = len([l for l in lead_data if l.get('budget_max', 0) > 0]) / total_leads * 100 if total_leads > 0 else 0
-            service_area_rate = len([l for l in lead_data if l.get('service_area_match', False)]) / total_leads * 100 if total_leads > 0 else 0
+            budget_validation_rate = len([lead for lead in lead_data if lead.get('budget_max', 0) > 0]) / total_leads * 100 if total_leads > 0 else 0
+            service_area_rate = len([lead for lead in lead_data if lead.get('service_area_match', False)]) / total_leads * 100 if total_leads > 0 else 0
             
             # Calculate monthly projections based on hot leads
             hot_commission_potential = sum([

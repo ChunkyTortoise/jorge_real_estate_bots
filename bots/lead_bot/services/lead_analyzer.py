@@ -250,13 +250,13 @@ class LeadAnalyzer:
         contact_id = lead_data.get("id")
         logger.info(f"Analyzing lead: {contact_id}")
 
-        # Extract relevant fields
-        name = lead_data.get("name", "Unknown")
-        email = lead_data.get("email", "")
-        phone = lead_data.get("phone", "")
-        source = lead_data.get("source", "Unknown")
-        tags = lead_data.get("tags", [])
-        custom_fields = lead_data.get("customField", {})
+        # Extract relevant fields (passed to prompt builder via lead_data)
+        _name = lead_data.get("name", "Unknown")
+        _email = lead_data.get("email", "")
+        _phone = lead_data.get("phone", "")
+        _source = lead_data.get("source", "Unknown")
+        _tags = lead_data.get("tags", [])
+        _custom_fields = lead_data.get("customField", {})
 
         # Build analysis prompt
         prompt = self._build_analysis_prompt(lead_data)

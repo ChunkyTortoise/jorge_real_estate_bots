@@ -7,8 +7,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
 from sqlalchemy import func, select
 
 from database.models import (
@@ -19,6 +17,8 @@ from database.models import (
     PropertyModel,
 )
 from database.session import AsyncSessionFactory
+
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:

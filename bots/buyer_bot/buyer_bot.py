@@ -17,7 +17,7 @@ from bots.shared.bot_settings import get_override as _get_bot_override
 from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.response_filter import sanitize_bot_response
 from bots.shared.cache_service import get_cache_service
-from bots.shared.calendar_booking_service import FALLBACK_MESSAGE, CalendarBookingService
+from bots.shared.calendar_booking_service import CalendarBookingService
 from bots.shared.claude_client import ClaudeClient
 from bots.shared.config import settings
 from bots.shared.conversation_contract import (

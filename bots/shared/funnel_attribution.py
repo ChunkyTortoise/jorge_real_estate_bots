@@ -9,7 +9,7 @@ to bots using first-touch, last-touch, linear, and time-decay models.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 

@@ -18,7 +18,6 @@ from bots.shared.bot_settings import (
 from bots.shared.config import settings
 from bots.shared.conversation_contract import (
     CONVERSATION_MODE_CACHE_PREFIX,
-    ConversationMode,
     extract_canonical_view,
     mode_to_assignment,
     normalize_conversation_mode,

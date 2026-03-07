@@ -20,7 +20,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
-from tenacity import retry, retry_if_exception, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
+from bots.shared.config import settings
+from bots.shared.event_broker import event_broker
+from bots.shared.ghl_constants import GHL_FIELD_MAP
+from bots.shared.logger import get_logger
 
 
 def _is_retryable_ghl_error(exc: BaseException) -> bool:
@@ -30,11 +35,6 @@ def _is_retryable_ghl_error(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in (429, 502, 503)
     return False
-
-from bots.shared.config import settings
-from bots.shared.event_broker import event_broker
-from bots.shared.ghl_constants import GHL_FIELD_MAP
-from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
 

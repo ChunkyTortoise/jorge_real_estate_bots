@@ -21,7 +21,10 @@ from bots.shared.dashboard_models import (
     ConversationFilters,
     ConversationStage,
     ConversationState,
+    DashboardData,
+    HeroMetrics,
     PaginatedConversations,
+    PerformanceMetrics,
     Temperature,
 )
 from bots.shared.conversation_contract import extract_canonical_view
@@ -653,8 +656,8 @@ class DashboardDataService:
             
             # Calculate real metrics from actual data
             total_leads = len(lead_data)
-            qualified_leads = len([l for l in lead_data if l.get('is_qualified', False)])
-            hot_leads = len([l for l in lead_data if l.get('temperature') == 'HOT'])
+            qualified_leads = len([lead for lead in lead_data if lead.get('is_qualified', False)])
+            hot_leads = len([lead for lead in lead_data if lead.get('temperature') == 'HOT'])
             active_conversations = len(conversation_data)
             
             # Calculate revenue metrics using real commission calculations
