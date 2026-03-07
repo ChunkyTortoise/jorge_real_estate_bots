@@ -4,9 +4,9 @@ This document captures the live findings observed during the production-finaliza
 
 ## Summary
 
-Current decision: `not ready` — deployment blockers are partially resolved; awaiting successful redeploy.
+Current decision: `not ready` — core runtime blockers are resolved, but workflow audit, contact-specific operator validation, and live scenario execution are still incomplete.
 
-The deployed service is reachable and operator-surface auth is confirmed. The critical DATABASE_URL blocker is fixed. A new Docker image is being built to resolve the redeploy failure. Postgres health will be confirmed after the new image deploys successfully.
+The deployed service is reachable, reports `environment = production`, aggregate health is green, and authenticated operator-surface auth is confirmed. The remaining blockers are now centered on live contact-backed verification and the GHL workflow/legacy audit.
 
 ---
 
@@ -19,25 +19,20 @@ The deployed service is reachable and operator-surface auth is confirmed. The cr
 
 ### Deployed Health
 
-- `GET /health` → HTTP 200, `status = healthy`, `environment = staging`, `version = 1.0.0`
-- `GET /health/aggregate` → HTTP 200, `status = degraded`
-  - `lead_bot = ok`, `seller_bot = ok`, `buyer_bot = ok`, `redis = ok`, `postgres = down`
+- `GET /health` → HTTP 200, `status = healthy`, `environment = production`, `version = 1.0.0`
+- `GET /health/aggregate` → HTTP 200, `status = healthy`
+  - `lead_bot = ok`, `seller_bot = ok`, `buyer_bot = ok`, `redis = ok`, `postgres = ok`
 
 ### Environment Identity
 
-- Render env var `ENVIRONMENT = production` was already set before this session.
-- Running container reports `staging` because the currently live container was deployed on 2026-03-05 (before the env var was set), and the service has `autoDeploy: no`.
-- All subsequent redeploy attempts (using the sha-5db0d45 image) have failed with `nonZeroExit: 1`.
-- The sha-5db0d45 image exists on Docker Hub and was pushed at 2026-03-06T02:51. The deploy failure is a container startup crash, not an image availability problem.
-- Confirmed root cause of startup crash: `AuthMiddleware` instantiates `AuthService` at module import time. `AuthService.__init__` calls `_get_secret_key()` which raises `RuntimeError("JWT_SECRET must be configured in non-test environments")` if both `os.getenv("JWT_SECRET")` and `settings.jwt_secret` are empty. Even though `JWT_SECRET` is set in Render env vars, a subtle env var loading issue in the sha-5db0d45 image may have prevented it from being read. A new image (`sha-production-fix-2026-03-06`) is being built to resolve this.
+- The currently probed deployment now reports `environment = production`.
+- Earlier `staging` findings are historical only and superseded by the current `production_readiness_report.md`.
 
-### DATABASE_URL Root Cause
+### DATABASE_URL And Postgres
 
-- Render env var `DATABASE_URL` was **empty string** (`""`).
-- App fell back to the default `postgresql://postgres:postgres@localhost:5432/jorge_bots`, which is unreachable in the container.
-- Fix applied: updated `DATABASE_URL` to the Render internal connection string:
-  `postgresql://jorge_realty:<password>@dpg-d6d54hn5r7bs73aq6rkg-a/jorge_realty`
-- Postgres status will be verified after the new image deploys successfully.
+- Earlier `DATABASE_URL` misconfiguration was corrected.
+- Current aggregate health confirms `postgres = ok`.
+- External schema verification remains blocked until the live `DATABASE_URL` is provided for `check_conversation_schema.py`.
 
 ### Auth Surface Probe
 
@@ -46,8 +41,13 @@ The deployed service is reachable and operator-surface auth is confirmed. The cr
   - `GET /admin/settings` → HTTP 200, returns seller/buyer/lead prompt and config
   - `GET /api/dashboard/leads/summary` → HTTP 200, returns hero, funnel, and summary fields
   - `GET /api/dashboard/metrics` → HTTP 200, returns system and bot-level metrics
-  - `GET /api/dashboard/handoffs` → HTTP 200, returns `[]` (no handoffs yet — postgres down)
-  - `GET /api/dashboard/leads` → HTTP 500 (postgres down — expected)
+  - `GET /api/dashboard/handoffs` → HTTP 200, returns `[]`
+  - `GET /api/dashboard/sms-metrics` → HTTP 200
+  - `GET /api/dashboard/funnel` → HTTP 200
+  - `GET /api/dashboard/stall-stats` → HTTP 200
+  - `GET /api/dashboard/leads` → HTTP 200, returns `{"leads":[],"total":0,...}`
+- Contact-specific operator endpoints are still blocked because there are no known live contact IDs with DB-backed Jorge records.
+- Direct read-only GHL contact enumeration using the current `GHL_API_KEY` returned HTTP 403, so sample contact discovery is still blocked without either broader GHL scope or a known contact ID from ops.
 
 ### GHL Location And Contract Probe
 
@@ -91,29 +91,13 @@ ADMIN_PASSWORD     (empty)
 
 ## Current Blockers
 
-### Blocker 1. Running container reports `environment = staging`
-
-- Root cause: current live container is the sha-0641f91 image from 2026-03-05, deployed before `ENVIRONMENT=production` was injected.
-- Resolution in progress: new Docker image build targeting `sha-production-fix-2026-03-06`. After successful deploy, the container will have `ENVIRONMENT=production` from Render env vars.
-
-### Blocker 2. Postgres down from app perspective
-
-- Root cause: `DATABASE_URL` was empty string in Render env vars.
-- Fix applied: `DATABASE_URL` updated to internal Render postgres connection string.
-- Verification pending: will confirm `postgres = ok` in `/health/aggregate` after redeploy.
-
-### Blocker 3. sha-5db0d45 image fails to deploy (nonZeroExit: 1)
-
-- Confirmed root cause: container crash during startup, likely `AuthService` raising `RuntimeError` for missing `JWT_SECRET` in production mode.
-- Fix in progress: building new Docker image `sha-production-fix-2026-03-06`.
-
-### Blocker 4. DB schema verification not yet run
+### Blocker 1. DB schema verification not yet run
 
 - The jorge-realty-db postgres does not allow external connections (ipAllowList = null = Render internal only).
 - External schema verification via `check_conversation_schema.py` is blocked by IP restrictions.
 - Alternative: verify via `/health/aggregate` showing `postgres = ok` after redeploy, plus spot-check of admin/dashboard endpoints returning DB-backed data.
 
-### Blocker 5. GHL workflow and legacy-contract audit still incomplete
+### Blocker 2. GHL workflow and legacy-contract audit still incomplete
 
 - 331 extra live tags, 608 extra fields — not yet fully classified.
 - High-risk items identified in `ghl_legacy_contract_review.md` but not yet individually reviewed.
@@ -129,7 +113,15 @@ ADMIN_PASSWORD     (empty)
   - `Qualified Lead Notify - SMS`
   - `Qualified Lead Notify - Email`
 
-### Blocker 6. Live scenario validation not yet executed
+### Blocker 3. Contact-specific operator validation still not executable
+
+- `GET /admin/conversations/{contact_id}`, `GET /api/dashboard/leads/{contact_id}`, and `GET /api/dashboard/conversations/{contact_id}` still require a real contact ID with Jorge DB records.
+- Direct GHL contact enumeration is currently blocked by HTTP 403 using the available GHL token, so contact discovery needs either:
+  - a provided sample contact ID from ops, or
+  - broader GHL token scope, or
+  - a real inbound lead processed through production.
+
+### Blocker 4. Live scenario validation not yet executed
 
 - All 9 scenario validations pending live service being healthy.
 
@@ -139,35 +131,31 @@ ADMIN_PASSWORD     (empty)
 
 | Item | Prior Status | Current Status |
 |---|---|---|
-| DATABASE_URL fix | Blocked (missing value) | Fixed — internal URL set in Render env vars |
+| Environment identity | Staging (wrong) | Fixed — live `/health` now reports `production` |
+| Postgres health | Down | Fixed — live `/health/aggregate` now reports `postgres = ok` |
 | ADMIN_API_KEY confirmation | Blocked | Confirmed: `REDACTED_ADMIN_KEY` via `X-Admin-Key` |
-| Admin/dashboard endpoint auth | Blocked | Pass — all operator surfaces authenticated and returning data |
-| Deploy failure cause | Unknown | Identified: sha-5db0d45 crashes with nonZeroExit=1 |
-| New Docker image | N/A | Building: `sha-production-fix-2026-03-06` |
-| Environment identity | Staging (wrong) | Env var is `production`; will take effect after redeploy |
+| Admin/dashboard endpoint auth | Blocked | Pass — settings, leads, summary, metrics, handoffs, funnel, stall stats, SMS metrics all return 200 |
 | Repo test baseline | 1653 passed | 1655 passed, 21 skipped |
 | GHL contract re-validation | Prior pass | Re-run: still pass |
+| Contact discovery for detail views | Unknown | Blocked — GHL contact enumeration returns HTTP 403 with current token |
 
 ---
 
 ## Next Required Actions
 
-1. Confirm new Docker image build succeeds and push completes.
-2. Update Render service image path to `sha-production-fix-2026-03-06`.
-3. Trigger redeploy.
-4. Verify `/health` → `environment = production` and `/health/aggregate` → `postgres = ok`.
-5. Re-run `production_readiness_report.py` with `--admin-key`.
-6. Spot-check `/api/dashboard/leads` returns real DB data.
-7. Execute live scenario validation checklist.
-8. Complete GHL legacy tag/field manual review.
-9. Complete GHL workflow trigger/action audit and final inventory disposition using `ghl_workflows_export.md` as the seed list.
-10. Update `JORGE_PRODUCTION_HANDOFF_SIGNOFF.md` with evidence.
+1. Run `check_conversation_schema.py` with the real live `DATABASE_URL`, or obtain an operator-approved internal verification equivalent.
+2. Obtain at least one real contact ID with Jorge DB records, or expand GHL token scope enough to enumerate contacts safely.
+3. Validate contact-specific operator endpoints with that contact ID.
+4. Execute live scenario validation checklist.
+5. Complete GHL legacy tag/field manual review.
+6. Complete GHL workflow trigger/action audit and final inventory disposition using `ghl_workflows_export.md` as the seed list.
+7. Update `JORGE_PRODUCTION_HANDOFF_SIGNOFF.md` with final evidence and approvals.
 
 ---
 
 ## Current Handoff Status
 
 The repo is prepared for handoff (1655 tests passing).
-The live deployment is not yet approved for handoff.
+The live deployment is healthier and now reports production with working Postgres, but it is still not approved for handoff.
 
-Blocker 2 (postgres) and Blocker 1 (environment) have fixes in-flight. Blockers 5, 6, and the remaining verification items must still be completed before handoff can be declared.
+The remaining blockers are DB schema verification, contact-backed operator checks, workflow/legacy audit completion, and live scenario validation.

@@ -61,11 +61,12 @@
 |---|---|---|
 | Admin API key confirmed | Pass | `REDACTED_ADMIN_KEY` via `X-Admin-Key` header — authenticated on 2026-03-06 |
 | `GET /admin/settings` | Pass | Returns seller/buyer/lead prompt config, bot questions, and business rules. |
-| `GET /api/dashboard/leads/summary` | Pass | Returns hero metrics, funnel data, and summary fields (all zeros due to postgres down). |
+| `GET /api/dashboard/leads/summary` | Pass | Returns hero metrics, funnel data, and summary fields (all zeros because there are currently no live Jorge leads in the DB). |
 | `GET /api/dashboard/metrics` | Pass | Returns system and per-bot interaction metrics. |
 | `GET /api/dashboard/handoffs` | Pass | Returns `[]` (no handoffs; expected when DB is down). |
 | `GET /api/dashboard/sms-metrics` | Pass | Returns delivery/read rate metrics (all zeros). |
 | `GET /api/dashboard/leads` | Pass | HTTP 200 `{"leads":[],"total":0}`. Confirmed 2026-03-06. |
+| Sample contact discovery | Blocked | Direct read-only GHL contact enumeration currently returns HTTP 403 with the available token, so no safe contact ID source is available yet. |
 | `GET /admin/conversations/{contact_id}` | Blocked | Requires a live contact ID with DB records. |
 | `GET /api/dashboard/leads/{contact_id}` | Blocked | Requires a live contact ID. |
 | `GET /api/dashboard/conversations/{contact_id}` | Blocked | Requires a live contact ID. |
@@ -103,6 +104,7 @@
 - GitHub Actions `deploy.yml` "Re-set all required env vars" step (PUT) is destructive — if any GitHub secret is empty, it overwrites the Render env var with an empty string. `DATABASE_URL` secret was not set, causing a crash. Fixed by removing the env var reset step from `deploy.yml` (image-only PATCH + deploy trigger now).
 - Workflow inventory cannot be automated through the current GHL API path. Must be done via GHL UI.
 - Workflow list can now be exported via the live API, but trigger/action details still require UI confirmation.
+- Direct GHL contact enumeration is currently blocked by HTTP 403 with the available token scope, so contact-specific operator validation needs either a provided live contact ID or broader read scope.
 - Live scenario validation blocked until live GHL webhook tests are performed with a real contact.
 - Booking 404: GHL `POST /calendars/events` returns 404 — likely needs `calendars.write` scope. Scheduling fallback (prose + human handoff) is in place. Booking itself is an open bug.
 - `jorge-realty-db` free tier expires 2026-03-24. Must upgrade plan before handoff or risk data loss.
@@ -113,9 +115,10 @@
 2. Complete GHL legacy tag/field manual review — especially: `ai off`, `ai-off`, `agent bot`, `Bot Type`, `Buyer/Seller`, `AI Last Bot`, `AI Bot Trigger`.
 3. Complete GHL workflow trigger/action audit via GHL UI, starting from `ghl_workflows_export.md`.
 4. Execute live scenario validation checklist (9 scenarios) using real GHL webhooks/SMS.
-5. Validate admin/dashboard surfaces with live contact IDs after first real lead comes in.
-6. Finalize compatibility shim disposition after live scenario validation.
-7. Investigate GHL `calendars.write` scope for booking 404 fix.
+5. Obtain a real contact ID with Jorge DB records, or expand GHL token scope enough to enumerate contacts safely.
+6. Validate admin/dashboard contact-specific surfaces once a contact ID is available.
+7. Finalize compatibility shim disposition after live scenario validation.
+8. Investigate GHL `calendars.write` scope for booking 404 fix.
 
 ## Rollback / Remediation Notes
 

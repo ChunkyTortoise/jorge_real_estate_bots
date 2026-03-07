@@ -328,21 +328,24 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                     qualification_summary={},
                     last_inbound_at=datetime.now(timezone.utc).isoformat(),
                 )
-                await upsert_conversation(
-                    contact_id=contact_id,
-                    bot_type=bot_type_lower,
-                    stage="SUPPRESSED",
-                    temperature="cold",
-                    current_question=0,
-                    questions_answered=0,
-                    is_qualified=False,
-                    conversation_history=None,
-                    extracted_data={},
-                    last_activity=datetime.now(timezone.utc),
-                    conversation_started=datetime.now(timezone.utc),
-                    metadata_json={"location_id": location_id, **canonical.to_metadata()},
-                    **canonical.to_columns(),
-                )
+                try:
+                    await upsert_conversation(
+                        contact_id=contact_id,
+                        bot_type=bot_type_lower,
+                        stage="SUPPRESSED",
+                        temperature="cold",
+                        current_question=0,
+                        questions_answered=0,
+                        is_qualified=False,
+                        conversation_history=None,
+                        extracted_data={},
+                        last_activity=datetime.now(timezone.utc),
+                        conversation_started=datetime.now(timezone.utc),
+                        metadata_json={"location_id": location_id, **canonical.to_metadata()},
+                        **canonical.to_columns(),
+                    )
+                except Exception as db_err:
+                    logger.warning(f"DB upsert skipped for manual_takeover {contact_id}: {db_err}")
                 return {
                     "status": "processed",
                     "bot_type": bot_type_lower,
@@ -497,21 +500,24 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                     conversation_history=[],
                     last_inbound_at=datetime.now(timezone.utc).isoformat(),
                 )
-                await upsert_conversation(
-                    contact_id=contact_id,
-                    bot_type="lead",
-                    stage="HANDOFF",
-                    temperature="cold",
-                    current_question=0,
-                    questions_answered=0,
-                    is_qualified=False,
-                    conversation_history=None,
-                    extracted_data={},
-                    last_activity=datetime.now(timezone.utc),
-                    conversation_started=datetime.now(timezone.utc),
-                    metadata_json={"location_id": location_id, **canonical.to_metadata()},
-                    **canonical.to_columns(),
-                )
+                try:
+                    await upsert_conversation(
+                        contact_id=contact_id,
+                        bot_type="lead",
+                        stage="HANDOFF",
+                        temperature="cold",
+                        current_question=0,
+                        questions_answered=0,
+                        is_qualified=False,
+                        conversation_history=None,
+                        extracted_data={},
+                        last_activity=datetime.now(timezone.utc),
+                        conversation_started=datetime.now(timezone.utc),
+                        metadata_json={"location_id": location_id, **canonical.to_metadata()},
+                        **canonical.to_columns(),
+                    )
+                except Exception as db_err:
+                    logger.warning(f"DB upsert skipped for bilingual_handoff {contact_id}: {db_err}")
                 if _webhook_cache:
                     await _webhook_cache.set(
                         f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
@@ -538,21 +544,24 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                     conversation_history=[],
                     last_inbound_at=datetime.now(timezone.utc).isoformat(),
                 )
-                await upsert_conversation(
-                    contact_id=contact_id,
-                    bot_type=bot_type_lower,
-                    stage="SUPPRESSED",
-                    temperature="cold",
-                    current_question=0,
-                    questions_answered=0,
-                    is_qualified=False,
-                    conversation_history=None,
-                    extracted_data={},
-                    last_activity=datetime.now(timezone.utc),
-                    conversation_started=datetime.now(timezone.utc),
-                    metadata_json={"location_id": location_id, **canonical.to_metadata()},
-                    **canonical.to_columns(),
-                )
+                try:
+                    await upsert_conversation(
+                        contact_id=contact_id,
+                        bot_type=bot_type_lower,
+                        stage="SUPPRESSED",
+                        temperature="cold",
+                        current_question=0,
+                        questions_answered=0,
+                        is_qualified=False,
+                        conversation_history=None,
+                        extracted_data={},
+                        last_activity=datetime.now(timezone.utc),
+                        conversation_started=datetime.now(timezone.utc),
+                        metadata_json={"location_id": location_id, **canonical.to_metadata()},
+                        **canonical.to_columns(),
+                    )
+                except Exception as db_err:
+                    logger.warning(f"DB upsert skipped for human_handoff {contact_id}: {db_err}")
                 result_meta.update(
                     {
                         "temperature": canonical.temperature,
@@ -583,21 +592,24 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                     conversation_history=[],
                     last_inbound_at=datetime.now(timezone.utc).isoformat(),
                 )
-                await upsert_conversation(
-                    contact_id=contact_id,
-                    bot_type="lead",
-                    stage="Q0",
-                    temperature=analysis.get("temperature", "warm"),
-                    current_question=0,
-                    questions_answered=0,
-                    is_qualified=False,
-                    conversation_history=[],
-                    extracted_data=analysis,
-                    last_activity=datetime.now(timezone.utc),
-                    conversation_started=datetime.now(timezone.utc),
-                    metadata_json={"location_id": location_id, **canonical.to_metadata()},
-                    **canonical.to_columns(),
-                )
+                try:
+                    await upsert_conversation(
+                        contact_id=contact_id,
+                        bot_type="lead",
+                        stage="Q0",
+                        temperature=analysis.get("temperature", "warm"),
+                        current_question=0,
+                        questions_answered=0,
+                        is_qualified=False,
+                        conversation_history=[],
+                        extracted_data=analysis,
+                        last_activity=datetime.now(timezone.utc),
+                        conversation_started=datetime.now(timezone.utc),
+                        metadata_json={"location_id": location_id, **canonical.to_metadata()},
+                        **canonical.to_columns(),
+                    )
+                except Exception as db_err:
+                    logger.warning(f"DB upsert skipped for lead_intake {contact_id}: {db_err}")
                 result_meta.update(
                     {
                         "score": analysis.get("score", 0),
