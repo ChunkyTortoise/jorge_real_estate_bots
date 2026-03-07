@@ -26,6 +26,10 @@ This file records which documents are authoritative after the canonical conversa
   Current live GHL contract validation evidence for required tags and custom fields. Regenerate after each GHL cleanup pass.
 - [ghl_legacy_contract_review.md](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_legacy_contract_review.md)
   Current live GHL legacy review evidence identifying extra tags and fields that may still influence routing, suppression, or workflow branching.
+- [ghl_workflows_export.md](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_workflows_export.md)
+  Current live workflow-list evidence captured from the working GHL workflow endpoint. Use this to seed the manual workflow audit.
+- [ghl_workflows_export.json](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_workflows_export.json)
+  Validator-friendly JSON export of the live GHL workflow list.
 - [ghl_contract_sync_plan.md](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_contract_sync_plan.md)
   Current dry-run creation plan for missing canonical GHL tags and custom fields. Review before any live GHL mutation.
 - [COMPATIBILITY_SHIMS.md](/Users/cave/Projects/jorge-real-estate-bots/docs/COMPATIBILITY_SHIMS.md)

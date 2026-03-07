@@ -35,6 +35,14 @@ def bot(mock_ghl):
         mock_settings.jorge_calendar_id = "cal-abc"
         mock_settings.jorge_user_id = "user-xyz"
         b = JorgeSellerBot(ghl_client=mock_ghl)
+    # Isolate circuit breaker: replace calendar_service cache so the shared
+    # MemoryCache singleton can't leak a tripped `calendar:write_broken` key
+    # set by other tests in the full suite run.
+    cal_cache = MagicMock()
+    cal_cache.get = AsyncMock(return_value=None)
+    cal_cache.set = AsyncMock()
+    cal_cache.delete = AsyncMock()
+    b.calendar_service.cache = cal_cache
     return b
 
 

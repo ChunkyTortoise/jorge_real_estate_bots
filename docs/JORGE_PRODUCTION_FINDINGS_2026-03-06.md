@@ -57,6 +57,13 @@ The deployed service is reachable and operator-surface auth is confirmed. The cr
 - Extra live tags: 331
 - Extra live fields: 608
 - Legacy review report updated: `ghl_legacy_contract_review.md`
+- Workflow export captured via live API: `ghl_workflows_export.md` / `ghl_workflows_export.json`
+- Working workflow list endpoint confirmed:
+  - `GET /workflows/?locationId=...`
+- Captured live workflow list totals:
+  - workflow count = `226`
+  - published workflows = `164`
+  - heuristic routing/conflict candidates = `68`
 - High-risk legacy items identified include: `ai off`, `ai-off`, `agent bot`, `buyer bot`, `direct to buyer bot`, `direct to seller bot`, `Bot Type`, `Buyer/Seller`, `AI Last Bot`, `AI Bot Trigger`, `Lead Identity`, etc.
 
 ### Render Env Var Audit
@@ -110,7 +117,17 @@ ADMIN_PASSWORD     (empty)
 
 - 331 extra live tags, 608 extra fields — not yet fully classified.
 - High-risk items identified in `ghl_legacy_contract_review.md` but not yet individually reviewed.
-- Manual workflow inventory via GHL UI still pending.
+- Live workflow list is now captured, but trigger/action review and final disposition still require GHL UI confirmation.
+- High-priority workflow audit candidates from the export include:
+  - `5. Process Message - Which Bot?`
+  - `6. Catch Unknown Inbound SMS`
+  - `New Inbound Lead`
+  - `Jorge AI Bot - Inbound Message Handler`
+  - `Jorge — Bot Activation`
+  - `AI Bot - Jorge Qualification`
+  - `Lead Intake Notification`
+  - `Qualified Lead Notify - SMS`
+  - `Qualified Lead Notify - Email`
 
 ### Blocker 6. Live scenario validation not yet executed
 
@@ -143,7 +160,7 @@ ADMIN_PASSWORD     (empty)
 6. Spot-check `/api/dashboard/leads` returns real DB data.
 7. Execute live scenario validation checklist.
 8. Complete GHL legacy tag/field manual review.
-9. Complete GHL workflow manual inventory.
+9. Complete GHL workflow trigger/action audit and final inventory disposition using `ghl_workflows_export.md` as the seed list.
 10. Update `JORGE_PRODUCTION_HANDOFF_SIGNOFF.md` with evidence.
 
 ---

@@ -19,6 +19,7 @@
 - [production_readiness_report.md](/Users/cave/Projects/jorge-real-estate-bots/docs/production_readiness_report.md)
 - [ghl_contract_validation_report.md](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_contract_validation_report.md)
 - [ghl_legacy_contract_review.md](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_legacy_contract_review.md)
+- [ghl_workflows_export.md](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_workflows_export.md)
 - [JORGE_PRODUCTION_FINDINGS_2026-03-06.md](/Users/cave/Projects/jorge-real-estate-bots/docs/JORGE_PRODUCTION_FINDINGS_2026-03-06.md)
 - [COMPATIBILITY_SHIMS.md](/Users/cave/Projects/jorge-real-estate-bots/docs/COMPATIBILITY_SHIMS.md)
 
@@ -50,8 +51,9 @@
 | `ghl_contract_validation_report.md` current | Pass | Re-run 2026-03-06, result = pass. |
 | Legacy fields not driving routing | Fail | 331 extra tags, 608 extra fields. High-risk legacy items include `ai off`, `ai-off`, `agent bot`, `buyer bot`, `direct to buyer bot`, `direct to seller bot`, `Bot Type`, `Buyer/Seller`, `AI Last Bot`, `AI Bot Trigger`. Manual audit not yet complete. |
 | `Jorge-Active` is sole manual takeover control | Blocked | Tag exists in normalized form. Sole-control status not proven until workflow/legacy audit done. |
-| Workflow inventory completed | Fail | GHL workflow API returns 404 for workflow enumeration. Manual inventory via GHL UI still pending. |
-| Conflicting workflows removed/disabled | Blocked | Depends on workflow inventory completion. |
+| Workflow inventory seed captured | Pass | Live workflow list captured via `GET /workflows/?locationId=...` into `ghl_workflows_export.md/json`. 226 workflows found; 68 heuristic routing/conflict candidates flagged for review. |
+| Workflow inventory completed | Fail | Trigger/action review and final disposition still require GHL UI confirmation. |
+| Conflicting workflows removed/disabled | Blocked | Depends on workflow trigger/action audit and final inventory completion. |
 
 ## Authenticated Operator Surface Validation
 
@@ -100,6 +102,7 @@
 - Shared postgres DB (`jorge_realty`) contains EnterpriseHub tables. Jorge's `Base.metadata` includes billing models (`invoices`, `subscriptions`) that would conflict. Fix: startup uses whitelist-only `create_all` limited to 9 Jorge-safe tables. Billing tables excluded.
 - GitHub Actions `deploy.yml` "Re-set all required env vars" step (PUT) is destructive — if any GitHub secret is empty, it overwrites the Render env var with an empty string. `DATABASE_URL` secret was not set, causing a crash. Fixed by removing the env var reset step from `deploy.yml` (image-only PATCH + deploy trigger now).
 - Workflow inventory cannot be automated through the current GHL API path. Must be done via GHL UI.
+- Workflow list can now be exported via the live API, but trigger/action details still require UI confirmation.
 - Live scenario validation blocked until live GHL webhook tests are performed with a real contact.
 - Booking 404: GHL `POST /calendars/events` returns 404 — likely needs `calendars.write` scope. Scheduling fallback (prose + human handoff) is in place. Booking itself is an open bug.
 - `jorge-realty-db` free tier expires 2026-03-24. Must upgrade plan before handoff or risk data loss.
@@ -108,7 +111,7 @@
 
 1. **URGENT**: Upgrade `jorge-realty-db` from free tier before 2026-03-24 expiry.
 2. Complete GHL legacy tag/field manual review — especially: `ai off`, `ai-off`, `agent bot`, `Bot Type`, `Buyer/Seller`, `AI Last Bot`, `AI Bot Trigger`.
-3. Complete GHL workflow manual inventory via GHL UI.
+3. Complete GHL workflow trigger/action audit via GHL UI, starting from `ghl_workflows_export.md`.
 4. Execute live scenario validation checklist (9 scenarios) using real GHL webhooks/SMS.
 5. Validate admin/dashboard surfaces with live contact IDs after first real lead comes in.
 6. Finalize compatibility shim disposition after live scenario validation.

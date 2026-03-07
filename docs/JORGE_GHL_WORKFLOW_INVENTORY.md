@@ -1,7 +1,11 @@
 # Jorge GHL Workflow Inventory
 
-> **STATUS: TEMPLATE — requires GHL admin access to complete.**
-> This document contains only structure and an example row. The actual workflow inventory must be populated by the GHL admin/operator during the live validation pass. No real GHL workflow data has been captured yet. All dependent docs (validation checklist, GHL configuration contract, production signoff) treat this as a blocker until populated.
+> **STATUS: PARTIALLY SEEDED — live workflow list captured, manual action review still required.**
+> The live workflow list has now been captured via the working GHL endpoint and exported to:
+> [ghl_workflows_export.md](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_workflows_export.md)
+> and
+> [ghl_workflows_export.json](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_workflows_export.json).
+> Trigger details and actual workflow actions still require GHL admin review in the UI before this inventory is complete.
 
 After capturing live tags, custom fields, and workflows, generate a validation
 report with:
@@ -17,6 +21,34 @@ python3 scripts/validate_ghl_contract.py \
 See [JORGE_GHL_EXPORT_CAPTURE.md](/Users/cave/Projects/jorge-real-estate-bots/docs/JORGE_GHL_EXPORT_CAPTURE.md) for the expected export shapes.
 
 Use this document to inventory every live GHL workflow that touches AI-managed contacts.
+
+## Current Live Export Snapshot
+
+- live workflow count captured via API: `226`
+- heuristic routing/conflict candidates: `68`
+- published workflows in export: `164`
+
+Primary evidence artifacts:
+
+- [ghl_workflows_export.md](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_workflows_export.md)
+- [ghl_workflows_export.json](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_workflows_export.json)
+- [ghl_contract_validation_report.md](/Users/cave/Projects/jorge-real-estate-bots/docs/ghl_contract_validation_report.md)
+
+High-priority workflows to inspect first in the GHL UI:
+
+- `5. Process Message - Which Bot?`
+- `6. Catch Unknown Inbound SMS`
+- `New Inbound Lead`
+- `Jorge AI Bot - Inbound Message Handler`
+- `Jorge — Bot Activation`
+- `2. AI OFF/ON Tag Added -> AI Assistant is: (Custom Field Change)`
+- `AI Bot - Jorge Qualification`
+- `Lead Intake Notification`
+- `Qualified Lead Notify - SMS`
+- `Qualified Lead Notify - Email`
+
+These names came from the live export and should be treated as first-pass audit
+targets, not final dispositions.
 
 ## Historical Candidate Names To Verify In GHL
 

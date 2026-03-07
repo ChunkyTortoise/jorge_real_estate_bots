@@ -238,10 +238,16 @@ class EventBroker:
             # Publish to channel for real-time subscribers
             pipeline.publish(channel, event_json)
 
-            # Add to stream for persistence (with TTL)
+            # Add to stream for persistence (with TTL).
+            # Redis Streams store flat string fields — serialize nested dicts/lists to JSON
+            # so json.loads() can reconstruct them correctly on read.
+            stream_data = {
+                k: json.dumps(v) if isinstance(v, (dict, list)) else v
+                for k, v in event_data.items()
+            }
             pipeline.xadd(
                 stream,
-                event_data,
+                stream_data,
                 maxlen=self.max_stream_length,
                 approximate=True
             )

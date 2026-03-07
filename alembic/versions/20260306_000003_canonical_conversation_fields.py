@@ -69,6 +69,8 @@ def upgrade() -> None:
         """
     )
 
+    # Set persistent server_default for crm_sync_status so raw SQL inserts get "pending".
+    op.alter_column("conversations", "crm_sync_status", server_default="pending")
 
 
 def downgrade() -> None:

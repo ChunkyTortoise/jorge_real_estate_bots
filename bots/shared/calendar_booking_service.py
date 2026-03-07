@@ -15,6 +15,9 @@ from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
 
+_CALENDAR_BROKEN_KEY = "calendar:write_broken"
+_CALENDAR_BROKEN_TTL = 3600  # 1 hour circuit-breaker window
+
 # Shown when JORGE_CALENDAR_ID is unset or no slots are available
 FALLBACK_MESSAGE = (
     "I'd love to schedule a time to discuss your options in detail. "
@@ -98,6 +101,18 @@ class CalendarBookingService:
               - appointment: dict or None
               - message: str — confirmation or error SMS text
         """
+        # Circuit breaker: skip GHL write if calendar scope is known broken
+        if await self.cache.get(_CALENDAR_BROKEN_KEY):
+            logger.warning("Calendar write circuit breaker open — skipping GHL booking attempt")
+            return {
+                "success": False,
+                "appointment": None,
+                "message": (
+                    "I wasn't able to schedule that automatically. "
+                    "I'll have Jorge reach out to confirm the time directly."
+                ),
+            }
+
         slots = self._pending_slots.get(contact_id)
         if not slots:
             slots = await self.cache.get(f"calendar:pending_slots:{contact_id}")
@@ -159,6 +174,11 @@ class CalendarBookingService:
                 "the Private Integration API key. Go to GHL > Settings > Integrations > "
                 "Private Integration and enable Calendars (Write) scope."
             )
+            # Open circuit breaker — skip GHL write for 1 hour to avoid repeated 404s
+            try:
+                await self.cache.set(_CALENDAR_BROKEN_KEY, "1", ttl=_CALENDAR_BROKEN_TTL)
+            except Exception:
+                pass
 
         if result.get("success"):
             self._pending_slots.pop(contact_id, None)

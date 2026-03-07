@@ -84,7 +84,7 @@ class ConversationModel(Base):
     message_suppression_reason: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     qualification_summary: Mapped[dict] = mapped_column(JSONB, default=dict)
     next_recommended_action: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    crm_sync_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    crm_sync_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, server_default="pending")
     last_inbound_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_outbound_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     conversation_history: Mapped[list] = mapped_column(JSONB, default=list)

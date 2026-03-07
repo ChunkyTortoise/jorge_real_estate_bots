@@ -255,6 +255,9 @@ ADMIN_API_KEY=... JORGE_CONTACT_ID=... python scripts/production_readiness_repor
 # Validate live or exported GHL tags/custom fields/workflows against the contract
 GHL_API_KEY=... GHL_LOCATION_ID=... python scripts/validate_ghl_contract.py --ghl-api-key "$GHL_API_KEY" --location-id "$GHL_LOCATION_ID"
 
+# Export the live workflow list and heuristic workflow-risk summary
+GHL_API_KEY=... GHL_LOCATION_ID=... python scripts/export_ghl_workflows.py --ghl-api-key "$GHL_API_KEY" --location-id "$GHL_LOCATION_ID" --json-output docs/ghl_workflows_export.json --md-output docs/ghl_workflows_export.md
+
 # Generate a dry-run plan for creating missing canonical GHL tags/fields
 GHL_API_KEY=... GHL_LOCATION_ID=... python scripts/sync_ghl_contract.py --ghl-api-key "$GHL_API_KEY" --location-id "$GHL_LOCATION_ID"
 

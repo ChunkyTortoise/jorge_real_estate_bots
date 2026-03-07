@@ -57,6 +57,16 @@ fi
 echo
 
 if [[ -n "${GHL_TAGS_JSON:-}" || -n "${GHL_FIELDS_JSON:-}" || -n "${GHL_WORKFLOWS_JSON:-}" || ( -n "${GHL_API_KEY:-}" && -n "${GHL_LOCATION_ID:-}" ) ]]; then
+  if [[ -n "${GHL_API_KEY:-}" && -n "${GHL_LOCATION_ID:-}" && -z "${GHL_WORKFLOWS_JSON:-}" ]]; then
+    python3 "$ROOT_DIR/scripts/export_ghl_workflows.py" \
+      --ghl-api-key "$GHL_API_KEY" \
+      --location-id "$GHL_LOCATION_ID" \
+      --json-output "$DOCS_DIR/ghl_workflows_export.json" \
+      --md-output "$DOCS_DIR/ghl_workflows_export.md" || true
+    GHL_WORKFLOWS_JSON="$DOCS_DIR/ghl_workflows_export.json"
+    echo "Wrote: $DOCS_DIR/ghl_workflows_export.json"
+    echo "Wrote: $DOCS_DIR/ghl_workflows_export.md"
+  fi
   echo "== GHL contract validation =="
   python3 "$ROOT_DIR/scripts/validate_ghl_contract.py" \
     ${GHL_TAGS_JSON:+--tags-json "$GHL_TAGS_JSON"} \
