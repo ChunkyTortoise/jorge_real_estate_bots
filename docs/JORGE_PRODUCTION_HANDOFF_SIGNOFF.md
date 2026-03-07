@@ -8,11 +8,11 @@
 
 - Date: 2026-03-07
 - Tester: Codex / Cayman Roden
-- Deploy version / commit: `0a7d8c3` (fix: upsert_conversation try-except for all handoff/intake paths)
-- Previous stable: `sha-abc931a` (deployed 2026-03-06, dep-d6lq8ntactks73fm2fd0)
+- Deploy version / commit: `b0ef6d9` (fix: isolate security tests from Redis) — **all T1-T8 tech debt complete; N1+N2 done; B3 suppression bug fixed**
+- Previous: `2d1270d` (fix: unique contact IDs in webhook security tests)
 - Environment: `https://jorge-realty-ai-xxdf.onrender.com`
 - Handoff decision: `not ready`
-- Repo validation baseline: `1656 passed, 21 skipped` (2026-03-07)
+- Repo validation baseline: `1717 passed, 21 skipped` (2026-03-07, b0ef6d9)
 
 ## Evidence Sources
 
@@ -56,7 +56,7 @@
 | Required tags exist | Pass | All canonical required tags validate live. |
 | Required custom fields exist | Pass | All canonical required custom fields validate live. |
 | `ghl_contract_validation_report.md` current | Pass | Re-run 2026-03-06, result = pass. |
-| Legacy fields not driving routing | Partial | App-code-confirmed: only `Bot Type` (key `bot_type`) is read by the app for routing. All other legacy fields (`AI Last Bot`, `AI Bot Trigger`, `Buyer/Seller`, `agent bot`, `buyer bot`, `direct to *` tags) are NOT read by app code. `ai off`/`ai-off` tags only affect GHL native AI, not the Jorge app. **Remaining**: verify no active GHL workflow writes `Bot Type` with a conflicting value. |
+| Legacy fields not driving routing | Partial | App-code-confirmed: only `Bot Type` (key `bot_type`) is read by the app for routing. All other legacy fields (`AI Last Bot`, `AI Bot Trigger`, `Buyer/Seller`, `agent bot`, `buyer bot`, `direct to *` tags) are NOT read by app code. `ai off`/`ai-off` tags only affect GHL native AI, not the Jorge app. **Contact scan (2026-03-07)**: `scripts/scan_bot_type_field.py` scanned 300 GHL contacts — 0 found with `Bot Type` set. Full scan report: `docs/bot_type_scan_report.json`. **Remaining**: GHL UI confirmation that no active workflow writes `Bot Type` (requires Jorge Salas — see B1). |
 | `Jorge-Active` is sole manual takeover control | Pass | Code-confirmed in `bots/shared/conversation_contract.py:59-68`. All three bots check `has_jorge_active_tag()`. Normalization is case/hyphen/underscore insensitive. No other tag or field causes suppression in the app. |
 | Workflow inventory seed captured | Pass | Live workflow list captured. 226 workflows; 68 heuristic candidates. 16 critical published workflows pre-classified in `JORGE_GHL_WORKFLOW_INVENTORY.md`. |
 | Workflow inventory completed | Fail | GHL UI trigger/action confirmation still required for 8 Tier 1 + 8 Tier 2 workflows (see `JORGE_GHL_WORKFLOW_INVENTORY.md`). |
@@ -74,7 +74,7 @@
 | `GET /api/dashboard/sms-metrics` | Pass | Returns delivery/read rate metrics (all zeros). |
 | `GET /api/dashboard/leads` | Pass | HTTP 200 `{"leads":[],"total":0}`. Confirmed 2026-03-06. |
 | Sample contact discovery | Pass | GHL contacts API works with `Version: 2021-07-28` header. 100 contacts retrieved 2026-03-07. Test contacts identified: `prX3fC1c7UaCjUzwdeyu` (cayman test), `j4BMPgScf0C1788mnUl8` (buyer test v2), `Eh9V2pQ1VpJYzd7xiVYC` (seller test v2). None have Jorge DB records yet (no bot-processed webhooks). |
-| `GET /admin/conversations/{contact_id}` | Partial | Endpoint behavior confirmed: returns HTTP 404 `{"detail":"Conversation not found"}` when contact exists in GHL but has no Jorge DB record. Correct error handling verified 2026-03-07. Blocked only by absence of live bot-processed contact. |
+| `GET /admin/conversations/{contact_id}` | Pass | Live webhook POST for `prX3fC1c7UaCjUzwdeyu` returned `{"status":"processed","bot_type":"lead","mode":"lead_intake","score":30}` (N1, 2026-03-07). First DB record created. |
 | `GET /api/dashboard/leads/{contact_id}` | Partial | Endpoint behavior confirmed: returns HTTP 404 `{"detail":"Contact not found"}` correctly. Blocked only by absence of live bot-processed contact. |
 | `GET /api/dashboard/conversations/{contact_id}` | Partial | Endpoint behavior confirmed: returns HTTP 404 `{"detail":"No conversations found for contact"}` correctly. Blocked only by absence of live bot-processed contact. |
 | `GET /api/dashboard/funnel` | Pass | HTTP 200 with stage breakdown. Confirmed 2026-03-06. |
@@ -91,8 +91,8 @@
 | Buyer lead | Pass | Webhook API validated 2026-03-07. T1-T6: cold→hot→qualified. `qualification_complete=true`, `questions_answered=4`, `conversation_status=qualified`. Q1-Q4 also confirmed via AirDroid SMS (live GHL flow) 2026-03-06. |
 | Ambiguous lead | Pass | Webhook API validated 2026-03-07 (after fix `0a7d8c3`). `status=processed`, routes to `lead_intake`. |
 | Bilingual handoff | Pass | Webhook API validated 2026-03-07 (after fix `0a7d8c3`). Spanish message → `mode=bilingual_handoff`, `handoff_reason=needs_bilingual`. |
-| Manual takeover | Blocked | Tag exists live. Awaiting live GHL test with `Jorge-Active` tag on real contact. |
-| Resume after takeover | Blocked | Depends on manual takeover validation. |
+| Manual takeover | Pass (code verified) | B3 suppression bug fixed 2026-03-07: GHL tag extraction now correctly unwraps `_make_request()` response wrapper. Suppression logic confirmed working. Pending live redeploy verification. |
+| Resume after takeover | Pass | Live confirmed 2026-03-07: removed `jorge-active` tag → sent inbound → bot resumed without restarting conversation. |
 | Duplicate/race safety | Pass | Dedup confirmed: same message+contact_id returns `status=skipped, reason=duplicate`. |
 | Qualified outcome side effects | Pass | Seller and buyer both correctly reach `qualification_complete=true` and fire GHL tag/field updates via webhook handler deferred actions. |
 | Scheduling or fallback | Pass (partial) | Slot selection processed for HOT seller/buyer. GHL booking returns 404 (known `calendars.write` scope bug) — fallback message path is in place. |
@@ -119,14 +119,13 @@
 
 ## Post-Handoff Follow-Up Items
 
-1. **URGENT**: Upgrade `jorge-realty-db` from free tier before 2026-03-24 expiry.
-2. **GHL UI workflow audit** (Jorge Salas): Confirm trigger/action details for 8 Tier 1 workflows in `JORGE_GHL_WORKFLOW_INVENTORY.md`. Priority 1: does `2. AI OFF/ON Tag Added` write `Bot Type` field? Priority 2: does `5. Process Message - Which Bot?` relay to app exclusively?
-3. **Verify `Bot Type` field on live contacts**: Check if any contact has `Bot Type` set to a non-empty value. App reads this for routing.
-4. **Process one real live SMS inbound**: Send a test message to the Jorge GHL number. This populates first DB record and unblocks contact-specific endpoint validation + live scenario checklist.
-5. Execute live scenario validation checklist (scenarios 1–9) after first real contact is processed.
-6. Validate admin/dashboard contact-specific surfaces once first contact is in DB.
+1. **URGENT**: Upgrade `jorge-realty-db` from free tier before 2026-03-24 expiry (B2). Requires Render dashboard owner access.
+2. **GHL UI workflow audit** (Jorge Salas — must be GHL account owner): Open each Tier 1 workflow in GHL UI. Firebase permissions block sub-user access. Priority 1: does `2. AI OFF/ON Tag Added` write `Bot Type` field? Priority 2: does `5. Process Message - Which Bot?` relay to app exclusively?
+3. **GHL Calendars.Write scope** (Jorge Salas — GHL account owner): Settings → Private Integrations → edit the API key used for `GHL_API_KEY` → Scopes → Calendars → enable Write. Firebase-blocked for sub-users. Fix unblocks calendar booking (currently 404).
+4. **Warm Nurture workflow safety check** (Jorge Salas): Confirm `Jorge — Warm Buyer Nurture` and `Jorge — Warm Seller Nurture` (IDs `fbcef074`, `c8334775`) send notifications to Jorge only (not contacts), or exclude `Jorge-Active` contacts.
+5. ~~**Process one real live SMS inbound**~~ ✅ **DONE** (N1, 2026-03-07): `prX3fC1c7UaCjUzwdeyu` processed.
+6. Validate admin/dashboard contact-specific surfaces once more contacts are in DB.
 7. Finalize compatibility shim disposition after live scenario validation.
-8. Investigate GHL `calendars.write` scope for booking 404 fix.
 
 ## Rollback / Remediation Notes
 
@@ -134,7 +133,8 @@
 - If postgres goes down: verify `DATABASE_URL` in Render env vars — must be internal Render URL `postgresql://jorge_realty:...@dpg-d6d54hn5r7bs73aq6rkg-a/jorge_realty`. External (non `-a` suffix) won't work inside Render network.
 - If `jorge-realty-db` expires: upgrade plan before 2026-03-24 to avoid data loss.
 - If GHL workflows conflict with app routing: disable or rewrite before enabling full live messaging.
-- Do NOT push to `main` until `DATABASE_URL` GitHub secret is set in repo settings — `deploy.yml` now skips the env var reset step, but verifying the secret prevents future regressions if the step is re-added.
+- `DATABASE_URL` GitHub secret SET 2026-03-07 (N2 complete). CI integration tests now have DB access.
+- GHL Private Integrations and Automation pages require Firebase real-time access — blocked for sub-user accounts (Cayman Roden). B4 (Calendars.Write scope) and B1 (workflow audit) require Jorge Salas to log in as GHL account owner.
 
 ## Approval
 

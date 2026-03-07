@@ -2,8 +2,10 @@
 
 > **Purpose**: Single source of truth for all remaining work before the system is fully complete.
 > **Last updated**: 2026-03-07
-> **Current build**: `sha-in-progress` — 1716 tests passing, 21 skipped, 0 new failures
+> **Current build**: `b0ef6d9` — 1717 tests passing, 21 skipped, 0 failures
 > **T1–T8 tests added**: 2026-03-07 — all 60 new tests passing
+> **N1, N2 completed**: 2026-03-07 — first live contact processed, DATABASE_URL secret set
+> **B3 suppression bug fixed**: 2026-03-07 — GHL tag extraction unwrapping deployed
 
 ---
 
@@ -15,7 +17,7 @@
 | Environment | `production` confirmed |
 | Postgres | Healthy — 9 Jorge tables, canonical columns migrated |
 | Redis | Healthy |
-| Test suite | 1655 passing, 0 failures |
+| Test suite | 1716 passing, 21 skipped, 0 failures (T1-T8 added 2026-03-07) |
 | Seller flow (Q0→Q4) | ✅ Pass |
 | Buyer flow (Q0→Q4) | ✅ Pass |
 | Ambiguous intake | ✅ Pass |
@@ -24,9 +26,11 @@
 | HOT qualification + offer | ✅ Pass |
 | Scheduling offer (fallback) | ✅ Pass |
 | Calendar booking (GHL write) | ❌ 404 — missing `calendars.write` scope |
-| Manual takeover live test | ❌ Blocked — needs GHL tag test |
-| Resume after takeover | ❌ Blocked — depends on above |
-| GHL workflow audit | ❌ Blocked — 8 Tier 1 workflows unconfirmed |
+| Manual takeover live test | ✅ Fixed — suppression bug resolved (tag unwrap); pending live redeploy verify |
+| Resume after takeover | ✅ Confirmed live (2026-03-07) |
+| First live contact processed | ✅ N1 done — contactId `prX3fC1c7UaCjUzwdeyu` processed |
+| DATABASE_URL GitHub secret | ✅ N2 done — secret set via gh CLI |
+| GHL workflow audit | ⚠️ Partial — 9 Jorge workflows confirmed via API; GHL UI blocked (Firebase error) |
 | DB tier | ⚠️ At risk — free tier expires 2026-03-24 |
 
 ---
@@ -107,30 +111,31 @@ but actual appointment creation is disabled until the scope is added.
 
 ## NEAR-TERM (complete within 2 weeks of signoff)
 
-### N1 — First Live Contact Processing
+### N1 — First Live Contact Processing ✅ DONE (2026-03-07)
 **Owner**: Cayman Roden
 
-Send a real or test SMS to the Jorge GHL number. Creates the first DB record and unblocks:
-- `GET /admin/conversations/{contact_id}`
-- `GET /api/dashboard/leads/{contact_id}`
-- Suppression / handoff reason visibility in dashboard
+POST to `/api/ghl/webhook` with contactId `prX3fC1c7UaCjUzwdeyu` returned:
+`{"status":"processed","bot_type":"lead","mode":"lead_intake","score":30}`
 
 ---
 
-### N2 — GitHub Secret: DATABASE_URL
+### N2 — GitHub Secret: DATABASE_URL ✅ DONE (2026-03-07)
 **Owner**: Cayman Roden
 
-1. GitHub → `ChunkyTortoise/jorge_real_estate_bots` → Settings → Secrets → Actions
-2. Add: `DATABASE_URL = postgresql://jorge_realty:REDACTED_POSTGRES_PASSWORD@dpg-d6d54hn5r7bs73aq6rkg-a/jorge_realty`
-3. (Optional) Restore env-var reset step in `deploy.yml` once all 15 secrets are set
+Set via: `gh secret set DATABASE_URL --repo ChunkyTortoise/jorge_real_estate_bots`
+Verified: `gh secret list | grep DATABASE_URL` confirmed present.
 
 ---
 
-### N3 — Warm Nurture Workflow Safety Check
+### N3 — Warm Nurture Workflow Safety Check ⚠️ PARTIAL (2026-03-07)
 **Owner**: Jorge Salas
 
-Confirm `Jorge — Warm Buyer Nurture` and `Jorge — Warm Seller Nurture` send notifications
-to Jorge only (not to contacts), or only fire for contacts not currently managed by the app.
+Both workflows confirmed **PUBLISHED** via GHL API (IDs `fbcef074`, `c8334775`).
+Action/trigger details not inspectable via API or GHL UI (Firebase permission error blocked UI).
+
+**Still required**: Jorge Salas must open each workflow in GHL UI and confirm:
+- Recipients: notifications to Jorge only (NOT to contacts)
+- Exclusion: contacts with `Jorge-Active` tag are excluded from SMS sends
 
 ---
 
@@ -272,7 +277,7 @@ Mark `JORGE_PRODUCTION_HANDOFF_SIGNOFF.md` as `ready` when ALL blocking items ar
 - [x] All dashboard endpoints returning 200
 - [x] Seller, buyer, ambiguous, bilingual scenarios pass (API-level)
 - [x] Duplicate / race safety passes
-- [x] 1655 tests passing
+- [x] 1716 tests passing (T1-T8 coverage, 2026-03-07)
 - [ ] **B1**: GHL Tier 1 workflow audit — all 8 workflows confirmed in GHL UI
 - [ ] **B2**: `jorge-realty-db` upgraded to paid tier
 - [ ] **B3**: Manual takeover + resume live test passes
