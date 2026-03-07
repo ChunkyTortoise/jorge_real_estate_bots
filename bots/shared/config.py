@@ -21,12 +21,6 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     ghl_api_key: str
     ghl_location_id: str
-    zillow_api_key: str = ""
-    twilio_account_sid: str = ""
-    twilio_auth_token: str = ""
-    twilio_phone_number: str = ""
-    sendgrid_api_key: str = ""
-
     # ========== CLAUDE AI CONFIGURATION ==========
     claude_model: str = "claude-sonnet-4-5-20250514"
     claude_sonnet_model: str = "claude-sonnet-4-5-20250514"
@@ -118,17 +112,12 @@ class Settings(BaseSettings):
     seller_stage_booked: Optional[str] = None
     seller_stage_stalled: Optional[str] = None
 
-    # ========== MULTI-TENANT (Phase 2) ==========
-    multi_tenant_enabled: bool = False
-    default_tenant_id: Optional[str] = None
-
     # ========== TESTING ==========
     use_mock_llm: bool = False
     test_mode: bool = False
 
     # ========== MONITORING (Optional) ==========
     sentry_dsn: Optional[str] = None
-    datadog_api_key: Optional[str] = None
     alert_webhook_url: Optional[str] = None   # Slack/webhook for outbound alert push
     log_format: str = "text"                  # "text" or "json" (set "json" in production)
 
