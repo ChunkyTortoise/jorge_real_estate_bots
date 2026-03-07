@@ -2,25 +2,25 @@
 
 # Jorge Real Estate Bots
 
-**40% of real estate leads go cold because agents take >5 minutes to respond.** Three specialized bots handle lead qualification, buyer matching, and seller CMAs in real time.
+**40% of real estate leads go cold because agents take >5 minutes to respond.** Jorge uses one unified conversation system with specialized seller, buyer, and lead-intake handlers behind a single routing layer.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-1330%2B_passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1653%20passing-brightgreen)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
 ## What This Solves
 
-- **Missed leads** -- Bots respond within seconds, not minutes. The Lead Bot enforces the 5-minute SLA and auto-qualifies prospects while human agents are busy
-- **Manual qualification is slow** -- Structured Q0-Q4 question flows extract budget, timeline, pre-approval status, and motivation without agent involvement
-- **No pipeline visibility** -- A Streamlit command center shows lead flow, bot performance, conversation health, and commission tracking across all three bots
+- **Missed leads** -- The app responds within seconds, not minutes, and routes each contact into the correct qualification path
+- **Manual qualification is slow** -- Structured seller and buyer flows extract budget, timeline, pre-approval status, motivation, condition, and price without agent involvement
+- **No pipeline visibility** -- Admin and dashboard APIs expose canonical mode, status, handoff reason, and next-step state for every conversation
 
 ## Key Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | **1330+ passing** |
-| Bots | 3 specialized (Lead, Buyer, Seller) |
+| Tests | **1653 passing** |
+| Public model | 1 canonical conversation system |
 | Cross-Bot Handoff | 0.7 confidence threshold, circular prevention, rate limiting |
 | CRM Integration | GoHighLevel real-time sync |
 | Temperature Scoring | Hot/Warm/Cold with automated tag publishing |
@@ -29,7 +29,7 @@
 
 ## Architecture
 
-All three bots run as a single FastAPI application using the APIRouter pattern. Incoming webhooks are routed to the correct bot via the unified dispatcher.
+The system runs as a single FastAPI application. Incoming webhooks are normalized, deduplicated, locked per-contact, resolved to a canonical mode, and then dispatched to specialized internal handlers.
 
 ```mermaid
 flowchart TB
@@ -40,13 +40,13 @@ flowchart TB
   end
 
   subgraph App["Unified App :8001"]
-    Webhook["routes_webhook.py\nUnified dispatcher"]
+    Webhook["routes_webhook.py\nUnified orchestrator"]
     Dashboard["routes_dashboard.py\n12 dashboard endpoints"]
     Admin["routes_admin.py\nBot config & state"]
     Realtime["routes_realtime.py\nWebSocket events"]
-    Lead["Lead Analyzer\n5-min SLA, scoring"]
-    Buyer["Buyer Bot\nQ0-Q4, property matching"]
-    Seller["Seller Bot\nQ1-Q4, CMA, pricing"]
+    Lead["Lead Intake\nintent analysis"]
+    Buyer["Buyer Handler\nQ0-Q4, property matching"]
+    Seller["Seller Handler\nQ1-Q4, pricing"]
   end
 
   subgraph Intelligence["AI & Decision Engine"]
@@ -117,11 +117,11 @@ The repo includes `render.yaml` for Render Blueprint deployment. Connect the rep
 
 ## Bot Capabilities
 
-**Lead Bot** -- Semantic lead analysis powered by Claude AI. Enforces the 5-minute response rule. Scores leads 0-100 with hot/warm/cold classification, triggers automated nurture sequences, and updates GoHighLevel CRM in real time.
+**Lead Intake** -- Semantic intent analysis plus conservative routing into seller, buyer, bilingual handoff, or human handoff.
 
-**Seller Bot** -- Confrontational qualification engine using a structured Q1-Q4 question flow. Generates comparative market analyses, provides pricing strategy recommendations, and handles seller objections with configurable escalation paths.
+**Seller Handler** -- Structured Q1-Q4 seller qualification, pricing and condition extraction, temperature scoring, and bounded handoff/escalation behavior.
 
-**Buyer Bot** -- Full qualification flow (Q0-Q4), preference extraction, temperature scoring, and weighted property matching. Writes buyer preferences and conversation history to Redis and triggers GHL workflows when qualified.
+**Buyer Handler** -- Full buyer qualification flow (Q0-Q4), preference extraction, temperature scoring, and weighted property matching.
 
 ## Tech Stack
 
@@ -132,7 +132,7 @@ The repo includes `render.yaml` for Render Blueprint deployment. Connect the rep
 | AI | Claude (Haiku/Sonnet routing) |
 | Cache | Redis (sorted sets, rate limiting, bot state, funnel attribution) |
 | CRM | GoHighLevel (webhooks, custom fields, workflows) |
-| Testing | pytest, pytest-asyncio (1330+ tests) |
+| Testing | pytest, pytest-asyncio (1653 tests passing) |
 
 ## Project Structure
 
@@ -155,7 +155,7 @@ jorge_real_estate_bots/
 │   └── buyer_bot/           # Buyer qualification + property matching
 ├── database/                # SQLAlchemy models, async session
 ├── command_center/          # Streamlit dashboard components
-├── tests/                   # 1330+ tests
+├── tests/                   # 1653 passing tests
 ├── docker-compose.yml       # Redis + app + dashboard
 ├── render.yaml              # Render Blueprint config
 └── Dockerfile
@@ -166,8 +166,8 @@ jorge_real_estate_bots/
 All endpoints are served from a single app on port 8001.
 
 ### Webhooks (`routes_webhook.py`)
-- `POST /ghl/webhook/new-lead` -- New lead webhook from GHL
-- `POST /api/ghl/webhook` -- Unified dispatcher (routes to Lead/Buyer/Seller by bot_type)
+- `POST /ghl/webhook/new-lead` -- Compatibility entrypoint for new leads
+- `POST /api/ghl/webhook` -- Unified inbound webhook and canonical routing/orchestration path
 - `POST /api/ghl/webhook/message-status` -- SMS delivery status callbacks
 
 ### Dashboard (`routes_dashboard.py`)
@@ -186,9 +186,10 @@ All endpoints are served from a single app on port 8001.
 
 ### Admin (`routes_admin.py`)
 - `GET /admin/settings` -- Current bot settings
-- `POST /admin/reassign-bot` -- Reassign contact to different bot
+- `POST /admin/reassign-bot` -- Reassign contact to a canonical mode
 - `PUT /admin/settings/{bot}` -- Update bot configuration
 - `DELETE /admin/reset-state/{bot}/{contact_id}` -- Reset conversation state
+- `GET /admin/conversations/{contact_id}` -- Canonical conversation state detail
 
 ### Real-time (`routes_realtime.py`)
 - `GET /api/events/recent` -- Recent events (filterable, since_minutes, event_types)
@@ -228,10 +229,46 @@ curl http://localhost:8001/api/dashboard/stall-stats \
 
 See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for solutions to common issues: GHL webhook setup, Redis connection errors, environment variable checklist, HTTP error codes, and bot handoff failures.
 
+## Production Handoff Docs
+
+The canonical production-finalization and handoff package lives in `docs/`:
+
+- [JORGE_V2_PRODUCTION_HARDENING_SPEC.md](docs/JORGE_V2_PRODUCTION_HARDENING_SPEC.md)
+- [JORGE_OPERATOR_RUNBOOK.md](docs/JORGE_OPERATOR_RUNBOOK.md)
+- [GHL_CONFIGURATION_CONTRACT.md](docs/GHL_CONFIGURATION_CONTRACT.md)
+- [MIGRATION_CHECKLIST_CANONICAL_STATE.md](docs/MIGRATION_CHECKLIST_CANONICAL_STATE.md)
+- [COMPATIBILITY_SHIMS.md](docs/COMPATIBILITY_SHIMS.md)
+- [JORGE_GHL_WORKFLOW_INVENTORY.md](docs/JORGE_GHL_WORKFLOW_INVENTORY.md)
+- [JORGE_GHL_EXPORT_CAPTURE.md](docs/JORGE_GHL_EXPORT_CAPTURE.md)
+- [JORGE_LIVE_VALIDATION_CHECKLIST.md](docs/JORGE_LIVE_VALIDATION_CHECKLIST.md)
+- [JORGE_PRODUCTION_HANDOFF_SIGNOFF.md](docs/JORGE_PRODUCTION_HANDOFF_SIGNOFF.md)
+
+Helper scripts for finish-line verification:
+
+```bash
+# Verify canonical DB schema against a live database
+DATABASE_URL=... python scripts/check_conversation_schema.py
+
+# Hit deployed health/admin/dashboard endpoints and emit a readiness report
+ADMIN_API_KEY=... JORGE_CONTACT_ID=... python scripts/production_readiness_report.py --base-url https://jorge-realty-ai-xxdf.onrender.com
+
+# Validate live or exported GHL tags/custom fields/workflows against the contract
+GHL_API_KEY=... GHL_LOCATION_ID=... python scripts/validate_ghl_contract.py --ghl-api-key "$GHL_API_KEY" --location-id "$GHL_LOCATION_ID"
+
+# Generate a dry-run plan for creating missing canonical GHL tags/fields
+GHL_API_KEY=... GHL_LOCATION_ID=... python scripts/sync_ghl_contract.py --ghl-api-key "$GHL_API_KEY" --location-id "$GHL_LOCATION_ID"
+
+# Review extra live GHL tags/fields for likely routing or handoff risk
+GHL_API_KEY=... GHL_LOCATION_ID=... python scripts/review_ghl_legacy_contract.py --ghl-api-key "$GHL_API_KEY" --location-id "$GHL_LOCATION_ID" --output docs/ghl_legacy_contract_review.md
+
+# Run the repo-side production-finalization helpers and write outputs to docs/
+JORGE_LIVE_URL=... ADMIN_API_KEY=... JORGE_CONTACT_ID=... DATABASE_URL=... bash scripts/run_production_finalization.sh
+```
+
 ## Testing
 
 ```bash
-pytest tests/ -v                    # Full suite (1330+ tests)
+pytest tests/ -v                    # Full suite
 pytest tests/shared/ -v             # Shared services
 pytest tests/api/ -v                # Dashboard & API routes
 pytest tests/lead_bot/ -v           # Realtime events

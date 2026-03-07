@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from types import SimpleNamespace
 
 from bots.lead_bot.main import app
 from bots.shared import bot_settings
@@ -107,7 +108,10 @@ async def test_admin_reset_state_calls_cache_delete(client):
         headers={"X-Admin-Key": "test-admin-key-123"},
     )
     assert resp.status_code == 200
-    mock_cache.delete.assert_called_once_with("buyer:state:contact-abc")
+    deleted = [call.args[0] for call in mock_cache.delete.call_args_list]
+    assert "buyer:state:contact-abc" in deleted
+    assert "conversation:mode:contact-abc" in deleted
+    assert "assigned_bot:contact-abc" in deleted
 
 
 @pytest.mark.asyncio
@@ -118,6 +122,78 @@ async def test_admin_reset_state_invalid_bot(client):
         headers={"X-Admin-Key": "test-admin-key-123"},
     )
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_admin_reassign_accepts_canonical_mode(client):
+    c, mock_cache = client
+    resp = await c.post(
+        "/admin/reassign-bot",
+        headers={"X-Admin-Key": "test-admin-key-123"},
+        json={"contact_id": "contact-xyz", "mode": "human_handoff"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["mode"] == "human_handoff"
+    deleted = [call.args[0] for call in mock_cache.delete.call_args_list]
+    assert "assigned_bot:contact-xyz" in deleted
+    mock_cache.set.assert_called_with("conversation:mode:contact-xyz", "human_handoff", ttl=604_800)
+
+
+@pytest.mark.asyncio
+async def test_admin_get_conversation_returns_canonical_debug_fields(client, monkeypatch):
+    c, mock_cache = client
+    mock_cache.get = AsyncMock(side_effect=["seller", "buyer"])
+
+    row = SimpleNamespace(
+        contact_id="contact-debug",
+        mode="seller",
+        mode_version=1,
+        status="active",
+        handoff_reason=None,
+        human_takeover=False,
+        bilingual_required=False,
+        message_suppression_reason=None,
+        qualification_summary={"price_expectation": 450000},
+        next_recommended_action="Continue seller qualification",
+        crm_sync_status="pending",
+        last_inbound_at=None,
+        last_outbound_at=None,
+        temperature="warm",
+        bot_type="seller",
+        stage="Q2",
+        questions_answered=2,
+        metadata_json={},
+        updated_at=1,
+        created_at=1,
+    )
+
+    class _Result:
+        def scalars(self):
+            return self
+        def all(self):
+            return [row]
+
+    class _Session:
+        async def execute(self, *_args, **_kwargs):
+            return _Result()
+
+    class _Factory:
+        async def __aenter__(self):
+            return _Session()
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr("bots.lead_bot.routes_admin.AsyncSessionFactory", lambda: _Factory())
+
+    resp = await c.get("/admin/conversations/contact-debug", headers={"X-Admin-Key": "test-admin-key-123"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["mode"] == "seller"
+    assert data["mode_version"] == 1
+    assert data["qualification_summary"] == {"price_expectation": 450000}
+    assert data["canonical_cache_mode"] == "seller"
+    assert data["assignment_cache_mode"] == "buyer"
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,8 @@
 # Jorge's AI System — Where Everything Lives
 
+> Superseded for current routing and operator behavior by [JORGE_V2_PRODUCTION_HARDENING_SPEC.md](/Users/cave/Projects/jorge-real-estate-bots/docs/JORGE_V2_PRODUCTION_HARDENING_SPEC.md), [JORGE_OPERATOR_RUNBOOK.md](/Users/cave/Projects/jorge-real-estate-bots/docs/JORGE_OPERATOR_RUNBOOK.md), and [GHL_CONFIGURATION_CONTRACT.md](/Users/cave/Projects/jorge-real-estate-bots/docs/GHL_CONFIGURATION_CONTRACT.md).
+> This file reflects the earlier workflow-first / multi-bot mental model and should be treated as historical reference unless explicitly updated.
+
 A reference guide to every part of the system: GHL, the bot server, and the dashboard.
 
 ---

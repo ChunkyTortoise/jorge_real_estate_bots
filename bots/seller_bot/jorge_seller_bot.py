@@ -31,8 +31,16 @@ from bots.shared.business_rules import JorgeBusinessRules
 from bots.shared.response_filter import sanitize_bot_response
 from bots.shared.bot_settings import get_override as _get_bot_override
 from bots.shared.cache_service import get_cache_service
-from bots.shared.calendar_booking_service import FALLBACK_MESSAGE, CalendarBookingService
+from bots.shared.calendar_booking_service import CalendarBookingService
 from bots.shared.claude_client import ClaudeClient, TaskComplexity
+from bots.shared.config import settings
+from bots.shared.conversation_contract import (
+    ConversationMode,
+    HandoffReason,
+    build_canonical_conversation,
+    has_jorge_active_tag,
+    is_likely_spanish,
+)
 from bots.shared.ghl_client import GHLClient
 from bots.shared.logger import get_logger
 from database.repository import fetch_conversation, upsert_contact, upsert_conversation
@@ -46,9 +54,12 @@ _COLLOQUIAL_PRICES = [
     (re.compile(r'mid\s+fives?', re.I), 550_000),
     (re.compile(r'low\s+fives?', re.I), 475_000),
     (re.compile(r'high\s+fives?', re.I), 580_000),
-    (re.compile(r'low\s+(?:four|4)hundreds?', re.I), 425_000),
+    (re.compile(r'low\s+(?:four|4)\s*hundreds?', re.I), 425_000),
     (re.compile(r'high\s+(?:three|3)s?', re.I), 375_000),
     (re.compile(r'around\s+six\s+hundred', re.I), 600_000),
+    (re.compile(r'mid\s+threes?', re.I), 350_000),
+    (re.compile(r'high\s+fours?', re.I), 480_000),
+    (re.compile(r'low\s+sixes?', re.I), 510_000),
     (re.compile(r'(\d+)\s+thousand', re.I), None),  # "580 thousand" -> 580000
 ]
 
@@ -58,14 +69,6 @@ _PRICE_PATTERNS = [
     (re.compile(r'\$?(\d[\d,]*),(\d{3})', re.I), None),                      # $350,000
     (re.compile(r'\$(\d[\d]*)', re.I), None),                                  # $350000
 ]
-
-# ---------------------------------------------------------------------------
-# Spanish language detection
-# ---------------------------------------------------------------------------
-_SPANISH_INDICATORS = frozenset({
-    "hola", "casa", "vender", "comprar", "precio", "cuanto",
-    "gracias", "buenas", "quiero", "tengo",
-})
 
 _Q4_HESITATION_PHRASES = (
     "let me think", "think about it", "not sure", "maybe later",
@@ -77,12 +80,6 @@ _Q4_SOFT_CLOSE = (
     "No worries — take your time. I'll follow up in a couple days. "
     "If anything changes or you have questions, just reach out."
 )
-
-
-def _is_likely_spanish(text: str) -> bool:
-    """Return True if *text* contains >= 2 common Spanish real-estate words."""
-    words = set(text.lower().split())
-    return len(words & _SPANISH_INDICATORS) >= 2
 
 
 # System prompt for all Claude calls in the seller bot.
@@ -149,6 +146,10 @@ class SellerQualificationState:
     scheduling_offered: bool = False
     appointment_booked: bool = False
     appointment_id: Optional[str] = None
+
+    # Pipeline sync
+    opportunity_id: Optional[str] = None
+    opportunity_created: bool = False
 
     # Metadata
     conversation_history: List[Dict[str, str]] = field(default_factory=list)
@@ -335,6 +336,10 @@ class JorgeSellerBot:
                         urgency=ed.get("urgency"),
                         offer_accepted=ed.get("offer_accepted"),
                         timeline_acceptable=ed.get("timeline_acceptable"),
+                        q4_attempts=ed.get("q4_attempts", 0),
+                        offer_presented=ed.get("offer_presented", False),
+                        scheduling_offered=ed.get("scheduling_offered", False),
+                        appointment_booked=ed.get("appointment_booked", False),
                         conversation_history=row.conversation_history or [],
                         extracted_data=ed,
                         last_interaction=row.last_activity,
@@ -398,6 +403,8 @@ class JorgeSellerBot:
             'scheduling_offered': state.scheduling_offered,
             'appointment_booked': state.appointment_booked,
             'appointment_id': state.appointment_id,
+            'opportunity_id': state.opportunity_id,
+            'opportunity_created': state.opportunity_created,
             'q4_attempts': state.q4_attempts,
             'offer_presented': state.offer_presented,
             'conversation_history': state.conversation_history,
@@ -420,8 +427,40 @@ class JorgeSellerBot:
 
         # Persist to database (best-effort — schema may not be initialized yet)
         try:
+            handoff_reason = None
+            if state.stage == "STALLED":
+                handoff_reason = HandoffReason.NEEDS_HUMAN_REVIEW.value
             merged_metadata = {"location_id": state.location_id}
+            canonical = build_canonical_conversation(
+                contact_id=contact_id,
+                location_id=state.location_id,
+                mode=ConversationMode.SELLER,
+                current_stage=state.stage,
+                questions_answered=state.questions_answered,
+                temperature=temperature,
+                qualification_complete=state.is_qualified,
+                next_recommended_action="Schedule call" if state.is_qualified else "Continue seller qualification",
+                qualification_summary={
+                    "property_condition": state.condition,
+                    "price_expectation": state.price_expectation,
+                    "selling_motivation": state.motivation,
+                    "offer_presented": state.offer_presented,
+                },
+                conversation_history=state.conversation_history,
+                human_takeover=state.stage == "STALLED",
+                handoff_reason=handoff_reason,
+                appointment_booked=state.appointment_booked,
+                last_inbound_at=state.last_interaction.isoformat() if state.last_interaction else None,
+            )
+            merged_metadata.update(canonical.to_metadata())
             merged_metadata.update(metadata or {})
+            combined_extracted = {
+                **state.extracted_data,
+                "q4_attempts": state.q4_attempts,
+                "offer_presented": state.offer_presented,
+                "scheduling_offered": state.scheduling_offered,
+                "appointment_booked": state.appointment_booked,
+            }
             await upsert_conversation(
                 contact_id=contact_id,
                 bot_type="seller",
@@ -431,10 +470,11 @@ class JorgeSellerBot:
                 questions_answered=state.questions_answered,
                 is_qualified=state.is_qualified,
                 conversation_history=state.conversation_history,
-                extracted_data=state.extracted_data,
+                extracted_data=combined_extracted,
                 last_activity=state.last_interaction,
                 conversation_started=state.conversation_started,
                 metadata_json=merged_metadata,
+                **canonical.to_columns(),
             )
         except Exception as db_err:
             self.logger.warning(f"DB upsert_conversation skipped (schema not ready?): {db_err}")
@@ -532,7 +572,7 @@ class JorgeSellerBot:
                     _tags = _contact_data.get("tags") or []
                 except Exception as _tag_err:
                     self.logger.warning(f"Could not fetch tags for {contact_id}: {_tag_err}")
-            if "Jorge-Active" in _tags:
+            if has_jorge_active_tag(_tags):
                 self.logger.info(f"Skipping {contact_id} — Jorge-Active tag set")
                 return SellerResult(
                     response_message="",
@@ -545,7 +585,7 @@ class JorgeSellerBot:
                 )
 
             # --- Spanish language detection ---
-            if _is_likely_spanish(message):
+            if is_likely_spanish(message):
                 self.logger.info(f"Spanish detected for seller {contact_id} — routing to bilingual")
                 bilingual_msg = (
                     "Hola! Soy Jorge. Lamentablemente no hablo espanol bien. "
@@ -722,12 +762,9 @@ class JorgeSellerBot:
             # Fetch scheduling message (state already saved as scheduling_offered=True)
             scheduling_append = ""
             if _offer_scheduling:
-                if temperature == SellerStatus.HOT.value:
-                    sched = await self.calendar_service.offer_appointment_slots(
-                        contact_id, "seller"
-                    )
-                else:
-                    sched = {"message": FALLBACK_MESSAGE}
+                sched = await self.calendar_service.offer_appointment_slots(
+                    contact_id, "seller"
+                )
                 scheduling_append = "\n\n" + sched["message"]
 
             # Determine next steps
@@ -740,6 +777,7 @@ class JorgeSellerBot:
                 state=state,
                 temperature=temperature
             )
+            await self._sync_pipeline_stage(contact_id, state, temperature)
 
             # Build analytics
             analytics = self._build_analytics(state, temperature)
@@ -950,9 +988,9 @@ class JorgeSellerBot:
         next_question_text = self._questions.get(next_q, "")
 
         # Calculate offer amount for Q4 if needed
-        if next_q == 4:
+        if next_q == 4 and state.price_expectation:
             # Jorge's formula: 70-80% of asking price for cash offer
-            offer_amount = int((state.price_expectation or 300000) * 0.75)
+            offer_amount = int(state.price_expectation * 0.75)
             next_question_text = next_question_text.format(
                 offer_amount=f"${offer_amount:,}"
             )
@@ -1107,8 +1145,9 @@ RESPONSE (keep under 100 words):"""
                     if price < 10000:
                         price *= 1000
                     extracted["price_expectation"] = price
-                except Exception:
-                    extracted["price_expectation"] = 300000
+                except Exception as _haiku_err:
+                    logger.warning(f"Price extraction via Haiku failed: {_haiku_err} — leaving price as None")
+                    extracted["price_expectation"] = None
 
             # C7: Validate price is within reasonable bounds
             price = extracted.get("price_expectation")
@@ -1396,6 +1435,51 @@ RESPONSE (keep under 100 words):"""
 
             except Exception as e:
                 self.logger.error(f"Failed to apply action {action_type}: {e}")
+
+    async def _sync_pipeline_stage(
+        self,
+        contact_id: str,
+        state: "SellerQualificationState",
+        temperature: str,
+    ) -> None:
+        """Sync GHL opportunity pipeline stage. No-op when seller_pipeline_id is unconfigured."""
+        if not settings.seller_pipeline_id:
+            return
+
+        # Map state → stage ID
+        if state.stage == "STALLED":
+            stage_id = settings.seller_stage_stalled
+        elif state.appointment_booked:
+            stage_id = settings.seller_stage_booked
+        elif state.scheduling_offered:
+            stage_id = settings.seller_stage_scheduling
+        elif state.offer_presented:
+            stage_id = settings.seller_stage_offer
+        elif state.price_expectation is not None:
+            stage_id = settings.seller_stage_pricing
+        elif state.condition is not None:
+            stage_id = settings.seller_stage_conditions
+        else:
+            stage_id = settings.seller_stage_new
+
+        try:
+            if not state.opportunity_created:
+                result = await self.ghl_client.create_opportunity({
+                    "name": f"Seller {contact_id}",
+                    "contactId": contact_id,
+                    "pipelineId": settings.seller_pipeline_id,
+                    "status": "open",
+                    **({"pipelineStageId": stage_id} if stage_id else {}),
+                })
+                opp = result.get("data") or result.get("opportunity") or {}
+                state.opportunity_id = str(opp.get("id") or opp.get("opportunityId") or "")
+                state.opportunity_created = True
+            elif state.opportunity_id and stage_id:
+                await self.ghl_client.update_opportunity(state.opportunity_id, {
+                    "pipelineStageId": stage_id,
+                })
+        except Exception as exc:
+            self.logger.warning(f"Pipeline sync failed for {contact_id}: {exc}")
 
     def _build_analytics(
         self,

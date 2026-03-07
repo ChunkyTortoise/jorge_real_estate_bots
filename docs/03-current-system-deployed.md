@@ -3,6 +3,8 @@ THE DEPLOYED SYSTEM — HOW IT WORKS RIGHT NOW
 For: Jorge Salazar
 Purpose: Exact technical flow of the three bots currently running in production
 
+Historical snapshot only. This file predates the canonical conversation migration and is not authoritative for current routing ownership or handoff readiness. Follow the canonical docs in `docs/` instead.
+
 
 The bots are live at:
     https://jorge-realty-ai-xxdf.onrender.com

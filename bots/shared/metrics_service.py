@@ -11,7 +11,7 @@ Provides high-level dashboard data with caching and error handling.
 """
 import asyncio
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func, select
@@ -317,7 +317,7 @@ class MetricsService:
                 'timeline_distribution': asdict(timeline) if not isinstance(timeline, Exception) else None,
                 'commission_metrics': asdict(commission) if not isinstance(commission, Exception) else None,
                 'cost_savings': asdict(cost_savings) if not isinstance(cost_savings, Exception) else None,
-                'generated_at': datetime.now().isoformat(),
+                'generated_at': datetime.now(timezone.utc).isoformat(),
             }
 
             # Cache for 30 seconds
@@ -875,7 +875,7 @@ class MetricsService:
             'timeline_distribution': None,
             'commission_metrics': None,
             'cost_savings': None,
-            'generated_at': datetime.now().isoformat(),
+            'generated_at': datetime.now(timezone.utc).isoformat(),
             'error': 'Dashboard data temporarily unavailable'
         }
 

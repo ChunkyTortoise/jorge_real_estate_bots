@@ -11,8 +11,8 @@ from bots.buyer_bot.buyer_bot import (
     BuyerQualificationState,
     BuyerStatus,
     JorgeBuyerBot,
-    _is_likely_spanish,
 )
+from bots.shared.conversation_contract import is_likely_spanish as _is_likely_spanish
 
 
 # -----------------------------------------------------------------------

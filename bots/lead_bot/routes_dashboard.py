@@ -11,6 +11,7 @@ from bots.lead_bot.routes_admin import get_admin_or_apikey
 from bots.shared.alerting_service import AlertingService
 from bots.shared.bot_metrics_collector import BotMetricsCollector
 from bots.shared.business_rules import JorgeBusinessRules
+from bots.shared.conversation_contract import extract_canonical_view
 from bots.shared.dashboard_data_service import DashboardDataService
 from bots.shared.logger import get_logger
 from bots.shared.performance_tracker import PerformanceTracker
@@ -74,15 +75,23 @@ async def dashboard_leads(
             )
         )
         if temperature:
-            stmt = stmt.where(ConversationModel.temperature == temperature.upper())
+            stmt = stmt.where(ConversationModel.temperature == temperature.lower())
 
+        # Count query for pagination metadata
+        count_stmt = select(func.count(ContactModel.id)).join(
+            ConversationModel,
+            ConversationModel.contact_id == ContactModel.contact_id,
+            isouter=True,
+        )
+        if temperature:
+            count_stmt = count_stmt.where(ConversationModel.temperature == temperature.lower())
+        count_result = await session.execute(count_stmt)
+        total = count_result.scalar_one()
+
+        # DB-level pagination
+        stmt = stmt.limit(page_size).offset((page - 1) * page_size)
         result = await session.execute(stmt)
-        rows = result.all()
-
-    total = len(rows)
-    start = (page - 1) * page_size
-    end = start + page_size
-    page_rows = rows[start:end]
+        page_rows = result.all()
 
     leads = []
     for contact, conv in page_rows:
@@ -93,8 +102,19 @@ async def dashboard_leads(
             "phone": contact.phone,
         }
         if conv:
+            canonical = extract_canonical_view(conv)
             lead.update({
                 "bot_type": conv.bot_type,
+                "mode": canonical["mode"],
+                "mode_version": canonical["mode_version"],
+                "status": canonical["status"],
+                "handoff_reason": canonical.get("handoff_reason"),
+                "message_suppression_reason": canonical.get("message_suppression_reason"),
+                "qualification_summary": canonical.get("qualification_summary"),
+                "crm_sync_status": canonical.get("crm_sync_status"),
+                "next_recommended_action": canonical.get("next_recommended_action"),
+                "last_inbound_at": canonical.get("last_inbound_at"),
+                "last_outbound_at": canonical.get("last_outbound_at"),
                 "stage": conv.stage,
                 "temperature": conv.temperature,
                 "is_qualified": conv.is_qualified,
@@ -143,6 +163,16 @@ async def dashboard_lead_detail(contact_id: str, _=Depends(get_admin_or_apikey))
         "conversations": [
             {
                 "bot_type": c.bot_type,
+                "mode": (canonical := extract_canonical_view(c))["mode"],
+                "mode_version": canonical["mode_version"],
+                "status": canonical["status"],
+                "handoff_reason": canonical.get("handoff_reason"),
+                "message_suppression_reason": canonical.get("message_suppression_reason"),
+                "qualification_summary": canonical.get("qualification_summary"),
+                "crm_sync_status": canonical.get("crm_sync_status"),
+                "next_recommended_action": canonical.get("next_recommended_action"),
+                "last_inbound_at": canonical.get("last_inbound_at"),
+                "last_outbound_at": canonical.get("last_outbound_at"),
                 "stage": c.stage,
                 "temperature": c.temperature,
                 "is_qualified": c.is_qualified,
@@ -198,6 +228,16 @@ async def dashboard_conversation_detail(contact_id: str, _=Depends(get_admin_or_
     return [
         {
             "bot_type": c.bot_type,
+            "mode": (canonical := extract_canonical_view(c))["mode"],
+            "mode_version": canonical["mode_version"],
+            "status": canonical["status"],
+            "handoff_reason": canonical.get("handoff_reason"),
+            "message_suppression_reason": canonical.get("message_suppression_reason"),
+            "qualification_summary": canonical.get("qualification_summary"),
+            "crm_sync_status": canonical.get("crm_sync_status"),
+            "next_recommended_action": canonical.get("next_recommended_action"),
+            "last_inbound_at": canonical.get("last_inbound_at"),
+            "last_outbound_at": canonical.get("last_outbound_at"),
             "stage": c.stage,
             "temperature": c.temperature,
             "questions_answered": c.questions_answered,
@@ -221,7 +261,7 @@ async def dashboard_costs(_=Depends(get_admin_or_apikey)):
     perf = await tracker.get_performance_metrics()
 
     async with AsyncSessionFactory() as session:
-        result = await session.execute(select(ConversationModel))
+        result = await session.execute(select(ConversationModel).limit(2000))
         convs = result.scalars().all()
 
     appointments = sum(
@@ -289,7 +329,7 @@ _FUNNEL_ORDER = ["AWARENESS", "INTEREST", "CONSIDERATION", "INTENT", "CONVERSION
 async def dashboard_funnel(_=Depends(get_admin_or_apikey)):
     """Funnel conversion data across qualification stages."""
     async with AsyncSessionFactory() as session:
-        result = await session.execute(select(ConversationModel))
+        result = await session.execute(select(ConversationModel).limit(2000))
         convs = result.scalars().all()
 
     # Count contacts at each funnel stage (use highest Q-stage per contact)

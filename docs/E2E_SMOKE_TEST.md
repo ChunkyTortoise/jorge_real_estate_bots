@@ -1,5 +1,7 @@
 # E2E Smoke Test — Jorge Real Estate Bots
 
+> Historical validation snapshot. Useful as evidence of prior live behavior, but not authoritative for current production handoff readiness. Follow the canonical handoff docs in `docs/` for the current signoff standard.
+
 **Test Date:** 2026-03-02
 **Tester:** Cayman Roden
 **AirDroid Number:** +1 310-982-0492

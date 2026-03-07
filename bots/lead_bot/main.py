@@ -20,7 +20,7 @@ from typing import Dict, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from sqlalchemy import or_, text
 
 from bots.buyer_bot.buyer_bot import JorgeBuyerBot
 from bots.lead_bot.models import LeadAnalysisResponse, LeadMessage, PerformanceStatus
@@ -121,13 +121,23 @@ async def check_stalled_conversations() -> None:
                     select(ConversationModel).where(
                         ConversationModel.last_activity < cutoff,
                         ConversationModel.stage.notin_(["QUALIFIED", "STALLED"]),
+                        or_(
+                            ConversationModel.status.is_(None),
+                            ConversationModel.status.notin_(["awaiting_human", "suppressed", "closed"]),
+                        ),
                     )
                 )
                 stalled = result.scalars().all()
                 # Capture original stages before overwriting to STALLED
                 original_stages = {conv.contact_id: (conv.stage or "Q0") for conv in stalled}
                 for conv in stalled:
+                    merged_metadata = dict(conv.metadata_json or {})
+                    merged_metadata.setdefault("stalled_from_stage", conv.stage or "Q0")
+                    conv.metadata_json = merged_metadata
                     conv.stage = "STALLED"
+                    conv.status = "stalled"
+                    conv.human_takeover = True
+                    conv.handoff_reason = "needs_human_review"
                 await session.commit()
                 if stalled:
                     logger.info(f"Marked {len(stalled)} conversations as STALLED")
@@ -164,6 +174,42 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Lead Bot...")
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"5-Minute Response Timeout: {settings.lead_response_timeout_seconds}s")
+
+    # Initialise Sentry error tracking if DSN is configured
+    if settings.sentry_dsn:
+        try:
+            import sentry_sdk
+            sentry_sdk.init(
+                dsn=settings.sentry_dsn,
+                environment=settings.environment,
+                traces_sample_rate=0.1,
+            )
+            logger.info("Sentry initialised")
+        except Exception as e:
+            logger.warning(f"Sentry init failed: {e}")
+
+    # Ensure Jorge DB tables exist — whitelist only tables with no FK conflicts with the shared DB
+    try:
+        from database.base import Base
+        from database.session import _get_engine
+        # Explicitly whitelist Jorge tables that are safe to create (no FK conflicts with
+        # the EnterpriseHub tables that already exist in the shared postgres DB).
+        # Excluded: users, sessions, subscriptions, usage_records (different schema in shared DB),
+        #           invoices, white_label_configs, onboarding_states (FK → subscriptions, type mismatch).
+        _JORGE_SAFE = {
+            "contacts", "conversations", "leads", "deals", "commissions",
+            "properties", "buyer_preferences", "playbook_applications", "roi_reports",
+            "agencies", "webhook_events",
+        }
+        _jorge_tables = [t for t in Base.metadata.sorted_tables if t.name in _JORGE_SAFE]
+        async with _get_engine().begin() as conn:
+            await conn.run_sync(
+                lambda c: Base.metadata.create_all(c, tables=_jorge_tables, checkfirst=True)
+            )
+        logger.info(f"DB tables ensured: {[t.name for t in _jorge_tables]}")
+    except Exception as e:
+        import traceback
+        logger.error(f"DB table creation failed: {e}\n{traceback.format_exc()}")
 
     lead_analyzer = LeadAnalyzer()
     _webhook_cache = get_cache_service()
@@ -257,7 +303,7 @@ async def performance_monitor(request: Request, call_next):
 
     process_time_ms = (time.time() - start_time) * 1000
     response.headers["X-Process-Time"] = f"{int(process_time_ms)}ms"
-    response.headers["X-Timestamp"] = datetime.now().isoformat()
+    response.headers["X-Timestamp"] = datetime.now(timezone.utc).isoformat()
     response.headers["X-Correlation-ID"] = correlation_id
 
     performance_stats["total_requests"] += 1
@@ -298,18 +344,51 @@ if settings.environment != "production":
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "service": "lead_bot",
-        "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0",
-        "environment": settings.environment,
-        "5_minute_rule": {
-            "timeout_seconds": settings.lead_response_timeout_seconds,
-            "target_ms": settings.lead_analysis_timeout_ms
-        }
-    }
+    """Health check endpoint — returns 503 if Redis unreachable or bots uninitialised."""
+    from fastapi.responses import JSONResponse
+
+    checks: Dict[str, str] = {}
+
+    # Verify bots initialised
+    checks["seller_bot"] = "ok" if seller_bot_instance is not None else "not_initialized"
+    checks["buyer_bot"] = "ok" if buyer_bot_instance is not None else "not_initialized"
+
+    # Ping Redis with 2s timeout
+    redis_ok = False
+    try:
+        if settings.redis_url:
+            import redis.asyncio as _redis
+            _r = _redis.from_url(settings.redis_url, socket_connect_timeout=2, socket_timeout=2)
+            await asyncio.wait_for(_r.ping(), timeout=2.0)
+            await _r.aclose()
+            checks["redis"] = "ok"
+            redis_ok = True
+        else:
+            checks["redis"] = "not_configured"
+            redis_ok = True  # No Redis configured — acceptable in dev
+    except Exception as e:
+        checks["redis"] = f"unreachable: {e}"
+        logger.error(f"Health check: Redis unreachable: {e}")
+
+    bots_ok = seller_bot_instance is not None and buyer_bot_instance is not None
+    overall = "healthy" if (redis_ok and bots_ok) else "degraded"
+    status_code = 200 if overall == "healthy" else 503
+
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": overall,
+            "service": "lead_bot",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "version": "1.0.0",
+            "environment": settings.environment,
+            "checks": checks,
+            "5_minute_rule": {
+                "timeout_seconds": settings.lead_response_timeout_seconds,
+                "target_ms": settings.lead_analysis_timeout_ms,
+            },
+        },
+    )
 
 
 @app.get("/health/aggregate")
@@ -327,7 +406,8 @@ async def aggregate_health():
             results["redis"] = "ok"
         else:
             results["redis"] = "not_configured"
-    except Exception:
+    except Exception as _e:
+        logger.warning(f"Aggregate health Redis check failed: {_e}")
         results["redis"] = "down"
 
     try:
@@ -335,7 +415,8 @@ async def aggregate_health():
         async with AsyncSessionFactory() as session:
             await session.execute(text("SELECT 1"))
             results["postgres"] = "ok"
-    except Exception:
+    except Exception as _e:
+        logger.warning(f"Aggregate health Postgres check failed: {_e}")
         results["postgres"] = "down"
 
     # Feed SMS delivery metrics to alerting service
@@ -344,8 +425,8 @@ async def aggregate_health():
         from bots.shared.alerting_service import AlertingService
         sms_stats = await SmsMetricsCollector().get_delivery_stats()
         AlertingService().record_metric("sms.delivery_rate", sms_stats["delivery_rate"])
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.debug(f"SMS metrics feed failed: {_e}")
 
     overall = "healthy" if all(v in ("ok", "not_configured") for v in results.values()) else "degraded"
     return {"status": overall, "services": results, "timestamp": datetime.now(timezone.utc).isoformat()}
@@ -432,7 +513,7 @@ async def metrics(user=Depends(get_current_active_user())):
             100.0 - (performance_stats["five_minute_violations"] / total_requests * 100)
             if total_requests > 0 else 100.0
         ),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 

@@ -3,6 +3,8 @@ REMAINING WORK — WHAT NEEDS TO HAPPEN TO CALL THIS DONE
 For: Internal — Cayman Roden
 Date: February 26, 2026
 
+Historical snapshot only. This file reflects an earlier stage of the project and is not authoritative for the current production handoff standard. Use the canonical handoff docs in `docs/` instead.
+
 
 This is the complete list of open items. Everything on this list has a clear next action.
 Grouped by owner.

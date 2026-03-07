@@ -157,11 +157,11 @@ class AuthService:
             
             # Create user
             user = User(
-                user_id=f"user_{int(datetime.now().timestamp())}_{hash(email) % 10000}",
+                user_id=f"user_{int(datetime.now(timezone.utc).timestamp())}_{hash(email) % 10000}",
                 email=email.lower().strip(),
                 name=name.strip(),
                 role=role,
-                created_at=datetime.now(),
+                created_at=datetime.now(timezone.utc),
                 password_hash=password_hash,
                 must_change_password=must_change_password
             )

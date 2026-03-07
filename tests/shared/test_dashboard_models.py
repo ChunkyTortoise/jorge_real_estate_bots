@@ -213,7 +213,7 @@ class TestConversationState:
         data = state.to_dict()
         assert data['contact_id'] == "contact_123"
         assert data['stage'] == "Q2"
-        assert data['temperature'] == "WARM"
+        assert data['temperature'] == "warm"
         assert isinstance(data['last_activity'], str)
 
 
@@ -244,7 +244,7 @@ class TestConversationFilters:
 
         data = filters.to_dict()
         assert data['stage'] == "Q2"
-        assert data['temperature'] == "HOT"
+        assert data['temperature'] == "hot"
 
 
 class TestPaginatedConversations:

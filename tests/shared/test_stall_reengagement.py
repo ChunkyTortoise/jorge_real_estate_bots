@@ -202,18 +202,29 @@ async def test_record_reply(
     assert args.kwargs["ex"] == 86400 * 7
 
 
+def _async_iter(items):
+    """Return an async iterator from a list (for mocking scan_iter)."""
+    async def _gen():
+        for item in items:
+            yield item
+    return _gen()
+
+
 @pytest.mark.asyncio
 async def test_get_stats(
     service: StallReengagementService,
     mock_redis: AsyncMock,
 ) -> None:
     """get_stats should aggregate attempt counts and reply rate."""
-    mock_redis.keys.side_effect = [
-        # First call: stall_reengagement:* keys
-        ["stall_reengagement:c1", "stall_reengagement:c2"],
-        # Second call: stall_reply:* keys
-        ["stall_reply:c1"],
-    ]
+    call_count = [0]
+
+    def _scan_iter_side_effect(**kwargs):
+        match = kwargs.get("match", "")
+        if "stall_reengagement" in match:
+            return _async_iter(["stall_reengagement:c1", "stall_reengagement:c2"])
+        return _async_iter(["stall_reply:c1"])
+
+    mock_redis.scan_iter = _scan_iter_side_effect
     mock_redis.get.side_effect = [
         json.dumps({"attempts": 2, "last_sent": "2026-01-01T00:00:00+00:00"}),
         json.dumps({"attempts": 1, "last_sent": "2026-01-02T00:00:00+00:00"}),
@@ -233,7 +244,7 @@ async def test_get_stats_empty(
     mock_redis: AsyncMock,
 ) -> None:
     """get_stats with no data should return zeros."""
-    mock_redis.keys.side_effect = [[], []]
+    mock_redis.scan_iter = lambda **kwargs: _async_iter([])
 
     stats = await service.get_stats()
 

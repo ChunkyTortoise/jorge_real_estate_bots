@@ -103,9 +103,16 @@ async def test_hot_seller_gets_slot_offer(bot, mock_ghl):
 
 
 @pytest.mark.asyncio
-async def test_warm_seller_gets_fallback_text(bot, mock_ghl):
+async def test_warm_seller_gets_slot_offer(bot, mock_ghl):
+    """WARM sellers now call offer_appointment_slots() — same as HOT."""
     state = _warm_state()
     assert bot._calculate_temperature(state) == SellerStatus.WARM.value
+
+    bot.calendar_service.ghl_client = mock_ghl
+    mock_ghl.get_free_slots = AsyncMock(return_value=[
+        {"start": "2026-03-01T17:00:00Z", "end": "2026-03-01T17:30:00Z"},
+        {"start": "2026-03-03T22:00:00Z", "end": "2026-03-03T22:30:00Z"},
+    ])
 
     with (
         patch.object(bot, "_get_or_create_state", AsyncMock(return_value=state)),
@@ -118,7 +125,8 @@ async def test_warm_seller_gets_fallback_text(bot, mock_ghl):
     ):
         result = await bot.process_seller_message("contact-1", "loc-123", "okay")
 
-    assert "morning or afternoon" in result.response_message.lower()
+    # Calendar IS configured in mock → gets real slots, not fallback text
+    assert " or " in result.response_message and "open" in result.response_message
     assert state.scheduling_offered is True
 
 

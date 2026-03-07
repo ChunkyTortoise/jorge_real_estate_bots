@@ -15,7 +15,7 @@ Features:
 - Batch operations
 - Health monitoring
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -446,7 +446,7 @@ class GHLClient:
             List of slot dicts with "start" and "end" ISO timestamp strings.
         """
         try:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             start_ms = int(now.timestamp() * 1000)
             end_ms = int((now + timedelta(days=days_ahead)).timestamp() * 1000)
 
@@ -680,13 +680,13 @@ class GHLClient:
                 "healthy": result.get("success", False),
                 "api_key_valid": result.get("success", False),
                 "location_id": self.location_id,
-                "checked_at": datetime.now().isoformat()
+                "checked_at": datetime.now(timezone.utc).isoformat()
             }
         except Exception as e:
             return {
                 "healthy": False,
                 "error": str(e),
-                "checked_at": datetime.now().isoformat()
+                "checked_at": datetime.now(timezone.utc).isoformat()
             }
 
     def check_health_sync(self) -> Dict:
@@ -708,13 +708,13 @@ class GHLClient:
                     "api_key_valid": response.status_code == 200,
                     "location_id": self.location_id,
                     "status_code": response.status_code,
-                    "checked_at": datetime.now().isoformat()
+                    "checked_at": datetime.now(timezone.utc).isoformat()
                 }
         except Exception as e:
             return {
                 "healthy": False,
                 "error": str(e),
-                "checked_at": datetime.now().isoformat()
+                "checked_at": datetime.now(timezone.utc).isoformat()
             }
 
     async def close(self):

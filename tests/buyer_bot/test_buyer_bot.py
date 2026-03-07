@@ -316,19 +316,28 @@ class TestBuyerBotEvalFixes:
         assert len(opp_actions) == 0
 
     @pytest.mark.asyncio
-    async def test_opportunity_created_on_first_call(self, bot):
-        """First call with pipeline_id set creates exactly one opportunity."""
+    async def test_opportunity_created_on_first_sync(self, bot):
+        """_sync_pipeline_stage creates an opportunity on first call with pipeline_id set."""
+        from unittest.mock import AsyncMock, patch
         state = BuyerQualificationState(contact_id="c1", location_id="loc1")
         state.preapproved = True
         state.timeline_days = 20
         assert state.opportunity_created is False
-        from unittest.mock import patch
-        from bots.shared.config import settings
-        with patch.object(settings, "buyer_pipeline_id", "pipe-123"):
-            actions = await bot._generate_actions("c1", "loc1", state, "hot")
-        opp_actions = [a for a in actions if a.get("type") == "upsert_opportunity"]
-        assert len(opp_actions) == 1
+        bot.ghl_client.create_opportunity = AsyncMock(
+            return_value={"data": {"id": "opp-created"}}
+        )
+        with patch("bots.buyer_bot.buyer_bot.settings") as ms:
+            ms.buyer_pipeline_id = "pipe-123"
+            ms.buyer_stage_new = None
+            ms.buyer_stage_preferences = None
+            ms.buyer_stage_preapproved = "stage-preapproved"
+            ms.buyer_stage_scheduling = None
+            ms.buyer_stage_booked = None
+            ms.buyer_stage_stalled = None
+            await bot._sync_pipeline_stage("c1", state, "hot")
+        bot.ghl_client.create_opportunity.assert_called_once()
         assert state.opportunity_created is True
+        assert state.opportunity_id == "opp-created"
 
 
 # ─── Fix 1: Buyer history passed to Claude ───────────────────────────────────

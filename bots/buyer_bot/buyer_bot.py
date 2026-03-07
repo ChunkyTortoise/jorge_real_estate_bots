@@ -20,6 +20,14 @@ from bots.shared.cache_service import get_cache_service
 from bots.shared.calendar_booking_service import FALLBACK_MESSAGE, CalendarBookingService
 from bots.shared.claude_client import ClaudeClient
 from bots.shared.config import settings
+from bots.shared.conversation_contract import (
+    CONVERSATION_MODE_CACHE_PREFIX,
+    ConversationMode,
+    HandoffReason,
+    build_canonical_conversation,
+    has_jorge_active_tag,
+    is_likely_spanish,
+)
 from bots.shared.ghl_client import GHLClient
 from bots.shared.logger import get_logger
 from database.repository import (
@@ -33,18 +41,19 @@ from database.repository import (
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Spanish language detection
+# Seller intent detection (buyer → seller handoff)
 # ---------------------------------------------------------------------------
-_SPANISH_INDICATORS = frozenset({
-    "hola", "casa", "vender", "comprar", "precio", "cuanto",
-    "gracias", "buenas", "quiero", "tengo",
-})
+_SELLER_INTENT_PATTERNS = [
+    re.compile(r'\bsell\s+my\s+(?:house|home|property|place)\b', re.I),
+    re.compile(r'\bwant\s+to\s+sell\b', re.I),
+    re.compile(r'\bneed\s+to\s+sell\b', re.I),
+    re.compile(r'\bselling\s+my\s+(?:house|home|property|place)\b', re.I),
+    re.compile(r'\blist\s+my\s+property\b', re.I),
+]
 
 
-def _is_likely_spanish(text: str) -> bool:
-    """Return True if *text* contains >= 2 common Spanish real-estate words."""
-    words = set(text.lower().split())
-    return len(words & _SPANISH_INDICATORS) >= 2
+def _has_seller_intent(text: str) -> bool:
+    return any(p.search(text) for p in _SELLER_INTENT_PATTERNS)
 
 
 class BuyerStatus:
@@ -81,6 +90,7 @@ class BuyerQualificationState:
     last_interaction: Optional[datetime] = None
     conversation_started: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     opportunity_created: bool = False
+    opportunity_id: Optional[str] = None
 
     # Scheduling state (calendar booking)
     scheduling_offered: bool = False
@@ -178,7 +188,7 @@ class JorgeBuyerBot:
                 _tags = _contact_data.get("tags") or []
             except Exception as _tag_err:
                 logger.warning(f"Could not fetch tags for {contact_id}: {_tag_err}")
-        if "Jorge-Active" in _tags:
+        if has_jorge_active_tag(_tags):
             logger.info(f"Skipping buyer {contact_id} — Jorge-Active tag set")
             return BuyerResult(
                 response_message="",
@@ -192,7 +202,7 @@ class JorgeBuyerBot:
             )
 
         # --- Spanish language detection ---
-        if _is_likely_spanish(message):
+        if is_likely_spanish(message):
             logger.info(f"Spanish detected for buyer {contact_id} — routing to bilingual")
             bilingual_msg = (
                 "Hola! Soy Jorge. Lamentablemente no hablo espanol bien. "
@@ -212,6 +222,40 @@ class JorgeBuyerBot:
 
         try:
             state = await self._get_or_create_state(contact_id, location_id)
+
+            # --- Seller intent detection (buyer → seller handoff) ---
+            if _has_seller_intent(message):
+                if state.current_question <= 1:
+                    # Early in flow — auto-switch to seller bot
+                    cache = self.cache
+                    await cache.delete(f"buyer:state:{contact_id}")
+                    await cache.set(
+                        f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
+                        ConversationMode.SELLER.value,
+                        ttl=604_800,
+                    )
+                    await cache.set(f"assigned_bot:{contact_id}", "seller", ttl=604_800)
+                    handoff_msg = (
+                        "Sounds like you're looking to sell! Let me switch gears — "
+                        "I work with sellers too. What condition is the house in?"
+                    )
+                    return BuyerResult(
+                        response_message=handoff_msg,
+                        buyer_temperature="cold",
+                        questions_answered=0,
+                        qualification_complete=False,
+                        actions_taken=[{"type": "add_tag", "tag": "buyer-to-seller-handoff"}],
+                        next_steps="Switched to seller bot",
+                        analytics={},
+                        matches=[],
+                    )
+                else:
+                    # Deep in buyer flow — tag for follow-up, don't interrupt
+                    logger.info(f"Seller intent detected mid-flow for {contact_id} at Q{state.current_question}")
+                    try:
+                        await self.ghl_client.add_tag(contact_id, "needs-seller-consult")
+                    except Exception as _tag_err:
+                        logger.warning(f"Could not tag {contact_id}: {_tag_err}")
 
             # --- Slot selection intercept ---
             if state.scheduling_offered and not state.appointment_booked:
@@ -315,16 +359,14 @@ class JorgeBuyerBot:
                 state.scheduling_offered = True
 
             actions = await self._generate_actions(contact_id, location_id, state, temperature)
+            await self._sync_pipeline_stage(contact_id, state, temperature)
             await self.save_conversation_state(contact_id, state, temperature)
 
             scheduling_append = ""
             if _offer_scheduling:
-                if temperature == BuyerStatus.HOT:
-                    sched = await self.calendar_service.offer_appointment_slots(
-                        contact_id, "buyer"
-                    )
-                else:
-                    sched = {"message": FALLBACK_MESSAGE}
+                sched = await self.calendar_service.offer_appointment_slots(
+                    contact_id, "buyer"
+                )
                 scheduling_append = "\n\n" + sched["message"]
 
             try:
@@ -335,8 +377,8 @@ class JorgeBuyerBot:
                     success=True,
                     cache_hit=False,
                 )
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug(f"Bot metrics record_bot_interaction (success) failed: {_e}")
 
             return BuyerResult(
                 response_message=sanitize_bot_response(response["message"] + scheduling_append, bot_type="buyer"),
@@ -359,8 +401,8 @@ class JorgeBuyerBot:
                     duration_ms=(_time.time() - _start) * 1000,
                     success=False,
                 )
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug(f"Bot metrics record_bot_interaction (failure) failed: {_e}")
             return BuyerResult(
                 response_message="Hey! Let me get back to you shortly — I want to make sure I find the right options for you.",
                 buyer_temperature="cold",
@@ -406,6 +448,9 @@ class JorgeBuyerBot:
                     preapproved=ed.get("preapproved"),
                     timeline_days=ed.get("timeline_days"),
                     motivation=ed.get("motivation"),
+                    q4_attempts=ed.get("q4_attempts", 0),
+                    scheduling_offered=ed.get("scheduling_offered", False),
+                    appointment_booked=ed.get("appointment_booked", False),
                     conversation_history=row.conversation_history or [],
                     extracted_data=ed,
                     last_interaction=row.last_activity,
@@ -452,6 +497,7 @@ class JorgeBuyerBot:
             "last_interaction": state.last_interaction.isoformat() if state.last_interaction else None,
             "conversation_started": state.conversation_started.isoformat() if state.conversation_started else None,
             "opportunity_created": state.opportunity_created,
+            "opportunity_id": state.opportunity_id,
             "scheduling_offered": state.scheduling_offered,
             "appointment_booked": state.appointment_booked,
             "appointment_id": state.appointment_id,
@@ -465,6 +511,42 @@ class JorgeBuyerBot:
 
         # Persist to database (best-effort — schema may not be initialized yet)
         try:
+            handoff_reason = None
+            if state.stage == "STALLED":
+                handoff_reason = HandoffReason.NEEDS_HUMAN_REVIEW.value
+            canonical = build_canonical_conversation(
+                contact_id=contact_id,
+                location_id=state.location_id,
+                mode=ConversationMode.BUYER,
+                current_stage=state.stage,
+                questions_answered=state.questions_answered,
+                temperature=temperature,
+                qualification_complete=state.is_qualified,
+                next_recommended_action="Schedule call" if state.is_qualified else "Continue buyer qualification",
+                qualification_summary={
+                    "pre_approval_status": state.preapproved,
+                    "buyer_timeline_days": state.timeline_days,
+                    "buyer_preferences": {
+                        "beds_min": state.beds_min,
+                        "baths_min": state.baths_min,
+                        "sqft_min": state.sqft_min,
+                        "price_min": state.price_min,
+                        "price_max": state.price_max,
+                        "preferred_location": state.preferred_location,
+                    },
+                },
+                conversation_history=state.conversation_history,
+                human_takeover=state.stage == "STALLED",
+                handoff_reason=handoff_reason,
+                appointment_booked=state.appointment_booked,
+                last_inbound_at=state.last_interaction.isoformat() if state.last_interaction else None,
+            )
+            combined_extracted = {
+                **state.extracted_data,
+                "q4_attempts": state.q4_attempts,
+                "scheduling_offered": state.scheduling_offered,
+                "appointment_booked": state.appointment_booked,
+            }
             await upsert_conversation(
                 contact_id=contact_id,
                 bot_type="buyer",
@@ -474,13 +556,15 @@ class JorgeBuyerBot:
                 questions_answered=state.questions_answered,
                 is_qualified=state.is_qualified,
                 conversation_history=state.conversation_history,
-                extracted_data=state.extracted_data,
+                extracted_data=combined_extracted,
                 last_activity=state.last_interaction,
                 conversation_started=state.conversation_started,
                 metadata_json={
                     "location_id": state.location_id,
                     "preferred_location": state.preferred_location,
+                    **canonical.to_metadata(),
                 },
+                **canonical.to_columns(),
             )
             await upsert_buyer_preferences(
                 contact_id=contact_id,
@@ -730,7 +814,8 @@ class JorgeBuyerBot:
                 sqft_min=state.sqft_min,
                 limit=100,
             )
-        except Exception:
+        except Exception as _e:
+            logger.warning(f"Property fetch failed: {_e}")
             return []
 
         scored = []
@@ -798,14 +883,6 @@ class JorgeBuyerBot:
                 "workflow_name": "Buyer Property Alert",
             })
 
-        if settings.buyer_pipeline_id and not state.opportunity_created:
-            actions.append({
-                "type": "upsert_opportunity",
-                "pipeline_id": settings.buyer_pipeline_id,
-                "status": "qualified",
-            })
-            state.opportunity_created = True
-
         await self._apply_ghl_actions(contact_id, actions)
         return actions
 
@@ -835,6 +912,49 @@ class JorgeBuyerBot:
                     })
             except Exception as e:
                 logger.error(f"Failed to apply action {action_type}: {e}")
+
+    async def _sync_pipeline_stage(
+        self,
+        contact_id: str,
+        state: "BuyerQualificationState",
+        temperature: str,
+    ) -> None:
+        """Sync GHL opportunity pipeline stage. No-op when pipeline_id is unconfigured."""
+        if not settings.buyer_pipeline_id:
+            return
+
+        # Map state → stage ID
+        if state.stage == "STALLED":
+            stage_id = settings.buyer_stage_stalled
+        elif state.appointment_booked:
+            stage_id = settings.buyer_stage_booked
+        elif state.scheduling_offered:
+            stage_id = settings.buyer_stage_scheduling
+        elif state.preapproved is not None:
+            stage_id = settings.buyer_stage_preapproved
+        elif state.questions_answered >= 1:
+            stage_id = settings.buyer_stage_preferences
+        else:
+            stage_id = settings.buyer_stage_new
+
+        try:
+            if not state.opportunity_created:
+                result = await self.ghl_client.create_opportunity({
+                    "name": f"Buyer {contact_id}",
+                    "contactId": contact_id,
+                    "pipelineId": settings.buyer_pipeline_id,
+                    "status": "open",
+                    **({"pipelineStageId": stage_id} if stage_id else {}),
+                })
+                opp = result.get("data") or result.get("opportunity") or {}
+                state.opportunity_id = str(opp.get("id") or opp.get("opportunityId") or "")
+                state.opportunity_created = True
+            elif state.opportunity_id and stage_id:
+                await self.ghl_client.update_opportunity(state.opportunity_id, {
+                    "pipelineStageId": stage_id,
+                })
+        except Exception as exc:
+            logger.warning(f"Pipeline sync failed for {contact_id}: {exc}")
 
     def _build_analytics(self, state: BuyerQualificationState, temperature: str) -> Dict[str, Any]:
         return {

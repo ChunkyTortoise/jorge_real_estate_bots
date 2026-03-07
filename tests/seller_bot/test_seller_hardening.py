@@ -165,6 +165,25 @@ class TestJorgeActiveTakeover:
         bot.ghl_client.get_contact.assert_called_once_with("test_contact")
 
     @pytest.mark.asyncio
+    async def test_lowercase_jorge_active_tag_fetched_from_ghl_when_contact_info_none(self):
+        """Lowercase jorge-active also triggers manual takeover silence."""
+        bot = JorgeSellerBot()
+        bot.cache = AsyncMock()
+        bot.cache.get = AsyncMock(return_value=None)
+        bot.cache.set = AsyncMock()
+        bot.ghl_client = AsyncMock()
+        bot.ghl_client.get_contact = AsyncMock(return_value={"tags": ["jorge-active"]})
+
+        result = await bot.process_seller_message(
+            contact_id="test_contact",
+            location_id="test_location",
+            message="I want to sell",
+            contact_info=None,
+        )
+
+        assert result.response_message == ""
+
+    @pytest.mark.asyncio
     async def test_no_jorge_active_tag_proceeds_normally(self):
         """Bot processes normally when Jorge-Active tag is absent."""
         bot = JorgeSellerBot()

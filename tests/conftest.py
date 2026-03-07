@@ -37,6 +37,9 @@ class _MockResult:
     def scalar(self):
         return None
 
+    def scalar_one(self):
+        return 0
+
 
 def _make_mock_session():
     session = AsyncMock()
@@ -66,6 +69,16 @@ _ASYNC_SESSION_FACTORY_LOCATIONS = [
 ]
 
 
+def _clear_cache_backend_storage(backend) -> None:
+    """Clear real in-memory cache storage, but ignore mocked backends."""
+    cache = getattr(backend, "_cache", None)
+    expiry = getattr(backend, "_expiry", None)
+    if isinstance(cache, dict):
+        cache.clear()
+    if isinstance(expiry, dict):
+        expiry.clear()
+
+
 @pytest.fixture(autouse=True)
 def _clear_rate_limit_counters():
     """Clear in-memory rate limit counters before/after each test to prevent bleed."""
@@ -73,22 +86,14 @@ def _clear_rate_limit_counters():
     # Also clear the CacheService singleton's MemoryCache to prevent rate-limit bleed
     if CacheService._instance is not None:
         svc = CacheService._instance
-        if hasattr(svc, 'backend') and hasattr(svc.backend, '_cache'):
-            svc.backend._cache.clear()
-            svc.backend._expiry.clear()
-        if hasattr(svc, 'fallback_backend') and hasattr(svc.fallback_backend, '_cache'):
-            svc.fallback_backend._cache.clear()
-            svc.fallback_backend._expiry.clear()
+        _clear_cache_backend_storage(getattr(svc, "backend", None))
+        _clear_cache_backend_storage(getattr(svc, "fallback_backend", None))
     yield
     _memory_counters.clear()
     if CacheService._instance is not None:
         svc = CacheService._instance
-        if hasattr(svc, 'backend') and hasattr(svc.backend, '_cache'):
-            svc.backend._cache.clear()
-            svc.backend._expiry.clear()
-        if hasattr(svc, 'fallback_backend') and hasattr(svc.fallback_backend, '_cache'):
-            svc.fallback_backend._cache.clear()
-            svc.fallback_backend._expiry.clear()
+        _clear_cache_backend_storage(getattr(svc, "backend", None))
+        _clear_cache_backend_storage(getattr(svc, "fallback_backend", None))
 
 
 @pytest.fixture(autouse=True)

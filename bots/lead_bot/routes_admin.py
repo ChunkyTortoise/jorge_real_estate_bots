@@ -16,7 +16,17 @@ from bots.shared.bot_settings import (
     KNOWN_BOTS as _known_bots,
 )
 from bots.shared.config import settings
+from bots.shared.conversation_contract import (
+    CONVERSATION_MODE_CACHE_PREFIX,
+    ConversationMode,
+    extract_canonical_view,
+    mode_to_assignment,
+    normalize_conversation_mode,
+)
 from bots.shared.logger import get_logger
+from database.models import ConversationModel
+from database.session import AsyncSessionFactory
+from sqlalchemy import select
 
 logger = get_logger(__name__)
 
@@ -108,6 +118,8 @@ async def admin_reassign_bot(request: Request, _=Depends(get_admin_or_apikey)):
     Reassign a contact to a different bot type.
 
     Body: {"contact_id": "...", "bot_type": "seller" | "buyer" | "lead"}
+       or {"contact_id": "...", "mode": "seller" | "buyer" | "lead_intake" |
+                                  "bilingual_handoff" | "human_handoff"}
 
     Overwrites the assigned_bot Redis key so the next inbound message
     is routed to the new bot immediately.
@@ -116,20 +128,45 @@ async def admin_reassign_bot(request: Request, _=Depends(get_admin_or_apikey)):
 
     body = await request.json()
     contact_id: str = body.get("contact_id", "").strip()
-    new_bot_type: str = body.get("bot_type", "").strip().lower()
+    raw_mode = body.get("mode") or body.get("bot_type") or ""
+    mode = normalize_conversation_mode(raw_mode)
+    new_bot_type = mode_to_assignment(mode)
 
     if not contact_id:
         raise HTTPException(status_code=400, detail="contact_id is required")
-    if new_bot_type not in ("seller", "buyer", "lead"):
-        raise HTTPException(status_code=400, detail="bot_type must be 'seller', 'buyer', or 'lead'")
+    if not body.get("mode") and not body.get("bot_type"):
+        raise HTTPException(status_code=400, detail="mode or bot_type is required")
 
     cache = _m._webhook_cache
     if cache:
         await cache.delete(f"assigned_bot:{contact_id}")
-        await cache.set(f"assigned_bot:{contact_id}", new_bot_type, ttl=604_800)
+        if new_bot_type:
+            await cache.set(f"assigned_bot:{contact_id}", new_bot_type, ttl=604_800)
+        await cache.set(f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}", mode.value, ttl=604_800)
 
-    logger.info(f"Admin: reassigned contact {contact_id!r} to bot '{new_bot_type}'")
-    return {"status": "ok", "contact_id": contact_id, "bot_type": new_bot_type}
+    # Sync new mode to DB (best-effort)
+    try:
+        from datetime import datetime, timezone
+        from database.repository import upsert_conversation
+        await upsert_conversation(
+            contact_id=contact_id,
+            bot_type=new_bot_type or "lead",
+            stage=None,
+            temperature=None,
+            current_question=0,
+            questions_answered=0,
+            is_qualified=False,
+            conversation_history=None,
+            extracted_data={},
+            last_activity=datetime.now(timezone.utc),
+            conversation_started=None,
+            mode=mode.value,
+        )
+    except Exception as e:
+        logger.warning(f"Admin: DB sync for reassign failed: {e}")
+
+    logger.info(f"Admin: reassigned contact {contact_id!r} to mode '{mode.value}'")
+    return {"status": "ok", "contact_id": contact_id, "bot_type": new_bot_type, "mode": mode.value}
 
 
 @router.put("/admin/settings/{bot}")
@@ -165,6 +202,183 @@ async def admin_reset_state(bot: str, contact_id: str, _=Depends(get_admin_or_ap
     cache = _m._webhook_cache
     if cache:
         await cache.delete(f"{bot}:state:{contact_id}")
+        await cache.delete(f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}")
+        await cache.delete(f"assigned_bot:{contact_id}")
 
     logger.info(f"Admin: reset {bot} bot state for contact {contact_id!r}")
     return {"status": "ok", "bot": bot, "contact_id": contact_id}
+
+
+@router.get("/admin/conversations/{contact_id}")
+async def admin_get_conversation(contact_id: str, _=Depends(get_admin_or_apikey)):
+    """Return canonical conversation mode/state summary for a contact."""
+    from bots.lead_bot import main as _m
+
+    async with AsyncSessionFactory() as session:
+        result = await session.execute(
+            select(ConversationModel).where(ConversationModel.contact_id == contact_id)
+        )
+        conversations = result.scalars().all()
+
+    if not conversations:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    conversations.sort(key=lambda c: c.updated_at or c.created_at, reverse=True)
+    latest = conversations[0]
+    canonical = extract_canonical_view(latest)
+    cache = _m._webhook_cache
+    canonical_cache_mode = None
+    assignment_cache_mode = None
+    if cache:
+        try:
+            canonical_cache_mode = await cache.get(f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}")
+        except Exception:
+            canonical_cache_mode = None
+        try:
+            assignment_cache_mode = await cache.get(f"assigned_bot:{contact_id}")
+        except Exception:
+            assignment_cache_mode = None
+    return {
+        "contact_id": contact_id,
+        "mode": canonical["mode"],
+        "mode_version": canonical["mode_version"],
+        "status": canonical["status"],
+        "handoff_reason": canonical.get("handoff_reason"),
+        "human_takeover": canonical["human_takeover"],
+        "bilingual_required": canonical["bilingual_required"],
+        "message_suppression_reason": canonical.get("message_suppression_reason"),
+        "qualification_summary": canonical.get("qualification_summary"),
+        "next_recommended_action": canonical.get("next_recommended_action"),
+        "crm_sync_status": canonical.get("crm_sync_status"),
+        "last_inbound_at": canonical.get("last_inbound_at"),
+        "last_outbound_at": canonical.get("last_outbound_at"),
+        "temperature": canonical.get("temperature"),
+        "canonical_cache_mode": canonical_cache_mode,
+        "assignment_cache_mode": assignment_cache_mode,
+        "latest_bot_type": latest.bot_type,
+        "latest_stage": latest.stage,
+        "questions_answered": latest.questions_answered,
+    }
+
+
+@router.get("/admin/calendar-debug")
+async def admin_calendar_debug(_=Depends(get_admin_or_apikey)):
+    """
+    Diagnose GHL calendar integration.
+
+    Tests read access (get_free_slots) and write access (create_appointment),
+    surfaces exact errors, and auto-cancels any test appointment created.
+    """
+    from bots.shared.config import settings as cfg
+    from bots.shared.ghl_client import GHLClient
+
+    result: dict = {
+        "calendar_id": cfg.jorge_calendar_id or "(not set)",
+        "user_id": cfg.jorge_user_id or "(not set)",
+        "read_ok": False,
+        "write_ok": False,
+        "slots_found": 0,
+        "read_error": None,
+        "write_error": None,
+        "appointment_id": None,
+    }
+
+    if not cfg.jorge_calendar_id:
+        result["read_error"] = "JORGE_CALENDAR_ID env var is not set"
+        return result
+
+    client = GHLClient()
+
+    # -- Read test --
+    try:
+        slots = await client.get_free_slots(cfg.jorge_calendar_id)
+        result["read_ok"] = True
+        result["slots_found"] = len(slots)
+    except Exception as exc:
+        result["read_error"] = str(exc)
+        return result
+
+    # -- Write test (requires at least one slot) --
+    if not slots:
+        result["write_error"] = "No slots returned — cannot test write access"
+        return result
+
+    slot = slots[0]
+    start_time = slot.get("start", "")
+    end_time = slot.get("end", start_time)
+    test_payload = {
+        "calendarId": cfg.jorge_calendar_id,
+        "locationId": client.location_id,
+        "contactId": "test-calendar-debug",
+        "startTime": start_time,
+        "endTime": end_time,
+        "title": "DEBUG TEST — auto-cancel",
+        "appointmentStatus": "new",
+        "selectedTimezone": "America/Los_Angeles",
+        "selectedSlot": start_time,
+    }
+    if cfg.jorge_user_id:
+        test_payload["assignedUserId"] = cfg.jorge_user_id
+
+    try:
+        appt_result = await client.create_appointment(test_payload)
+        if appt_result.get("success"):
+            result["write_ok"] = True
+            appt = appt_result.get("data") or appt_result.get("appointment") or {}
+            appt_id = str(appt.get("id") or appt.get("appointmentId") or "")
+            result["appointment_id"] = appt_id
+            # Auto-cancel
+            if appt_id and hasattr(client, "delete_appointment"):
+                try:
+                    await client.delete_appointment(appt_id)
+                    result["appointment_id"] = f"{appt_id} (deleted)"
+                except Exception:
+                    result["appointment_id"] = f"{appt_id} (delete failed — cancel manually)"
+        else:
+            result["write_error"] = appt_result
+    except Exception as exc:
+        result["write_error"] = str(exc)
+
+    return result
+
+
+@router.get("/admin/db-diag")
+async def admin_db_diag(_=Depends(get_admin_or_apikey)):
+    """Diagnostic: test DB connectivity and table existence."""
+    import traceback
+    from database.session import AsyncSessionFactory, _get_engine
+    from database.base import Base
+    from database.models import ContactModel, ConversationModel
+    from sqlalchemy import text, select, func, inspect
+
+    result: dict = {}
+
+    try:
+        async with _get_engine().connect() as conn:
+            await conn.execute(text("SELECT 1"))
+            result["connect"] = "ok"
+
+            def _check_tables(sync_conn):
+                insp = inspect(sync_conn)
+                return insp.get_table_names()
+
+            tables = await conn.run_sync(_check_tables)
+            result["tables"] = sorted(tables)
+    except Exception as e:
+        result["connect"] = f"error: {e}"
+        result["trace"] = traceback.format_exc()
+
+    try:
+        result["metadata_tables"] = sorted(Base.metadata.tables.keys())
+    except Exception as e:
+        result["metadata_tables"] = f"error: {e}"
+
+    try:
+        async with AsyncSessionFactory() as session:
+            count_result = await session.execute(select(func.count(ContactModel.id)))
+            result["contacts_count"] = count_result.scalar_one()
+    except Exception as e:
+        result["contacts_query"] = f"error: {e}"
+        result["contacts_trace"] = traceback.format_exc()
+
+    return result

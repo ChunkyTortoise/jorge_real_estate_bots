@@ -99,6 +99,26 @@ class Settings(BaseSettings):
     buyer_pipeline_id: Optional[str] = None
     buyer_alert_workflow_id: Optional[str] = None
 
+    # Buyer pipeline stage IDs (env: BUYER_STAGE_NEW, etc.)
+    buyer_stage_new: Optional[str] = None
+    buyer_stage_preferences: Optional[str] = None
+    buyer_stage_preapproved: Optional[str] = None
+    buyer_stage_scheduling: Optional[str] = None
+    buyer_stage_booked: Optional[str] = None
+    buyer_stage_stalled: Optional[str] = None
+
+    # ========== SELLER BOT CONFIGURATION ==========
+    seller_pipeline_id: Optional[str] = None
+
+    # Seller pipeline stage IDs (env: SELLER_STAGE_NEW, etc.)
+    seller_stage_new: Optional[str] = None
+    seller_stage_conditions: Optional[str] = None
+    seller_stage_pricing: Optional[str] = None
+    seller_stage_offer: Optional[str] = None
+    seller_stage_scheduling: Optional[str] = None
+    seller_stage_booked: Optional[str] = None
+    seller_stage_stalled: Optional[str] = None
+
     # ========== MULTI-TENANT (Phase 2) ==========
     multi_tenant_enabled: bool = False
     default_tenant_id: Optional[str] = None

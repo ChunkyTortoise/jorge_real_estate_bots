@@ -248,3 +248,25 @@ def test_has_pending_slots_false_when_empty(service):
 def test_has_pending_slots_true_after_caching(service):
     service._pending_slots["contact-x"] = SAMPLE_SLOTS
     assert service.has_pending_slots("contact-x")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Appointment payload fields (F1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_book_appointment_payload_includes_timezone_and_selected_slot(service):
+    """GHL API requires selectedTimezone and selectedSlot for successful booking."""
+    service._pending_slots["contact-tz"] = SAMPLE_SLOTS
+    captured: dict = {}
+
+    async def capture(data):
+        captured.update(data)
+        return {"success": True, "data": {"id": "appt-tz"}}
+
+    service.ghl_client.create_appointment = capture
+
+    await service.book_appointment("contact-tz", 0, "seller")
+
+    assert captured.get("selectedTimezone") == "America/Los_Angeles"
+    assert captured.get("selectedSlot") == SAMPLE_SLOTS[0]["start"]

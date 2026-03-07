@@ -3,7 +3,7 @@ Authentication middleware for FastAPI applications.
 
 Provides JWT-based authentication for API endpoints and dashboard access.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from fastapi import Depends, HTTPException, status
@@ -60,7 +60,7 @@ class AuthMiddleware:
                     email="api@test.com",
                     name="Test User",
                     role=UserRole.ADMIN,
-                    created_at=datetime.now(),
+                    created_at=datetime.now(timezone.utc),
                     is_active=True,
                 )
             

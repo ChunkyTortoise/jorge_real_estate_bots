@@ -136,6 +136,8 @@ class CalendarBookingService:
             "endTime": end_time,
             "title": title,
             "appointmentStatus": "new",
+            "selectedTimezone": "America/Los_Angeles",
+            "selectedSlot": start_time,
         }
         if self.user_id:
             appointment_data["assignedUserId"] = self.user_id

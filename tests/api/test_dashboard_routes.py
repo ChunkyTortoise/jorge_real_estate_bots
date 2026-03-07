@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -168,6 +169,131 @@ async def test_dashboard_conversation_not_found(client):
     """Conversation detail returns 404 for unknown contact."""
     resp = await client.get("/api/dashboard/conversations/nonexistent-id")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_dashboard_lead_detail_includes_canonical_fields(client, monkeypatch):
+    contact = SimpleNamespace(
+        contact_id="c-1",
+        name="Jorge Lead",
+        email="lead@example.com",
+        phone="+15550001111",
+        created_at=None,
+    )
+    conversation = SimpleNamespace(
+        contact_id="c-1",
+        bot_type="seller",
+        mode="seller",
+        mode_version=1,
+        status="active",
+        handoff_reason=None,
+        human_takeover=False,
+        bilingual_required=False,
+        message_suppression_reason=None,
+        qualification_summary={"property_condition": "move_in_ready"},
+        next_recommended_action="Continue seller qualification",
+        crm_sync_status="pending",
+        last_inbound_at=None,
+        last_outbound_at=None,
+        metadata_json={},
+        stage="Q2",
+        temperature="WARM",
+        is_qualified=False,
+        questions_answered=2,
+        extracted_data={},
+        last_activity=None,
+        conversation_started=None,
+    )
+
+    class _ContactResult:
+        def scalars(self):
+            return self
+        def first(self):
+            return contact
+
+    class _ConversationResult:
+        def scalars(self):
+            return self
+        def all(self):
+            return [conversation]
+
+    class _Session:
+        def __init__(self):
+            self._calls = 0
+        async def execute(self, *_args, **_kwargs):
+            self._calls += 1
+            return _ContactResult() if self._calls == 1 else _ConversationResult()
+
+    class _Factory:
+        async def __aenter__(self):
+            return _Session()
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr("bots.lead_bot.routes_dashboard.AsyncSessionFactory", lambda: _Factory())
+
+    resp = await client.get("/api/dashboard/leads/c-1")
+    assert resp.status_code == 200
+    data = resp.json()
+    conv = data["conversations"][0]
+    assert conv["mode"] == "seller"
+    assert conv["mode_version"] == 1
+    assert conv["qualification_summary"] == {"property_condition": "move_in_ready"}
+    assert conv["crm_sync_status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_conversation_detail_includes_timing_and_suppression_fields(client, monkeypatch):
+    conversation = SimpleNamespace(
+        contact_id="c-2",
+        bot_type="human_handoff",
+        mode="human_handoff",
+        mode_version=1,
+        status="suppressed",
+        handoff_reason="manual_override",
+        human_takeover=True,
+        bilingual_required=False,
+        message_suppression_reason="manual_override",
+        qualification_summary={"reason": "Jorge took over"},
+        next_recommended_action="Await Jorge follow-up",
+        crm_sync_status="pending",
+        last_inbound_at=None,
+        last_outbound_at=None,
+        metadata_json={},
+        stage="SUPPRESSED",
+        temperature="cold",
+        questions_answered=0,
+        extracted_data={},
+        conversation_history=[],
+        last_activity=None,
+        conversation_started=None,
+    )
+
+    class _Result:
+        def scalars(self):
+            return self
+        def all(self):
+            return [conversation]
+
+    class _Session:
+        async def execute(self, *_args, **_kwargs):
+            return _Result()
+
+    class _Factory:
+        async def __aenter__(self):
+            return _Session()
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr("bots.lead_bot.routes_dashboard.AsyncSessionFactory", lambda: _Factory())
+
+    resp = await client.get("/api/dashboard/conversations/c-2")
+    assert resp.status_code == 200
+    data = resp.json()[0]
+    assert data["mode"] == "human_handoff"
+    assert data["status"] == "suppressed"
+    assert data["message_suppression_reason"] == "manual_override"
+    assert data["next_recommended_action"] == "Await Jorge follow-up"
 
 
 # ---------------------------------------------------------------------------

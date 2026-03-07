@@ -11,7 +11,7 @@ Provides unified data access with consistent caching and error handling.
 """
 import asyncio
 from dataclasses import asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import Date, cast, func, select
@@ -24,6 +24,7 @@ from bots.shared.dashboard_models import (
     PaginatedConversations,
     Temperature,
 )
+from bots.shared.conversation_contract import extract_canonical_view
 from bots.shared.logger import get_logger
 from bots.shared.metrics_service import get_metrics_service
 from database.models import ContactModel, ConversationModel
@@ -90,7 +91,7 @@ class DashboardDataService:
                 'metrics': metrics_summary if not isinstance(metrics_summary, Exception) else None,
                 'active_conversations': asdict(conversations) if not isinstance(conversations, Exception) else None,
                 'hero_data': hero_data if not isinstance(hero_data, Exception) else None,
-                'generated_at': datetime.now().isoformat(),
+                'generated_at': datetime.now(timezone.utc).isoformat(),
                 'refresh_interval': 30,  # Seconds
                 'status': 'success'
             }
@@ -348,7 +349,7 @@ class DashboardDataService:
                 'performance_metrics': asdict(metrics) if not isinstance(metrics, Exception) else None,
                 'cache_statistics': asdict(cache_stats) if not isinstance(cache_stats, Exception) else None,
                 'cost_savings': asdict(cost_savings) if not isinstance(cost_savings, Exception) else None,
-                'generated_at': datetime.now().isoformat(),
+                'generated_at': datetime.now(timezone.utc).isoformat(),
             }
 
             # Cache for 1 minute
@@ -405,13 +406,9 @@ class DashboardDataService:
                 logger.warning("No conversation data available, using fallback")
                 return await self._get_fallback_conversations(filters, page, page_size)
 
-            # Apply filters
+            # Apply filters not handled by SQL
             filtered_conversations = conversations
             if filters:
-                if filters.stage:
-                    filtered_conversations = [c for c in filtered_conversations if c.stage == filters.stage]
-                if filters.temperature:
-                    filtered_conversations = [c for c in filtered_conversations if c.temperature == filters.temperature]
                 if filters.search_term:
                     term = filters.search_term.lower()
                     filtered_conversations = [
@@ -419,7 +416,7 @@ class DashboardDataService:
                         if term in c.seller_name.lower() or (c.property_address and term in c.property_address.lower())
                     ]
                 if filters.show_stalled_only:
-                    stall_cutoff = datetime.now() - timedelta(hours=48)
+                    stall_cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
                     filtered_conversations = [c for c in filtered_conversations if c.last_activity < stall_cutoff]
 
             # Sort conversations
@@ -445,7 +442,7 @@ class DashboardDataService:
             else:  # Sort by last_activity (default)
                 filtered_conversations.sort(
                     key=lambda c: c.last_activity,
-                    reverse=(filters and filters.sort_order == "desc") or True
+                    reverse=filters.sort_order == "desc" if filters and filters.sort_order else True
                 )
 
             # Apply pagination
@@ -477,7 +474,7 @@ class DashboardDataService:
         except Exception:
             stage = ConversationStage.Q0
 
-        temp_val = (conv.temperature or "COLD").upper()
+        temp_val = (conv.temperature or "cold").lower()
         try:
             temperature = Temperature(temp_val)
         except Exception:
@@ -485,6 +482,7 @@ class DashboardDataService:
 
         extracted = conv.extracted_data or {}
         metadata = conv.metadata_json or {}
+        canonical = extract_canonical_view(conv)
 
         return ConversationState(
             contact_id=conv.contact_id,
@@ -493,16 +491,23 @@ class DashboardDataService:
             temperature=temperature,
             current_question=conv.current_question or 0,
             questions_answered=conv.questions_answered or 0,
-            last_activity=conv.last_activity or datetime.now(),
-            conversation_started=conv.conversation_started or datetime.now(),
+            last_activity=conv.last_activity or datetime.now(timezone.utc),
+            conversation_started=conv.conversation_started or datetime.now(timezone.utc),
             is_qualified=bool(conv.is_qualified),
             property_address=metadata.get("property_address"),
             condition=extracted.get("condition"),
             price_expectation=extracted.get("price_expectation"),
             motivation=extracted.get("motivation"),
             urgency=extracted.get("urgency"),
-            next_action="Follow up" if not conv.is_qualified else "Schedule call",
+            next_action=canonical.get("next_recommended_action") or ("Follow up" if not conv.is_qualified else "Schedule call"),
             cma_triggered=bool(metadata.get("cma_triggered")),
+            mode=canonical["mode"],
+            status=canonical["status"],
+            handoff_reason=canonical.get("handoff_reason"),
+            message_suppression_reason=canonical.get("message_suppression_reason"),
+            last_inbound_at=canonical.get("last_inbound_at"),
+            last_outbound_at=canonical.get("last_outbound_at"),
+            qualification_summary=canonical.get("qualification_summary") or {},
         )
 
     async def _fetch_real_conversation_data(self) -> List[ConversationState]:
@@ -544,7 +549,7 @@ class DashboardDataService:
             by_stage = await self._count_by_stage()
             by_temperature = await self._count_by_temperature()
 
-            stalled_cutoff = datetime.now() - timedelta(hours=48)
+            stalled_cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
             stalled_count = 0
             async with AsyncSessionFactory() as session:
                 stmt = select(ConversationModel).where(
@@ -576,7 +581,7 @@ class DashboardDataService:
                     avg_response_time_hours = round(avg_seconds / 3600, 1)
 
                 # Count CMA requests today
-                today = datetime.now().date()
+                today = datetime.now(timezone.utc).date()
                 cma_stmt = select(func.count()).select_from(ConversationModel).where(
                     ConversationModel.bot_type == "seller",
                     cast(ConversationModel.created_at, Date) == today,
@@ -609,7 +614,7 @@ class DashboardDataService:
 
     async def _count_by_stage(self) -> Dict[str, int]:
         async with AsyncSessionFactory() as session:
-            stmt = select(ConversationModel.stage)
+            stmt = select(ConversationModel.stage).where(ConversationModel.bot_type == "seller")
             result = await session.execute(stmt)
             counts: Dict[str, int] = {}
             for row in result.scalars().all():
@@ -619,11 +624,11 @@ class DashboardDataService:
 
     async def _count_by_temperature(self) -> Dict[str, int]:
         async with AsyncSessionFactory() as session:
-            stmt = select(ConversationModel.temperature)
+            stmt = select(ConversationModel.temperature).where(ConversationModel.bot_type == "seller")
             result = await session.execute(stmt)
             counts: Dict[str, int] = {}
             for row in result.scalars().all():
-                temp = (row or "COLD").upper()
+                temp = (row or "cold").lower()
                 counts[temp] = counts.get(temp, 0) + 1
             return counts
 
@@ -686,7 +691,7 @@ class DashboardDataService:
                 performance_tracker = get_performance_tracker()
                 performance_metrics = await performance_tracker.get_performance_metrics()
                 response_time_avg = performance_metrics.ghl_avg_response_time / 1000  # Convert to seconds
-            except:
+            except Exception:
                 response_time_avg = 4.2  # Fallback
             
             # Revenue forecast (hot leads * 60% close rate)
@@ -716,10 +721,7 @@ class DashboardDataService:
     async def _fetch_lead_data_for_hero_metrics(self) -> List[Dict[str, Any]]:
         """Fetch lead data for hero metrics calculation."""
         try:
-            # Reuse the commission analysis data which has qualification and temperature
-            from bots.shared.metrics_service import MetricsService
-            metrics_service = MetricsService()
-            return await metrics_service._fetch_lead_data_for_commission_analysis()
+            return await self.metrics_service._fetch_lead_data_for_commission_analysis()
         except Exception as e:
             logger.exception(f"Error fetching lead data for hero metrics: {e}")
             return []
@@ -823,7 +825,7 @@ class DashboardDataService:
             'metrics': None,
             'active_conversations': None,
             'hero_data': None,
-            'generated_at': datetime.now().isoformat(),
+            'generated_at': datetime.now(timezone.utc).isoformat(),
             'refresh_interval': 30,
             'status': 'error',
             'error': 'Dashboard data temporarily unavailable'
@@ -865,7 +867,7 @@ class DashboardDataService:
             'performance_metrics': None,
             'cache_statistics': None,
             'cost_savings': None,
-            'generated_at': datetime.now().isoformat(),
+            'generated_at': datetime.now(timezone.utc).isoformat(),
             'error': 'Performance data temporarily unavailable'
         }
 
@@ -882,22 +884,23 @@ class DashboardDataService:
             summary = await self._calculate_conversation_summary()
 
             # Calculate 24h deltas (simplified - in production, compare with historical data)
-            active_count = summary.get('active_count', 0)
-            qualified_count = summary.get('qualified_count', 0)
-            total_count = summary.get('total_count', 1)
+            active_count = summary.get('total_active', 0)
+            qualified_count = summary.get('qualified_this_week', 0)
+            by_temperature = summary.get('by_temperature', {})
+            hot_count = by_temperature.get('hot', 0)
 
-            qualification_rate = qualified_count / total_count if total_count > 0 else 0.0
+            qualification_rate = qualified_count / active_count if active_count > 0 else 0.0
 
             # Mock delta calculations (in production, fetch from PerformanceTracker)
             return HeroMetrics(
                 active_conversations=active_count,
-                active_conversations_change=2,  # Mock: +2 from yesterday
+                active_conversations_change=0,
                 qualification_rate=qualification_rate,
-                qualification_rate_change=0.05,  # Mock: +5% from yesterday
-                avg_response_time_minutes=12.5,
-                response_time_change=-1.2,  # Mock: -1.2m improvement
-                hot_leads_count=summary.get('hot_count', 0),
-                hot_leads_change=1  # Mock: +1 hot lead
+                qualification_rate_change=0.0,
+                avg_response_time_minutes=0.0,
+                response_time_change=0.0,
+                hot_leads_count=hot_count,
+                hot_leads_change=0,
             )
 
         except Exception as e:

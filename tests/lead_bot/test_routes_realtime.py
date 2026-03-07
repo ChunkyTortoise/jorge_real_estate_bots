@@ -1,7 +1,7 @@
 """Tests for real-time WebSocket and event polling routes."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -162,7 +162,7 @@ class TestRecentEventsParams:
         call_kwargs = mock_get.call_args
         since_time = call_kwargs.kwargs["since"]
         # The since time should be ~60 minutes ago, not 120
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         diff = now - since_time
         assert diff.total_seconds() < 3700  # ~61 minutes with tolerance
 

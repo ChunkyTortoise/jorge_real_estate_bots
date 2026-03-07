@@ -117,11 +117,22 @@ class TestColloquialPrices:
         assert _extract_price("high threes") == 375_000
 
     def test_low_four_hundreds(self):
-        # Pattern requires no space between "four"/"4" and "hundreds": low\s+(?:four|4)hundreds?
         assert _extract_price("low fourhundreds") == 425_000
+
+    def test_low_four_hundreds_with_space(self):
+        assert _extract_price("low four hundreds") == 425_000
 
     def test_low_4hundreds(self):
         assert _extract_price("low 4hundreds") == 425_000
+
+    def test_mid_threes(self):
+        assert _extract_price("mid threes") == 350_000
+
+    def test_high_fours(self):
+        assert _extract_price("high fours") == 480_000
+
+    def test_low_sixes(self):
+        assert _extract_price("low sixes") == 510_000
 
     def test_250_thousand(self):
         assert _extract_price("250 thousand") == 250_000
@@ -202,22 +213,19 @@ class TestBareNumberQualifiers:
 # Mid/high/low hundreds patterns — seller colloquial (coverage check)
 # -----------------------------------------------------------------------
 class TestColloquialCoverage:
-    """Verify colloquial patterns that are NOT in _COLLOQUIAL_PRICES fall through to None."""
+    """Verify colloquial patterns match as expected."""
 
-    def test_mid_threes_not_in_colloquial(self):
-        """'mid threes' is not a registered pattern → returns None."""
-        assert _extract_price("mid threes") is None
+    def test_mid_threes_in_colloquial(self):
+        assert _extract_price("mid threes") == 350_000
 
     def test_low_sevens_not_in_colloquial(self):
         """'low sevens' is not a registered pattern → returns None."""
         assert _extract_price("low sevens") is None
 
-    def test_high_fours_not_in_colloquial(self):
-        """'high fours' is not a registered pattern → returns None."""
-        assert _extract_price("high fours") is None
+    def test_high_fours_in_colloquial(self):
+        assert _extract_price("high fours") == 480_000
 
-    def test_low_four_hundreds_with_space(self):
-        """Pattern requires no space: 'low fourhundreds' matches but 'low four hundreds' does not."""
-        # The regex is: low\s+(?:four|4)hundreds? — no \s* between four and hundreds
-        assert _extract_price("low four hundreds") is None  # space between "four" and "hundreds" breaks match
-        assert _extract_price("low fourhundreds") == 425_000  # no space works
+    def test_low_four_hundreds_space_and_no_space(self):
+        """After \s* fix, both 'low four hundreds' and 'low fourhundreds' match."""
+        assert _extract_price("low four hundreds") == 425_000
+        assert _extract_price("low fourhundreds") == 425_000

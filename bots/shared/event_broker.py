@@ -13,7 +13,7 @@ Features:
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set
 
 import redis.asyncio as redis
@@ -49,7 +49,7 @@ class CircuitBreaker:
         if self.state == "open":
             # Check if timeout has passed
             if self.last_failure_time and \
-               (datetime.now() - self.last_failure_time).seconds >= self.timeout:
+               (datetime.now(timezone.utc) - self.last_failure_time).total_seconds() >= self.timeout:
                 self.state = "half-open"
                 return False
             return True
@@ -65,7 +65,7 @@ class CircuitBreaker:
     def record_failure(self):
         """Record failed operation"""
         self.failure_count += 1
-        self.last_failure_time = datetime.now()
+        self.last_failure_time = datetime.now(timezone.utc)
 
         if self.failure_count >= self.failure_threshold:
             self.state = "open"
@@ -321,7 +321,7 @@ class EventBroker:
             await self.initialize()
 
         if since is None:
-            since = datetime.now() - timedelta(seconds=self.event_retention_seconds)
+            since = datetime.now(timezone.utc) - timedelta(seconds=self.event_retention_seconds)
 
         events = []
 
@@ -361,15 +361,36 @@ class EventBroker:
                                 v.decode() if isinstance(v, bytes) else v
                                 for k, v in event_data.items()
                             }
+                            raw_payload = event_dict.pop("payload", None)
+                            event_dict.pop("event_type", None)
+                            timestamp_raw = event_dict.get("timestamp")
+                            try:
+                                timestamp = datetime.fromisoformat(timestamp_raw) if timestamp_raw else datetime.now(timezone.utc)
+                            except Exception:
+                                timestamp = datetime.now(timezone.utc)
 
-                            # Convert payload back to dict if it's a JSON string
-                            if 'payload' in event_dict:
+                            if raw_payload is not None:
                                 try:
-                                    event_dict['payload'] = json.loads(event_dict['payload'])
+                                    payload = json.loads(raw_payload)
                                 except (json.JSONDecodeError, TypeError):
-                                    pass
+                                    payload = {"raw_payload": raw_payload}
+                            else:
+                                payload = {
+                                    k: v
+                                    for k, v in event_dict.items()
+                                    if k not in {"timestamp", "source", "event_id"}
+                                }
 
-                            event = create_event(event_type, **event_dict)
+                            event = BaseEvent(
+                                event_id=str(
+                                    event_dict.get("event_id")
+                                    or (event_id.decode() if isinstance(event_id, bytes) else event_id)
+                                ),
+                                event_type=event_type,
+                                source=str(event_dict.get("source") or "redis_stream"),
+                                payload=payload,
+                                timestamp=timestamp,
+                            )
                             events.append(event)
 
                         except Exception as e:
@@ -399,7 +420,7 @@ class EventBroker:
                     break
 
                 # Calculate cutoff timestamp
-                cutoff = datetime.now() - timedelta(seconds=self.event_retention_seconds)
+                cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.event_retention_seconds)
                 cutoff_ms = int(cutoff.timestamp() * 1000)
 
                 streams = [
@@ -436,7 +457,7 @@ class EventBroker:
             "published_count": self.published_count,
             "failed_count": self.failed_count,
             "active_subscribers": len(self.subscribers),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
         try:

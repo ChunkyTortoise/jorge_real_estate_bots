@@ -6,9 +6,11 @@ Simplified version from EnterpriseHub focused on Jorge's needs.
 """
 from __future__ import annotations
 
-import pickle
+import asyncio
+import json
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime, date
 from typing import Any, Dict, Optional
 
 from bots.shared.config import settings
@@ -16,6 +18,32 @@ from bots.shared.event_broker import event_broker
 from bots.shared.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _json_default(obj: Any) -> Any:
+    """JSON serialiser for types not handled by the stdlib encoder."""
+    if isinstance(obj, (datetime, date)):
+        return {"__type__": "datetime", "value": obj.isoformat()}
+    if isinstance(obj, set):
+        return {"__type__": "set", "value": list(obj)}
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serialisable")
+
+
+def _json_hook(d: dict) -> Any:
+    """JSON object hook to reconstruct special types."""
+    if d.get("__type__") == "datetime":
+        return datetime.fromisoformat(d["value"])
+    if d.get("__type__") == "set":
+        return set(d["value"])
+    return d
+
+
+def _cache_dumps(value: Any) -> bytes:
+    return json.dumps(value, default=_json_default).encode()
+
+
+def _cache_loads(data: bytes) -> Any:
+    return json.loads(data, object_hook=_json_hook)
 
 
 class AbstractCache(ABC):
@@ -68,6 +96,7 @@ class MemoryCache(AbstractCache):
     def __init__(self):
         self._cache: Dict[str, Any] = {}
         self._expiry: Dict[str, float] = {}
+        self._lock: asyncio.Lock = asyncio.Lock()
         logger.info("Initialized MemoryCache")
 
     async def get(self, key: str) -> Optional[Any]:
@@ -141,17 +170,19 @@ class MemoryCache(AbstractCache):
         return removed
 
     async def setnx(self, key: str, value: Any, ttl: int = 300) -> bool:
-        existing = await self.get(key)
-        if existing is not None:
-            return False
-        await self.set(key, value, ttl)
-        return True
+        async with self._lock:
+            existing = await self.get(key)
+            if existing is not None:
+                return False
+            await self.set(key, value, ttl)
+            return True
 
     async def increment(self, key: str, amount: int = 1, ttl: Optional[int] = None) -> int:
-        current = await self.get(key)
-        new_value = (int(current) if current is not None else 0) + amount
-        await self.set(key, new_value, ttl or 300)
-        return new_value
+        async with self._lock:
+            current = await self.get(key)
+            new_value = (int(current) if current is not None else 0) + amount
+            await self.set(key, new_value, ttl or 300)
+            return new_value
 
 
 class RedisCache(AbstractCache):
@@ -193,9 +224,18 @@ class RedisCache(AbstractCache):
 
         try:
             data = await self.redis.get(key)
-            if data:
-                return pickle.loads(data)
-            return None
+            if not data:
+                return None
+            # Try JSON first; fall back to pickle for legacy values
+            try:
+                return _cache_loads(data)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                import pickle as _pickle
+                logger.warning(f"Legacy pickle value for key {key}, re-saving as JSON")
+                value = _pickle.loads(data)
+                # Re-save in JSON format so future reads are safe
+                await self.set(key, value)
+                return value
         except Exception as e:
             logger.error(f"Redis get error for key {key}: {e}")
             return None
@@ -205,7 +245,7 @@ class RedisCache(AbstractCache):
             return False
 
         try:
-            data = pickle.dumps(value)
+            data = _cache_dumps(value)
             await self.redis.set(key, data, ex=ttl)
             return True
         except Exception as e:
@@ -229,7 +269,7 @@ class RedisCache(AbstractCache):
             return False
 
         try:
-            data = pickle.dumps(value)
+            data = _cache_dumps(value)
             result = await self.redis.set(key, data, nx=True, ex=ttl)
             return result is not None
         except Exception as e:
@@ -549,12 +589,12 @@ class PerformanceCache:
 
         Stores lead intelligence analysis with timestamp for debugging.
         """
-        import datetime
+        from datetime import timezone as _tz
 
         cache_key = self._get_cache_key(message, context)
 
         cached_data = {
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": datetime.now(_tz.utc).isoformat(),
             "analysis": analysis,
             "message_hash": cache_key.split(":")[-1][:8]  # For debugging
         }

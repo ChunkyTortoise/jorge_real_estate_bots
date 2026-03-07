@@ -1,6 +1,6 @@
 """Real-time WebSocket and event polling routes for Lead Bot."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -69,7 +69,7 @@ async def get_recent_events(
         since_minutes = min(since_minutes, 60)
         limit = min(limit, 500)
 
-        since_time = datetime.now() - timedelta(minutes=since_minutes)
+        since_time = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
         events = await event_broker.get_recent_events(
             since=since_time,
             event_types=event_type_list,
@@ -92,7 +92,7 @@ async def get_recent_events(
             "count": len(formatted_events),
             "since": since_time.isoformat(),
             "event_types_filter": event_type_list,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -114,7 +114,7 @@ async def websocket_status(_=Depends(get_admin_or_apikey)):
             "status": "healthy" if health_data["websocket_manager_running"] else "unhealthy",
             "health": health_data,
             "metrics": metrics_data,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -122,7 +122,7 @@ async def websocket_status(_=Depends(get_admin_or_apikey)):
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 
@@ -151,7 +151,7 @@ async def event_system_health(_=Depends(get_admin_or_apikey)):
                 "health": ws_health,
                 "metrics": ws_metrics
             },
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -159,5 +159,5 @@ async def event_system_health(_=Depends(get_admin_or_apikey)):
         return {
             "status": "error",
             "error": str(e),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }

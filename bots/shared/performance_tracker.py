@@ -11,7 +11,7 @@ Provides real-time and historical performance data for dashboard visualization.
 import time
 from collections import defaultdict, deque
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from bots.shared.cache_service import get_cache_service
@@ -368,7 +368,7 @@ class PerformanceTracker:
         metrics survive service restarts.
         """
         snapshot = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'total_cache_hits': self._total_cache_hits,
             'total_cache_misses': self._total_cache_misses,
             'total_ai_calls': self._total_ai_calls,

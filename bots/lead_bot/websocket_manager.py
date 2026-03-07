@@ -12,7 +12,7 @@ Features:
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 from uuid import uuid4
 
@@ -132,8 +132,8 @@ class WebSocketManager:
             # Register connection
             self.active_connections[client_id] = websocket
             self.client_metadata[client_id] = {
-                "connected_at": datetime.now(),
-                "last_heartbeat": datetime.now(),
+                "connected_at": datetime.now(timezone.utc),
+                "last_heartbeat": datetime.now(timezone.utc),
                 "events_received": 0
             }
 
@@ -256,7 +256,7 @@ class WebSocketManager:
         try:
             # Get events from last 60 seconds
             recent_events = await event_broker.get_recent_events(
-                since=datetime.now() - timedelta(seconds=60),
+                since=datetime.now(timezone.utc) - timedelta(seconds=60),
                 limit=50
             )
 
@@ -334,7 +334,7 @@ class WebSocketManager:
 
                 heartbeat_data = {
                     "event_type": "heartbeat",
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "active_connections": len(self.active_connections)
                 }
 
@@ -346,7 +346,7 @@ class WebSocketManager:
 
                         # Update last heartbeat time
                         if client_id in self.client_metadata:
-                            self.client_metadata[client_id]["last_heartbeat"] = datetime.now()
+                            self.client_metadata[client_id]["last_heartbeat"] = datetime.now(timezone.utc)
 
                     except WebSocketDisconnect:
                         disconnected_clients.append(client_id)
@@ -387,11 +387,11 @@ class WebSocketManager:
             "client_metadata": {
                 client_id: {
                     "connected_duration_seconds": (
-                        datetime.now() - metadata["connected_at"]
+                        datetime.now(timezone.utc) - metadata["connected_at"]
                     ).total_seconds(),
                     "events_received": metadata["events_received"],
                     "last_heartbeat_ago_seconds": (
-                        datetime.now() - metadata["last_heartbeat"]
+                        datetime.now(timezone.utc) - metadata["last_heartbeat"]
                     ).total_seconds()
                 }
                 for client_id, metadata in self.client_metadata.items()
@@ -404,7 +404,7 @@ class WebSocketManager:
             "websocket_manager_running": self._running,
             "active_connections": len(self.active_connections),
             "redis_connected": False,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
         try:

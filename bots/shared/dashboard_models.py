@@ -17,9 +17,9 @@ from typing import Any, Dict, List, Optional
 
 class Temperature(str, Enum):
     """Seller temperature classification."""
-    HOT = "HOT"
-    WARM = "WARM"
-    COLD = "COLD"
+    HOT = "hot"
+    WARM = "warm"
+    COLD = "cold"
 
 
 class ConversationStage(str, Enum):
@@ -154,6 +154,13 @@ class ConversationState:
     # Actions
     next_action: str = "Wait for response"
     cma_triggered: bool = False
+    mode: str = "lead_intake"
+    status: str = "active"
+    handoff_reason: Optional[str] = None
+    message_suppression_reason: Optional[str] = None
+    last_inbound_at: Optional[str] = None
+    last_outbound_at: Optional[str] = None
+    qualification_summary: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

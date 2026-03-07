@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -54,7 +54,7 @@ class TestCircuitBreaker:
         cb.record_failure()
         assert cb.state == "open"
         # Force last_failure_time far in the past
-        cb.last_failure_time = datetime.now() - timedelta(seconds=60)
+        cb.last_failure_time = datetime.now(timezone.utc) - timedelta(seconds=60)
         assert not cb.is_open()
         assert cb.state == "half-open"
 
@@ -158,7 +158,7 @@ class TestEventBrokerPublish:
 
         # Force circuit open
         broker.circuit_breaker.state = "open"
-        broker.circuit_breaker.last_failure_time = datetime.now()
+        broker.circuit_breaker.last_failure_time = datetime.now(timezone.utc)
         broker.circuit_breaker.timeout = 9999
         broker._fallback_publish = AsyncMock()
 
@@ -265,6 +265,61 @@ class TestEventBrokerMetrics:
         health = await broker.health_check()
         assert health["redis_connected"] is False
         assert "error" in health
+
+
+class TestEventBrokerRecentEvents:
+    @pytest.mark.asyncio
+    async def test_get_recent_events_filters_and_sorts(self):
+        broker = _make_broker()
+        broker.redis_client = AsyncMock()
+        now = datetime.now(timezone.utc)
+        lead_payload = {
+            b"event_type": b"lead.scored",
+            b"source": b"lead_analyzer",
+            b"contact_id": b"c1",
+            b"score": b"85",
+            b"payload": json.dumps({"contact_id": "c1"}).encode(),
+            b"timestamp": now.isoformat().encode(),
+        }
+        ghl_payload = {
+            b"event_type": b"ghl.tag_added",
+            b"source": b"ghl_client",
+            b"contact_id": b"c1",
+            b"tag": b"seller_hot",
+            b"payload": json.dumps({"tag": "seller_hot"}).encode(),
+            b"timestamp": (now - timedelta(seconds=5)).isoformat().encode(),
+        }
+        broker.redis_client.xrevrange = AsyncMock(
+            side_effect=[
+                [(b"1-0", lead_payload)],
+                [(b"2-0", ghl_payload)],
+                [],
+                [],
+            ]
+        )
+
+        events = await broker.get_recent_events(event_types=["lead.scored"], limit=10)
+
+        assert len(events) == 1
+        assert events[0].event_type == "lead.scored"
+        broker.redis_client.xrevrange.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_expired_events_trims_streams(self, monkeypatch):
+        broker = _make_broker()
+        broker.redis_client = AsyncMock()
+        calls = {"count": 0}
+
+        async def _fast_sleep(_seconds: int):
+            calls["count"] += 1
+            if calls["count"] >= 2:
+                broker._running = False
+
+        monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
+
+        await broker._cleanup_expired_events()
+
+        broker.redis_client.xtrim.assert_awaited()
 
 
 class TestEventBrokerShutdown:

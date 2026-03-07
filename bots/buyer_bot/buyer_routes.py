@@ -1,5 +1,5 @@
 """FastAPI routes for Buyer Bot."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -19,7 +19,7 @@ def init_buyer_bot(bot: JorgeBuyerBot) -> None:
 
 @router.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "buyer_bot", "timestamp": datetime.now().isoformat()}
+    return {"status": "healthy", "service": "buyer_bot", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @router.post("/api/jorge-buyer/process")

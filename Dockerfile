@@ -38,4 +38,4 @@ EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8001}/health || exit 1
 
-CMD ["sh", "-c", "python -m alembic upgrade head && python -m uvicorn bots.lead_bot.main:app --host 0.0.0.0 --port ${PORT:-8001} --workers 1"]
+CMD ["sh", "-c", "python -m alembic upgrade head || echo 'WARNING: alembic skipped' && python -m uvicorn bots.lead_bot.main:app --host 0.0.0.0 --port ${PORT:-8001} --workers 1"]

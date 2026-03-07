@@ -185,14 +185,15 @@ class TestColloquialPrices:
         assert result["price_expectation"] == 580_000
 
     @pytest.mark.asyncio
-    async def test_mid_threes_falls_to_haiku(self, bot):
-        """'mid threes' is NOT in _COLLOQUIAL_PRICES — must hit Haiku fallback."""
+    async def test_mid_threes_resolved_by_regex(self, bot):
+        """'mid threes' is now in _COLLOQUIAL_PRICES → resolved without Claude."""
         bot.claude_client.agenerate = AsyncMock(
             return_value=LLMResponse(content="350000", model="test")
         )
         result = await bot._extract_qualification_data("mid threes", 2)
         assert result["price_expectation"] == 350_000
-        bot.claude_client.agenerate.assert_awaited_once()
+        # Regex resolves it — Claude should NOT be called
+        bot.claude_client.agenerate.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,8 @@
 # Operations Runbook
 
+> Superseded for Jorge AI operations by [JORGE_OPERATOR_RUNBOOK.md](/Users/cave/Projects/jorge-real-estate-bots/docs/JORGE_OPERATOR_RUNBOOK.md) and [GHL_CONFIGURATION_CONTRACT.md](/Users/cave/Projects/jorge-real-estate-bots/docs/GHL_CONFIGURATION_CONTRACT.md).
+> Keep this file only as historical reference for older deployment notes.
+
 Concise operations guide for the Jorge Real Estate Bots deployment.
 
 **Live URL:** `https://jorge-realty-ai-xxdf.onrender.com`

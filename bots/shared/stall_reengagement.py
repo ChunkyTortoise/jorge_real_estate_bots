@@ -89,14 +89,18 @@ class StallReengagementService:
 
     async def get_stats(self) -> dict:
         """Get re-engagement success stats."""
-        keys = await self._redis.keys("stall_reengagement:*")
+        keys = []
+        async for k in self._redis.scan_iter(match="stall_reengagement:*", count=100):
+            keys.append(k)
         total_attempts = 0
         for k in keys:
             raw = await self._redis.get(k)
             if raw:
                 d = json.loads(raw)
                 total_attempts += d.get("attempts", 0)
-        reply_keys = await self._redis.keys("stall_reply:*")
+        reply_keys = []
+        async for k in self._redis.scan_iter(match="stall_reply:*", count=100):
+            reply_keys.append(k)
         return {
             "total_contacts_reached": len(keys),
             "total_attempts": total_attempts,

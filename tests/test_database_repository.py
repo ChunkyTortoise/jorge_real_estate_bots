@@ -326,3 +326,101 @@ async def test_conversation_metadata_json_round_trip(real_db):
     assert conv is not None
     assert conv.metadata_json == meta
     assert conv.metadata_json["q4_attempts"] == 2
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_upsert_conversation_persists_canonical_fields(real_db):
+    """Canonical mode/status/handoff fields persist as first-class columns."""
+    from database.repository import upsert_conversation, fetch_conversation
+
+    now = datetime.now(timezone.utc)
+    await upsert_conversation(
+        contact_id="ghl_canonical",
+        bot_type="lead",
+        stage="SUPPRESSED",
+        temperature="cold",
+        current_question=0,
+        questions_answered=0,
+        is_qualified=False,
+        conversation_history=[],
+        extracted_data={},
+        last_activity=now,
+        conversation_started=now,
+        metadata_json={"source": "webhook"},
+        mode="human_handoff",
+        mode_version=1,
+        status="suppressed",
+        handoff_reason="manual_override",
+        human_takeover=True,
+        bilingual_required=False,
+        message_suppression_reason="manual_override",
+        qualification_summary={"reason": "operator takeover"},
+        next_recommended_action="Await Jorge follow-up",
+        crm_sync_status="pending",
+        last_inbound_at=now,
+        last_outbound_at=None,
+    )
+
+    conv = await fetch_conversation("ghl_canonical", "lead")
+    assert conv is not None
+    assert conv.mode == "human_handoff"
+    assert conv.status == "suppressed"
+    assert conv.handoff_reason == "manual_override"
+    assert conv.human_takeover is True
+    assert conv.message_suppression_reason == "manual_override"
+    assert conv.qualification_summary == {"reason": "operator takeover"}
+    assert conv.next_recommended_action == "Await Jorge follow-up"
+
+
+# ========== M1 — qualification_summary can be cleared to {} ==========
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_qualification_summary_can_be_cleared(real_db):
+    """upsert_conversation should allow clearing qualification_summary to {}."""
+    from database.repository import upsert_conversation, fetch_conversation
+
+    now = datetime.now(timezone.utc)
+
+    # First upsert: set non-empty qualification_summary
+    await upsert_conversation(
+        contact_id="ghl_clear_qs",
+        bot_type="seller",
+        stage="Q2",
+        temperature="warm",
+        current_question=2,
+        questions_answered=2,
+        is_qualified=False,
+        conversation_history=[],
+        extracted_data={},
+        last_activity=now,
+        conversation_started=now,
+        qualification_summary={"property_condition": "move_in_ready", "price": 350000},
+    )
+
+    conv = await fetch_conversation("ghl_clear_qs", "seller")
+    assert conv is not None
+    assert conv.qualification_summary == {"property_condition": "move_in_ready", "price": 350000}
+
+    # Second upsert: explicitly clear qualification_summary to {}
+    await upsert_conversation(
+        contact_id="ghl_clear_qs",
+        bot_type="seller",
+        stage="Q2",
+        temperature="warm",
+        current_question=2,
+        questions_answered=2,
+        is_qualified=False,
+        conversation_history=[],
+        extracted_data={},
+        last_activity=now,
+        conversation_started=now,
+        qualification_summary={},
+    )
+
+    conv = await fetch_conversation("ghl_clear_qs", "seller")
+    assert conv is not None
+    # qualification_summary should be {} (not preserved as the old non-empty value)
+    assert conv.qualification_summary == {}

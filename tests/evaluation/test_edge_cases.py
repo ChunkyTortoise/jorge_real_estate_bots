@@ -7,9 +7,8 @@ from bots.seller_bot.jorge_seller_bot import (
     SellerQualificationState,
     _COLLOQUIAL_PRICES,
     _PRICE_PATTERNS,
-    _is_likely_spanish as seller_is_likely_spanish,
 )
-from bots.buyer_bot.buyer_bot import _is_likely_spanish as buyer_is_likely_spanish
+from bots.shared.conversation_contract import is_likely_spanish as seller_is_likely_spanish, is_likely_spanish as buyer_is_likely_spanish
 from bots.shared.response_filter import sanitize_bot_response
 
 

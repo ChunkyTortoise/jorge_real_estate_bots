@@ -239,10 +239,11 @@ class TestSellerPersonas:
         )
 
     @pytest.mark.asyncio
-    async def test_ps4b_vague_q2_no_digits_uses_default_300k(self, seller_bot):
+    async def test_ps4b_vague_q2_no_digits_price_is_none(self, seller_bot):
         """
         P-S4b: 'somewhere around what the market says' → no digits → Claude fallback
-        (mock returns non-numeric text → ValueError) → default 300_000.  Q2 advances.
+        (mock returns non-numeric text → ValueError) → price_expectation=None (safe).
+        Q2 still advances because the key is present in extracted_data.
         """
         cid = "ps4b-vague-price"
         state = SellerQualificationState(contact_id=cid, location_id="loc-test")
@@ -255,10 +256,10 @@ class TestSellerPersonas:
         result = await self._send(seller_bot, cid, "somewhere around what the market says")
 
         assert result.questions_answered == 2, (
-            "Q2 must advance even when price extraction falls through to default"
+            "Q2 must advance even when price extraction falls through — key is still set"
         )
-        assert result.analytics["price_expectation"] == 300_000, (
-            "Default 300 000 applied when Claude classification mock returns non-numeric text"
+        assert result.analytics["price_expectation"] is None, (
+            "No unsafe $300k default — price_expectation must be None when extraction fails"
         )
 
     @pytest.mark.asyncio

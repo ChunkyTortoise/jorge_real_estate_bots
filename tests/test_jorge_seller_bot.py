@@ -19,6 +19,7 @@ import pytest
 
 from bots.seller_bot.jorge_seller_bot import JorgeSellerBot, SellerQualificationState, SellerResult, SellerStatus
 from bots.shared.business_rules import JorgeBusinessRules
+from bots.shared.cache_service import MemoryCache
 
 
 class MockCache:
@@ -703,7 +704,9 @@ class TestSellerBotEdgeCases:
     def mock_claude_client(self):
         """Mock Claude AI client for edge case testing"""
         from bots.shared.claude_client import LLMResponse
-        client = AsyncMock()
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
         client.agenerate = AsyncMock(return_value=LLMResponse(
             content="What condition is the house in?",
             model="claude-3-sonnet",
@@ -715,7 +718,9 @@ class TestSellerBotEdgeCases:
     @pytest.fixture
     def mock_ghl_client(self):
         """Mock GHL client for edge case testing"""
-        client = AsyncMock()
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
         client.add_tag = AsyncMock()
         client.update_custom_field = AsyncMock()
         return client
@@ -725,6 +730,7 @@ class TestSellerBotEdgeCases:
         """Create seller bot for edge case testing"""
         with patch('bots.seller_bot.jorge_seller_bot.ClaudeClient', return_value=mock_claude_client):
             bot = JorgeSellerBot(ghl_client=mock_ghl_client)
+            bot.cache = MemoryCache()
             return bot
 
     @pytest.mark.asyncio
@@ -802,13 +808,13 @@ class TestSellerBotEvalFixes:
         assert extracted.get("price_expectation") == 350000
 
     @pytest.mark.asyncio
-    async def test_q2_text_price_sets_default_on_haiku_failure(self, bot):
-        """When Haiku fails, Q2 defaults to 300000 so conversation always advances."""
+    async def test_q2_text_price_sets_none_on_haiku_failure(self, bot):
+        """When Haiku fails, price_expectation is None (no unsafe $300k default)."""
         from unittest.mock import AsyncMock, patch
         with patch.object(bot.claude_client, "agenerate", side_effect=Exception("API down")):
             extracted = await bot._extract_qualification_data("around three fifty", 2)
         assert "price_expectation" in extracted
-        assert extracted["price_expectation"] == 300000
+        assert extracted["price_expectation"] is None
 
     @pytest.mark.asyncio
     async def test_q2_comma_formatted_price_extracts_correctly(self, bot):

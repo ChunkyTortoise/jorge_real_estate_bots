@@ -3,7 +3,7 @@ Seller Bot FastAPI Application.
 Exposes Jorge's confrontational qualification system via REST API.
 """
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -50,7 +50,7 @@ app.add_middleware(
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "seller_bot", "timestamp": datetime.now().isoformat()}
+    return {"status": "healthy", "service": "seller_bot", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 @app.post("/api/jorge-seller/process")
 async def process_message(request: ProcessMessageRequest, user=Depends(get_current_active_user())):

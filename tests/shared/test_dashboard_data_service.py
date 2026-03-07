@@ -476,7 +476,7 @@ class TestDashboardDataService:
 
             # Verify we have conversations at different temperatures
             assert len(temp_counts) > 1
-            assert 'HOT' in temp_counts or 'WARM' in temp_counts or 'COLD' in temp_counts
+            assert 'hot' in temp_counts or 'warm' in temp_counts or 'cold' in temp_counts
 
 
 class TestDashboardDataServiceSingleton:

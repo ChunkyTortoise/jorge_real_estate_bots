@@ -1,5 +1,8 @@
 # Jorge Real Estate Bots — Comprehensive Spec
 
+> Superseded as the authoritative production spec by [JORGE_V2_PRODUCTION_HARDENING_SPEC.md](/Users/cave/Projects/jorge-real-estate-bots/docs/JORGE_V2_PRODUCTION_HARDENING_SPEC.md).
+> This document describes the pre-canonical multi-bot model and remains historical context only.
+
 > Living document. Last updated: 2026-03-01.
 > Both bots must behave exactly as described here in production.
 
