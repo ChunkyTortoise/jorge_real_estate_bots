@@ -21,7 +21,8 @@ async def client() -> AsyncClient:
 @pytest.mark.asyncio
 async def test_unified_webhook_allows_when_no_secret_configured(client: AsyncClient) -> None:
     """When no signature config is set, requests are allowed (pass-through mode for MVP)."""
-    payload = {"contactId": "c1", "message": "hello"}
+    # Use unique contact ID to avoid Redis lock/dedup collisions with other tests
+    payload = {"contactId": "webhook-sec-no-secret-001", "message": "hello no secret test"}
 
     response = await client.post("/api/ghl/webhook", json=payload)
 
@@ -33,7 +34,8 @@ async def test_unified_webhook_allows_when_no_secret_configured(client: AsyncCli
 async def test_unified_webhook_rejects_missing_signature_when_secret_set(client: AsyncClient, monkeypatch) -> None:
     """When a webhook secret IS configured, missing signatures must be rejected."""
     monkeypatch.setattr(lead_main.settings, "ghl_webhook_secret", "test-secret-abc")
-    payload = {"contactId": "c1", "message": "hello"}
+    # Use unique contact ID to avoid Redis lock/dedup collisions with other tests
+    payload = {"contactId": "webhook-sec-reject-001", "message": "hello reject test"}
 
     response = await client.post("/api/ghl/webhook", json=payload)
 
@@ -42,7 +44,8 @@ async def test_unified_webhook_rejects_missing_signature_when_secret_set(client:
 
 @pytest.mark.asyncio
 async def test_unified_webhook_accepts_valid_signature_and_processes(client: AsyncClient, monkeypatch) -> None:
-    payload = {"contactId": "c1", "message": "hello", "bot_type": "lead"}
+    # Use unique contact ID to avoid Redis lock/dedup collisions with other tests
+    payload = {"contactId": "webhook-sec-valid-001", "message": "hello valid signature test", "bot_type": "lead"}
 
     mock_analyzer = AsyncMock(return_value=({"score": 80, "temperature": "hot", "jorge_priority": "high"}, object()))
     monkeypatch.setattr(lead_main, "verify_ghl_signature", lambda *_args, **_kwargs: True)
