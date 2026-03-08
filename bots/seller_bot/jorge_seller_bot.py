@@ -35,6 +35,7 @@ from bots.shared.calendar_booking_service import CalendarBookingService
 from bots.shared.claude_client import ClaudeClient, TaskComplexity
 from bots.shared.config import settings
 from bots.shared.conversation_contract import (
+    CONVERSATION_MODE_CACHE_PREFIX,
     ConversationMode,
     HandoffReason,
     build_canonical_conversation,
@@ -347,6 +348,12 @@ class JorgeSellerBot:
                     )
                     # Re-warm cache so subsequent requests skip DB
                     await self.save_conversation_state(contact_id, state)
+                    # Restore canonical mode cache to prevent misroute on Redis restart
+                    await self.cache.set(
+                        f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
+                        ConversationMode.SELLER.value,
+                        ttl=604_800,
+                    )
                     self.logger.info(f"Restored seller state for {contact_id} from DB")
                     return state
             except Exception as db_err:

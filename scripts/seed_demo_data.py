@@ -80,7 +80,7 @@ CITIES = [
 
 TIMELINES = ["0-30 days", "1-3 months", "3-6 months", "6+ months"]
 TEMPERATURES = ["hot", "warm", "cold"]
-BOT_TYPES = ["lead_bot", "seller_bot", "buyer_bot"]
+BOT_TYPES = ["lead", "seller", "buyer"]
 STAGES = ["Q0", "Q1", "Q2", "Q3", "Q4", "QUALIFIED", "STALLED"]
 DEAL_STATUSES = ["active", "pending", "closed", "lost"]
 PROPERTY_STATUSES = ["active", "pending", "sold", "withdrawn"]

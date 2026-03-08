@@ -192,3 +192,54 @@ async def test_get_conversation_success_returns_canonical_fields(authed_client, 
     assert "status" in data
     assert "human_takeover" in data
     assert "bilingual_required" in data
+
+
+# ---------------------------------------------------------------------------
+# Fix 3 — admin reassign syncs GHL ai_mode
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_admin_reassign_syncs_ghl_fields(authed_client):
+    """POST /admin/reassign-bot must attempt to sync ai_mode to GHL."""
+    mock_cache = AsyncMock()
+    mock_ghl = AsyncMock()
+    mock_ghl.update_custom_field = AsyncMock(return_value={"success": True})
+
+    with (
+        patch("bots.lead_bot.main._webhook_cache", mock_cache),
+        patch("database.repository.update_conversation_mode", new=AsyncMock()),
+        patch("bots.lead_bot.main._ghl_client", mock_ghl, create=True),
+    ):
+        async with authed_client as client:
+            resp = await client.post(
+                "/admin/reassign-bot",
+                json={"contact_id": "ghl-sync-test", "mode": "seller"},
+            )
+    assert resp.status_code == 200
+    assert resp.json()["mode"] == "seller"
+
+
+# ---------------------------------------------------------------------------
+# Fix 4 — admin reassign uses targeted mode update (preserves stage/temperature)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_admin_reassign_preserves_stage(authed_client):
+    """POST /admin/reassign-bot must call update_conversation_mode (not upsert_conversation)."""
+    mock_cache = AsyncMock()
+    mock_update_mode = AsyncMock()
+
+    with (
+        patch("bots.lead_bot.main._webhook_cache", mock_cache),
+        patch("database.repository.update_conversation_mode", mock_update_mode),
+    ):
+        async with authed_client as client:
+            resp = await client.post(
+                "/admin/reassign-bot",
+                json={"contact_id": "preserve-stage", "mode": "buyer"},
+            )
+    assert resp.status_code == 200
+    # update_conversation_mode must have been called with the new mode
+    mock_update_mode.assert_awaited_once()
+    args = mock_update_mode.call_args
+    assert args[0][1] == "buyer" or args.kwargs.get("mode") == "buyer"

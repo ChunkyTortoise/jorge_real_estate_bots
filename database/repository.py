@@ -158,6 +158,27 @@ async def upsert_conversation(
         await session.commit()
 
 
+async def update_conversation_mode(contact_id: str, mode: str, bot_type: str) -> None:
+    """Update only the mode column for an existing conversation, preserving stage/temperature."""
+    async with AsyncSessionFactory() as session:
+        stmt = select(ConversationModel).where(
+            ConversationModel.contact_id == contact_id,
+            ConversationModel.bot_type == bot_type,
+        )
+        result = await session.execute(stmt)
+        existing = result.scalars().first()
+        if existing:
+            existing.mode = mode
+            existing.updated_at = _now()
+        else:
+            session.add(ConversationModel(
+                contact_id=contact_id,
+                bot_type=bot_type,
+                mode=mode,
+            ))
+        await session.commit()
+
+
 async def upsert_lead(
     contact_id: str,
     location_id: Optional[str],

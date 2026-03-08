@@ -234,6 +234,11 @@ class JorgeBuyerBot:
                         ConversationMode.SELLER.value,
                         ttl=604_800,
                     )
+                    try:
+                        await self.ghl_client.update_custom_field(contact_id, "ai_mode", ConversationMode.SELLER.value)
+                        await self.ghl_client.update_custom_field(contact_id, "ai_status", "active")
+                    except Exception as e:
+                        self.logger.warning(f"Could not sync GHL fields for buyer-to-seller handoff {contact_id}: {e}")
                     handoff_msg = (
                         "Sounds like you're looking to sell! Let me switch gears — "
                         "I work with sellers too. What condition is the house in?"
@@ -457,6 +462,12 @@ class JorgeBuyerBot:
                 )
                 # Re-warm cache so subsequent requests skip DB
                 await self.save_conversation_state(contact_id, state)
+                # Restore canonical mode cache to prevent misroute on Redis restart
+                await self.cache.set(
+                    f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
+                    ConversationMode.BUYER.value,
+                    ttl=604_800,
+                )
                 self.logger.info(f"Restored buyer state for {contact_id} from DB")
                 return state
         except Exception as db_err:

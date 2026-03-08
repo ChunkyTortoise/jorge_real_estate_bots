@@ -67,6 +67,6 @@ async def record_lead_processed(
         resource_type=lead_type,
         quantity=1,
         contact_id=contact_id,
-        bot_type="lead_bot",
+        bot_type="lead",
         metadata_json={"qualified": was_qualified},
     )

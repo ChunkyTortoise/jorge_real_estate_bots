@@ -140,26 +140,21 @@ async def admin_reassign_bot(request: Request, _=Depends(get_admin_or_apikey)):
     if cache:
         await cache.set(f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}", mode.value, ttl=604_800)
 
-    # Sync new mode to DB (best-effort)
+    # Sync new mode to DB (targeted — preserves stage/temperature)
     try:
-        from datetime import datetime, timezone
-        from database.repository import upsert_conversation
-        await upsert_conversation(
-            contact_id=contact_id,
-            bot_type=new_bot_type or "lead",
-            stage=None,
-            temperature=None,
-            current_question=0,
-            questions_answered=0,
-            is_qualified=False,
-            conversation_history=None,
-            extracted_data={},
-            last_activity=datetime.now(timezone.utc),
-            conversation_started=None,
-            mode=mode.value,
-        )
+        from database.repository import update_conversation_mode
+        await update_conversation_mode(contact_id, mode.value, new_bot_type or "lead")
     except Exception as e:
         logger.warning(f"Admin: DB sync for reassign failed: {e}")
+
+    # Sync new mode to GHL (best-effort)
+    try:
+        from bots.lead_bot import main as _m
+        ghl_client = getattr(_m, "_ghl_client", None) or getattr(_m, "state", None) and getattr(_m.state, "_ghl_client", None)
+        if ghl_client:
+            await ghl_client.update_custom_field(contact_id, "ai_mode", mode.value)
+    except Exception as e:
+        logger.warning(f"Admin: GHL sync for reassign failed: {e}")
 
     logger.info(f"Admin: reassigned contact {contact_id!r} to mode '{mode.value}'")
     return {"status": "ok", "contact_id": contact_id, "bot_type": new_bot_type, "mode": mode.value}

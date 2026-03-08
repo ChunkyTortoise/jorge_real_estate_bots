@@ -1450,7 +1450,7 @@ class TestWebhookAdminSecurity:
 
         assert response.status_code == 200
         data = response.json()
-        # _normalize_bot_type maps 'seller_buyer' → 'seller' (first canonical substring wins)
+        # normalize_conversation_mode maps 'seller_buyer' → 'seller' (first canonical substring wins)
         assert data.get("bot_type") == "seller", (
             "Non-canonical bot_type 'seller_buyer' must normalize to 'seller'"
         )

@@ -281,7 +281,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
             _bot_type_source = routing.source
             contact_info = dict(normalized.contact_info)
 
-            # Canonical mode cache + compat assignment cache
+            # Canonical mode cache
             if _webhook_cache:
                 await _webhook_cache.set(
                     f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
@@ -367,6 +367,16 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                     )
                 except Exception as db_err:
                     logger.warning(f"DB upsert skipped for manual_takeover {contact_id}: {db_err}")
+                if state._ghl_client:
+                    try:
+                        await _apply_post_send_updates(
+                            state._ghl_client, contact_id, [
+                                {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.HUMAN_HANDOFF.value},
+                                {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
+                            ],
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not sync GHL fields for manual_takeover {contact_id}: {e}")
                 return {
                     "status": "processed",
                     "bot_type": bot_type_lower,
@@ -674,6 +684,16 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                         "message_suppression_reason": canonical.message_suppression_reason,
                     }
                 )
+                if state._ghl_client:
+                    try:
+                        await _apply_post_send_updates(
+                            state._ghl_client, contact_id, [
+                                {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.LEAD_INTAKE.value},
+                                {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
+                            ],
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not sync GHL fields for lead_intake {contact_id}: {e}")
                 if _webhook_cache and dedup_key:
                     await _webhook_cache.set(dedup_key, "1", ttl=300)
                 return {"status": "processed", **result_meta}

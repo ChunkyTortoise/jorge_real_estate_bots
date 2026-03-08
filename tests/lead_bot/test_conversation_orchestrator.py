@@ -259,3 +259,15 @@ class TestResolveMode:
         assert decision.mode == ConversationMode.SELLER
         assert decision.source == "ghl_custom_field"
         ghl_client.get_contact.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_redis_miss_ghl_miss_falls_to_classifier(self):
+        """Both cache and GHL empty → classifier determines mode (TTL expiry scenario)."""
+        cache = AsyncMock()
+        cache.get = AsyncMock(return_value=None)
+        ghl_client = AsyncMock()
+        ghl_client.get_contact = AsyncMock(return_value={"customFields": []})
+        msg = self._make_msg(message_body="I want to buy a house in Rancho")
+        decision = await resolve_mode(payload=msg, cache=cache, ghl_client=ghl_client)
+        assert decision.mode in (ConversationMode.BUYER, ConversationMode.SELLER, ConversationMode.LEAD_INTAKE)
+        assert decision.source == "classifier"

@@ -1216,3 +1216,116 @@ class TestBotTagHandoffs:
         assert r.status_code == 200
         data = r.json()
         assert data["handoff_reason"] == "needs_bilingual"
+
+# ---------------------------------------------------------------------------
+# Fix 1 — manual_takeover syncs GHL ai_mode
+# ---------------------------------------------------------------------------
+
+
+class TestManualTakeoverGHLSync:
+    @pytest.mark.asyncio
+    async def test_manual_takeover_syncs_ghl_fields(self, app):
+        """Jorge-Active tag path must call update_custom_field with ai_mode=human_handoff."""
+        cache = MockCache()
+        state, mock_seller, mock_buyer, mock_ghl, _ = _make_state(cache=cache)
+        mock_ghl.get_contact.return_value = {"tags": ["Jorge-Active"], "customFields": []}
+        mock_ghl.update_custom_field = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook.upsert_conversation", new_callable=AsyncMock),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(bot_type="seller", contact_id="takeover-ghl"),
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert r.status_code == 200
+        assert r.json()["mode"] == "human_handoff"
+        # Must have synced ai_mode to GHL
+        calls = [str(c) for c in mock_ghl.update_custom_field.call_args_list]
+        assert any("ai_mode" in c and "human_handoff" in c for c in calls), (
+            f"Expected ai_mode=human_handoff GHL sync call, got: {calls}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Fix 5 — lead_intake syncs GHL ai_mode
+# ---------------------------------------------------------------------------
+
+
+class TestLeadIntakeGHLSync:
+    @pytest.mark.asyncio
+    async def test_lead_intake_syncs_ghl_fields(self, app):
+        """LEAD_INTAKE branch must call update_custom_field with ai_mode=lead_intake."""
+        cache = MockCache()
+        state, mock_seller, mock_buyer, mock_ghl, mock_lead = _make_state(cache=cache)
+        mock_ghl.get_contact.return_value = {"tags": [], "customFields": []}
+        mock_ghl.update_custom_field = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook.upsert_conversation", new_callable=AsyncMock),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    # No bot_type → LEAD_INTAKE path
+                    content=json.dumps({"contactId": "lead-ghl", "locationId": "loc-test", "body": "interested"}).encode(),
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert r.status_code == 200
+        assert r.json()["mode"] == "lead_intake"
+        calls = [str(c) for c in mock_ghl.update_custom_field.call_args_list]
+        assert any("ai_mode" in c and "lead_intake" in c for c in calls), (
+            f"Expected ai_mode=lead_intake GHL sync call, got: {calls}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Fix 2 — buyer-to-seller handoff syncs GHL ai_mode
+# ---------------------------------------------------------------------------
+
+
+class TestBuyerToSellerHandoffGHLSync:
+    @pytest.mark.asyncio
+    async def test_buyer_to_seller_handoff_syncs_ghl_mode(self):
+        """JorgeBuyerBot seller-intent path must sync ai_mode=seller to GHL."""
+        from bots.buyer_bot.buyer_bot import JorgeBuyerBot
+        from bots.shared.conversation_contract import ConversationMode
+
+        mock_ghl = AsyncMock()
+        mock_ghl.update_custom_field = AsyncMock(return_value={"success": True})
+
+        mock_cache = AsyncMock()
+        mock_cache.get = AsyncMock(return_value=None)  # cache miss → create state
+        mock_cache.set = AsyncMock()
+        mock_cache.delete = AsyncMock()
+
+        mock_state = MagicMock()
+        mock_state.current_question = 0
+        mock_state.scheduling_offered = False
+
+        with (
+            patch.object(JorgeBuyerBot, "_get_or_create_state", new=AsyncMock(return_value=mock_state)),
+            patch("bots.buyer_bot.buyer_bot.get_cache_service", return_value=mock_cache),
+        ):
+            bot = JorgeBuyerBot(ghl_client=mock_ghl)
+            bot.cache = mock_cache
+
+            result = await bot.process_buyer_message(
+                contact_id="buyer-handoff",
+                location_id="loc-test",
+                message="actually I want to sell my house",
+                contact_info={},
+            )
+
+        assert "sell" in result.response_message.lower() or "seller" in result.response_message.lower()
+        # Must have synced ai_mode=seller to GHL
+        calls = [str(c) for c in mock_ghl.update_custom_field.call_args_list]
+        assert any("ai_mode" in c and "seller" in c for c in calls), (
+            f"Expected ai_mode=seller GHL sync call, got: {calls}"
+        )
