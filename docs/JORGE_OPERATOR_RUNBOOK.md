@@ -101,7 +101,7 @@ After reassignment, verify:
 
 - canonical `mode` changed
 - the next inbound message follows the new mode
-- any stale `assigned_bot` compatibility state is cleared if reassigned to a handoff mode
+- GHL `ai_mode` custom field is synced to the new mode (prevents misroute on Redis TTL expiry)
 
 ## Resetting A Contact Safely
 
@@ -171,7 +171,7 @@ Immediately check:
 - canonical `mode`
 - canonical `status`
 - `handoff_reason`
-- compatibility `assigned_bot` state
+- GHL `ai_mode` custom field (must match canonical mode)
 - whether a GHL workflow independently routed or messaged the contact
 
 Wrong-type messaging means the handoff is not safe until the routing source is identified and corrected.

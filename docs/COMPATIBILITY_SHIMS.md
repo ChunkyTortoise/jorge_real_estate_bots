@@ -1,23 +1,18 @@
 # Jorge Compatibility Shims
 
+> **Status (2026-03-07):** Canonical migration complete. All routing uses `resolve_mode()` → `ConversationMode`. Zero `assigned_bot:` references remain in production code.
+
 This document tracks the remaining compatibility shims that still exist while the canonical conversation model finishes replacing the older multi-bot routing model.
 
+## Retired Shims
+
+### `assigned_bot:{contact_id}` — **REMOVED** (2026-03-07)
+
+- All inbound routing paths now use `conversation:mode:{contact_id}` (canonical) with GHL `ai_mode` custom field as level-3 fallback.
+- Buyer-to-seller handoff now writes canonical mode directly and syncs GHL `ai_mode=seller`.
+- No production code references `assigned_bot:` key pattern.
+
 ## Active Shims
-
-### `assigned_bot:{contact_id}`
-
-- Owner: webhook/admin/buyer handoff compatibility
-- Purpose: preserve behavior for older routing assumptions and live contacts created before canonical mode cache became primary
-- Current precedence: secondary only, behind `conversation:mode:{contact_id}`
-- Still required for:
-  - legacy contacts already carrying assignment state
-  - buyer-to-seller early-flow handoff compatibility
-  - `/ghl/webhook/new-lead` follow-up stickiness during migration
-- Removal criteria:
-  - all inbound routing paths use canonical mode cache and persisted canonical mode
-  - buyer-to-seller handoff no longer needs assignment fallback
-  - live GHL workflows verified not to depend on assignment semantics
-- Planned phase: remove after live production signoff
 
 ### `bot_type` request compatibility
 
