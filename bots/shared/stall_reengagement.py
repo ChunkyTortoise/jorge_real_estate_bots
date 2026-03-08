@@ -86,7 +86,7 @@ class StallReengagementService:
             logger.error("Failed to send re-engagement SMS to %s: %s", contact_id, e)
             return False
 
-    _OPT_OUT_KEYWORDS = frozenset({"stop", "unsubscribe", "opt out", "optout", "cancel", "quit"})
+    _OPT_OUT_KEYWORDS = frozenset({"stop", "unsubscribe", "opt out", "optout", "cancel", "quit", "end"})
 
     async def record_opt_out(self, contact_id: str) -> None:
         """Mark a contact as opted out of re-engagement messages."""
@@ -101,9 +101,18 @@ class StallReengagementService:
         return val in ("1", b"1")
 
     def is_opt_out_message(self, text: str) -> bool:
-        """Return True if the message text is an opt-out request."""
+        """Return True if the message text is an opt-out request.
+
+        Checks exact match first, then word-boundary match for TCPA compliance
+        (e.g. "STOP please", "please stop texting me" all trigger opt-out).
+        """
         normalized = text.strip().lower()
-        return normalized in self._OPT_OUT_KEYWORDS
+        # Exact match (single keyword only)
+        if normalized in self._OPT_OUT_KEYWORDS:
+            return True
+        # Word-boundary match for standalone opt-out words (TCPA requirement)
+        words = set(normalized.split())
+        return bool(words & {"stop", "unsubscribe", "cancel", "quit", "end"})
 
     async def record_reply(self, contact_id: str) -> None:
         """Record that a stalled contact replied (for success rate tracking)."""

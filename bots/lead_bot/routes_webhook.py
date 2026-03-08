@@ -112,6 +112,16 @@ async def handle_new_lead(request: Request):
             raise HTTPException(status_code=400, detail="Missing contact ID")
         set_contact_id(contact_id)
 
+        # Dedup: skip if same contact analyzed within 60s to avoid GHL retry storms
+        _webhook_cache = state._webhook_cache
+        if _webhook_cache:
+            dedup_key = f"dedup:new-lead:{contact_id}"
+            existing = await _webhook_cache.get(dedup_key)
+            if existing:
+                logger.info(f"New-lead dedup: skipping duplicate for {contact_id}")
+                return {"status": "skipped", "reason": "duplicate"}
+            await _webhook_cache.set(dedup_key, "1", ttl=60)
+
         analysis_start = time.time()
         analysis_result, metrics = await state.lead_analyzer.analyze_lead(payload)
         analysis_time_ms = (time.time() - analysis_start) * 1000
@@ -157,9 +167,11 @@ async def handle_new_lead(request: Request):
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing new lead: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        return {"status": "error", "detail": "internal server error"}
 
 
 @router.post("/api/ghl/webhook")
@@ -191,11 +203,19 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
         # Opt-out detection: record and return early — do NOT continue to bot processing
         if message_body:
             try:
-                _srs = StallReengagementService()
+                _srs = StallReengagementService(redis_client=state._webhook_cache)
                 if _srs.is_opt_out_message(message_body):
                     await _srs.record_opt_out(contact_id)
+                    if state._ghl_client:
+                        try:
+                            await state._ghl_client.add_tag(contact_id, "opted-out-sms")
+                        except Exception:
+                            logger.warning("Failed to add opted-out tag for %s", contact_id)
                     logger.info("Opt-out recorded for %s — stopping processing", contact_id)
                     return {"status": "opted_out"}
+                if await _srs.is_opted_out(contact_id):
+                    logger.info("Contact %s is opted out — skipping bot processing", contact_id)
+                    return {"status": "skipped", "reason": "opted_out"}
             except Exception as _oe:
                 logger.debug("Opt-out check failed: %s", _oe)
 
@@ -772,24 +792,29 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
 async def webhook_message_status(request: Request):
     """Handles GHL message delivery status callbacks."""
     state = _get_state()
-    payload_bytes = await request.body()
-    signature = request.headers.get("x-wh-signature") or request.headers.get("X-HighLevel-Signature")
-    if not state.verify_ghl_signature(payload_bytes, signature):
-        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    try:
+        payload_bytes = await request.body()
+        signature = request.headers.get("x-wh-signature") or request.headers.get("X-HighLevel-Signature")
+        if not state.verify_ghl_signature(payload_bytes, signature):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
-    payload = json.loads(payload_bytes.decode("utf-8"))
-    event_type = payload.get("type", "")
-    contact_id = payload.get("contactId", "")
-    timestamp = datetime.now(timezone.utc)
+        payload = json.loads(payload_bytes.decode("utf-8"))
+        event_type = payload.get("type", "")
+        contact_id = payload.get("contactId", "")
+        timestamp = datetime.now(timezone.utc)
 
-    status_map = {
-        "message.delivered": "delivered",
-        "message.failed": "failed",
-        "message.read": "read",
-    }
+        status_map = {
+            "message.delivered": "delivered",
+            "message.failed": "failed",
+            "message.read": "read",
+        }
 
-    if event_type in status_map and contact_id:
-        collector = SmsMetricsCollector()
-        await collector.record_delivery(contact_id, status_map[event_type], timestamp)
+        if event_type in status_map and contact_id:
+            collector = SmsMetricsCollector()
+            await collector.record_delivery(contact_id, status_map[event_type], timestamp)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("message-status webhook error: %s", e)
 
     return {"status": "ok"}

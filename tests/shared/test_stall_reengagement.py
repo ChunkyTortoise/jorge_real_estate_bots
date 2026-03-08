@@ -263,12 +263,14 @@ class TestOptOut:
 
     # -- is_opt_out_message --------------------------------------------------
 
-    @pytest.mark.parametrize("text", ["stop", "STOP", "Stop", "unsubscribe", "opt out", "optout", "cancel", "quit"])
+    @pytest.mark.parametrize("text", ["stop", "STOP", "Stop", "unsubscribe", "opt out", "optout", "cancel", "quit", "end", "stop please", "please stop", "stop it please"])
     def test_opt_out_keywords_return_true(self, text: str, service: StallReengagementService) -> None:
         assert service.is_opt_out_message(text) is True
 
-    @pytest.mark.parametrize("text", ["hello", "yes", "no thanks", "stop it please", "stopping by"])
+    @pytest.mark.parametrize("text", ["hello", "yes", "no thanks", "stopping by", "I am stopping by later"])
     def test_non_opt_out_returns_false(self, text: str, service: StallReengagementService) -> None:
+        # "stop it please" now correctly triggers opt-out (word-boundary TCPA matching)
+        # Messages with "stopping" (gerund) do not trigger because it's not the keyword "stop"
         assert service.is_opt_out_message(text) is False
 
     def test_opt_out_strips_whitespace(self, service: StallReengagementService) -> None:
