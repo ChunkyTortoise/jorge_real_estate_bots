@@ -97,7 +97,18 @@ Or update the contact's `conversationMode` custom field in GoHighLevel directly 
 
 Add the **"Jorge-Active"** tag to the contact in GoHighLevel. The bot will stop responding to that contact immediately.
 
-Remove the tag to re-enable bot responses.
+To re-enable bot responses:
+1. Remove the **"Jorge-Active"** tag from the contact in GoHighLevel
+2. Call the reassign endpoint to clear the cached state:
+   ```bash
+   curl -X POST https://jorge-realty-ai-xxdf.onrender.com/admin/reassign-bot \
+     -H "X-Admin-Key: YOUR_ADMIN_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"contact_id": "CONTACT_ID", "bot_type": "seller"}'
+   ```
+   (Use `"bot_type": "buyer"` for buyer conversations.)
+
+> **Why the extra step?** When the bot detects the Jorge-Active tag, it caches `human_handoff` mode in Redis. Removing the GHL tag doesn't automatically clear the cache — the reassign call does.
 
 ### Check live health
 
