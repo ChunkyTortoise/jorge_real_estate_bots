@@ -206,7 +206,7 @@ def _make_webhook_state(
 ) -> MagicMock:
     """Minimal mock of bots.lead_bot.main module state for webhook tests."""
     mock_ghl = AsyncMock()
-    mock_ghl.send_message = AsyncMock()
+    mock_ghl.send_message = AsyncMock(return_value={"success": True})
     mock_ghl.get_contact = AsyncMock(return_value={"customFields": []})
 
     mock_seller = AsyncMock()

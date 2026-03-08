@@ -100,7 +100,7 @@ def _make_state(
     mock_ghl = AsyncMock()
     mock_ghl.add_tag = AsyncMock()
     mock_ghl.remove_tag = AsyncMock()
-    mock_ghl.send_message = AsyncMock()
+    mock_ghl.send_message = AsyncMock(return_value={"success": True})
     mock_ghl.get_contact = AsyncMock(return_value={"customFields": []})
 
     mock_seller = AsyncMock()
