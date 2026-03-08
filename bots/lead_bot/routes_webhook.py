@@ -39,7 +39,7 @@ _funnel_tracker = FunnelTracker(redis_client=_redis_lib.from_url(settings.redis_
 
 router = APIRouter()
 
-_ASSIGNED_BOT_TTL = 604_800  # 7 days
+_CANONICAL_MODE_TTL = 604_800  # 7 days
 
 
 
@@ -138,7 +138,7 @@ async def handle_new_lead(request: Request):
             await _webhook_cache.set(
                 f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
                 ConversationMode.LEAD_INTAKE.value,
-                ttl=_ASSIGNED_BOT_TTL,
+                ttl=_CANONICAL_MODE_TTL,
             )
 
         return {
@@ -286,7 +286,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 await _webhook_cache.set(
                     f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
                     mode.value,
-                    ttl=_ASSIGNED_BOT_TTL,
+                    ttl=_CANONICAL_MODE_TTL,
                 )
 
             manual_takeover = False
@@ -311,7 +311,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                             await _webhook_cache.set(
                                 f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
                                 ConversationMode.HUMAN_HANDOFF.value,
-                                ttl=_ASSIGNED_BOT_TTL,
+                                ttl=_CANONICAL_MODE_TTL,
                             )
                 except Exception as e:
                     logger.warning(f"Could not fetch contact tags for {contact_id}: {e}")
@@ -557,8 +557,18 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                     await _webhook_cache.set(
                         f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
                         ConversationMode.HUMAN_HANDOFF.value,
-                        ttl=_ASSIGNED_BOT_TTL,
+                        ttl=_CANONICAL_MODE_TTL,
                     )
+                if state._ghl_client:
+                    try:
+                        await _apply_post_send_updates(
+                            state._ghl_client, contact_id, [
+                                {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.HUMAN_HANDOFF.value},
+                                {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
+                            ],
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not sync GHL fields for bilingual {contact_id}: {e}")
                 result_meta.update({"temperature": "cold", "questions_answered": 0, "qualification_complete": False})
             elif mode == ConversationMode.HUMAN_HANDOFF:
                 canonical = build_canonical_conversation(
@@ -596,6 +606,16 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                     )
                 except Exception as db_err:
                     logger.warning(f"DB upsert skipped for human_handoff {contact_id}: {db_err}")
+                if state._ghl_client:
+                    try:
+                        await _apply_post_send_updates(
+                            state._ghl_client, contact_id, [
+                                {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.HUMAN_HANDOFF.value},
+                                {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
+                            ],
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not sync GHL fields for human_handoff {contact_id}: {e}")
                 result_meta.update(
                     {
                         "temperature": canonical.temperature,
