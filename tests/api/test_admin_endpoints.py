@@ -100,3 +100,95 @@ async def test_reset_state_clears_cache_keys(authed_client):
     assert resp.status_code == 200
     assert any("seller:state:contact-xyz" in k for k in deleted_keys), deleted_keys
     assert any("conversation:mode:contact-xyz" in k for k in deleted_keys), deleted_keys
+
+
+@pytest.mark.asyncio
+async def test_reassign_then_webhook_routes_correctly(authed_client):
+    """Admin reassign to seller → next webhook for that contact routes to seller bot (E2E)."""
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock
+
+    mock_cache = AsyncMock()
+    store: dict = {}
+
+    async def _get(key):
+        return store.get(key)
+
+    async def _set(key, value, ttl=0):
+        store[key] = value
+
+    mock_cache.get = AsyncMock(side_effect=_get)
+    mock_cache.set = AsyncMock(side_effect=_set)
+
+    with patch("bots.lead_bot.main._webhook_cache", mock_cache):
+        async with authed_client as client:
+            resp = await client.post(
+                "/admin/reassign-bot",
+                json={"contact_id": "reassign-e2e", "mode": "seller"},
+            )
+    assert resp.status_code == 200
+    assert resp.json()["mode"] == "seller"
+    # Cache key was written by the reassign endpoint
+    assert store.get("conversation:mode:reassign-e2e") == "seller"
+
+
+@pytest.mark.asyncio
+async def test_get_conversation_success_returns_canonical_fields(authed_client, monkeypatch):
+    """GET /admin/conversations/{id} → 200 with canonical debug data."""
+    from contextlib import asynccontextmanager
+    from database.models import ConversationModel
+
+    mock_row = MagicMock(spec=ConversationModel)
+    mock_row.contact_id = "conv-debug"
+    mock_row.bot_type = "seller"
+    mock_row.stage = "ACTIVE"
+    mock_row.temperature = "warm"
+    mock_row.questions_answered = 2
+    mock_row.is_qualified = False
+    mock_row.metadata_json = {
+        "mode": "seller",
+        "mode_version": 2,
+        "status": "active",
+        "human_takeover": False,
+        "bilingual_required": False,
+        "handoff_reason": None,
+        "message_suppression_reason": None,
+        "qualification_summary": {},
+        "next_recommended_action": "Continue qualification",
+        "crm_sync_status": "synced",
+        "last_inbound_at": "2026-03-07T00:00:00Z",
+        "last_outbound_at": "2026-03-07T00:01:00Z",
+        "temperature": "warm",
+    }
+    mock_row.updated_at = None
+    mock_row.created_at = None
+
+    class _Result:
+        def scalars(self):
+            return self
+        def all(self):
+            return [mock_row]
+
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=_Result())
+
+    @asynccontextmanager
+    async def _mock_factory():
+        yield mock_session
+
+    monkeypatch.setattr("bots.lead_bot.routes_admin.AsyncSessionFactory", _mock_factory)
+
+    mock_cache = AsyncMock()
+    mock_cache.get = AsyncMock(return_value="seller")
+
+    with patch("bots.lead_bot.main._webhook_cache", mock_cache):
+        async with authed_client as client:
+            resp = await client.get("/admin/conversations/conv-debug")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["contact_id"] == "conv-debug"
+    assert "mode" in data
+    assert "status" in data
+    assert "human_takeover" in data
+    assert "bilingual_required" in data

@@ -1028,3 +1028,191 @@ class TestQ4AttemptsPersistence:
             assert call_kwargs["extracted_data"]["offer_presented"] is True
             assert call_kwargs["extracted_data"]["scheduling_offered"] is True
             assert call_kwargs["extracted_data"]["appointment_booked"] is False
+
+
+# ---------------------------------------------------------------------------
+# Canonical migration — edge-case coverage
+# ---------------------------------------------------------------------------
+
+
+class TestBotUnavailability:
+    @pytest.mark.asyncio
+    async def test_unavailable_buyer_bot_returns_error(self, app):
+        """buyer_bot_instance=None → error response (mirrors existing seller test)."""
+        state, _, _, _, _ = _make_state()
+        state.buyer_bot_instance = None
+
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(bot_type="buyer", contact_id="buyer-down"),
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert r.status_code == 200
+        assert r.json() == {"status": "error", "detail": "buyer bot unavailable"}
+
+
+class TestHandoffGHLSync:
+    @pytest.mark.asyncio
+    async def test_bilingual_handoff_syncs_ghl_fields(self, app):
+        """Bilingual path writes ai_mode=human_handoff to GHL immediately."""
+        cache = MockCache()
+        state, _, _, mock_ghl, _ = _make_state(cache=cache)
+        mock_ghl.get_contact.return_value = {"tags": [], "customFields": []}
+        mock_ghl.update_custom_field = AsyncMock()
+
+        spanish_msg = "Hola quiero vender mi casa"
+
+        with (
+            patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook.upsert_conversation", new_callable=AsyncMock),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=json.dumps({
+                        "contactId": "bilingual-ghl-sync",
+                        "locationId": "loc-test",
+                        "body": spanish_msg,
+                    }).encode(),
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert r.status_code == 200
+        assert r.json()["mode"] == "bilingual_handoff"
+        # GHL update_custom_field must have been called with ai_mode=human_handoff
+        mock_ghl.update_custom_field.assert_awaited()
+        calls = [call.args for call in mock_ghl.update_custom_field.await_args_list]
+        ai_mode_calls = [c for c in calls if c[1] == "ai_mode"]
+        assert any(c[2] == "human_handoff" for c in ai_mode_calls)
+
+    @pytest.mark.asyncio
+    async def test_human_handoff_syncs_ghl_fields(self, app):
+        """Human handoff path (cached) writes ai_mode=human_handoff to GHL before returning."""
+        cache = MockCache()
+        await cache.set("conversation:mode:human-ghl-sync", "human_handoff", ttl=604800)
+        state, _, _, mock_ghl, _ = _make_state(cache=cache)
+        mock_ghl.get_contact.return_value = {"tags": [], "customFields": []}
+        mock_ghl.update_custom_field = AsyncMock()
+
+        with (
+            patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook.upsert_conversation", new_callable=AsyncMock),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(contact_id="human-ghl-sync", body="still need help"),
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert r.status_code == 200
+        assert r.json()["mode"] == "human_handoff"
+        mock_ghl.update_custom_field.assert_awaited()
+        calls = [call.args for call in mock_ghl.update_custom_field.await_args_list]
+        ai_mode_calls = [c for c in calls if c[1] == "ai_mode"]
+        assert any(c[2] == "human_handoff" for c in ai_mode_calls)
+
+
+class TestProcessingLock:
+    @pytest.mark.asyncio
+    async def test_processing_lock_throttles_concurrent(self, app):
+        """Lock already held → returns reason: processing_lock."""
+        cache = MockCache()
+        # Pre-seed the processing lock
+        await cache.set("lock:lock-contact", "1", ttl=90)
+        state, _, _, _, _ = _make_state(cache=cache)
+
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(contact_id="lock-contact", body="help me"),
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert r.status_code == 200
+        assert r.json()["status"] == "throttled"
+        assert r.json()["reason"] == "processing_lock"
+
+
+class TestOptOut:
+    @pytest.mark.asyncio
+    async def test_opt_out_message_skipped(self, app):
+        """'STOP' message → opt-out path, no bot processing."""
+        state, mock_seller, mock_buyer, mock_ghl, mock_lead = _make_state()
+
+        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(body="STOP", bot_type="seller", contact_id="opt-out-c"),
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert r.status_code == 200
+        data = r.json()
+        # Must not have processed through any bot
+        mock_seller.process_seller_message.assert_not_awaited()
+        mock_buyer.process_buyer_message.assert_not_awaited()
+        mock_lead.analyze_lead.assert_not_awaited()
+        # Should be skipped/suppressed/opted_out — any non-bot-processed status
+        assert data.get("status") in ("skipped", "processed", "suppressed", "opted_out")
+
+
+class TestBotTagHandoffs:
+    @pytest.mark.asyncio
+    async def test_seller_needs_human_review_sets_handoff(self, app):
+        """Seller bot returns needs-human-review tag → canonical has human_takeover=True, stage=STALLED."""
+        cache = MockCache()
+        result = _seller_result(
+            temperature="cold",
+            actions_taken=[{"type": "add_tag", "tag": "needs-human-review"}],
+        )
+        state, mock_seller, _, mock_ghl, _ = _make_state(cache=cache, seller_result=result)
+        mock_ghl.send_message = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook.upsert_conversation", new_callable=AsyncMock),
+            patch("bots.lead_bot.routes_webhook.update_conversation_outbound_at", new_callable=AsyncMock),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(bot_type="seller", contact_id="seller-review"),
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["handoff_reason"] == "needs_human_review"
+
+    @pytest.mark.asyncio
+    async def test_buyer_needs_bilingual_sets_handoff(self, app):
+        """Buyer bot returns needs-bilingual tag → canonical has bilingual_required=True."""
+        cache = MockCache()
+        result = _buyer_result(
+            temperature="cold",
+            actions_taken=[{"type": "add_tag", "tag": "needs-bilingual"}],
+        )
+        state, _, mock_buyer, mock_ghl, _ = _make_state(cache=cache, buyer_result=result)
+        mock_ghl.send_message = AsyncMock(return_value={"success": True})
+
+        with (
+            patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook.upsert_conversation", new_callable=AsyncMock),
+            patch("bots.lead_bot.routes_webhook.update_conversation_outbound_at", new_callable=AsyncMock),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/ghl/webhook",
+                    content=_body(bot_type="buyer", contact_id="buyer-bilingual"),
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["handoff_reason"] == "needs_bilingual"

@@ -207,3 +207,55 @@ class TestResolveMode:
         decision = await resolve_mode(payload=msg, cache=None, ghl_client=None)
         # With regex word-boundary, this should NOT match seller intent
         assert decision.mode != ConversationMode.SELLER
+
+    @pytest.mark.asyncio
+    async def test_cache_returns_bytes_decoded(self):
+        """Redis returns b'seller' (bytes) → decoded and normalized correctly."""
+        cache = AsyncMock()
+        cache.get = AsyncMock(return_value=b"seller")
+        msg = self._make_msg()
+        decision = await resolve_mode(payload=msg, cache=cache, ghl_client=None)
+        assert decision.mode == ConversationMode.SELLER
+        assert decision.source == "canonical_cache"
+
+    @pytest.mark.asyncio
+    async def test_ghl_timeout_falls_through_to_classifier(self):
+        """asyncio.TimeoutError from GHL → falls through to classifier (not silently fails)."""
+        import asyncio
+        cache = AsyncMock()
+        cache.get = AsyncMock(return_value=None)
+        ghl_client = AsyncMock()
+        ghl_client.get_contact = AsyncMock(side_effect=asyncio.TimeoutError())
+        msg = self._make_msg(message_body="I want to sell my house")
+        decision = await resolve_mode(payload=msg, cache=cache, ghl_client=ghl_client)
+        assert decision.mode == ConversationMode.SELLER
+        assert decision.source == "classifier"
+
+    @pytest.mark.asyncio
+    async def test_ghl_contact_nested_wrapper(self):
+        """GHL returns {'contact': {'customFields': [...]}} nested format → custom field found."""
+        cache = AsyncMock()
+        cache.get = AsyncMock(return_value=None)
+        ghl_client = AsyncMock()
+        ghl_client.get_contact = AsyncMock(return_value={
+            "contact": {"customFields": [{"fieldKey": "ai_mode", "value": "buyer"}]}
+        })
+        msg = self._make_msg()
+        decision = await resolve_mode(payload=msg, cache=cache, ghl_client=ghl_client)
+        assert decision.mode == ConversationMode.BUYER
+        assert decision.source == "ghl_custom_field"
+
+    @pytest.mark.asyncio
+    async def test_canonical_cache_miss_falls_through_to_ghl(self):
+        """Cache returns None → GHL custom field lookup is attempted."""
+        cache = AsyncMock()
+        cache.get = AsyncMock(return_value=None)
+        ghl_client = AsyncMock()
+        ghl_client.get_contact = AsyncMock(return_value={
+            "customFields": [{"fieldKey": "ai_mode", "value": "seller"}]
+        })
+        msg = self._make_msg()
+        decision = await resolve_mode(payload=msg, cache=cache, ghl_client=ghl_client)
+        assert decision.mode == ConversationMode.SELLER
+        assert decision.source == "ghl_custom_field"
+        ghl_client.get_contact.assert_awaited_once()
