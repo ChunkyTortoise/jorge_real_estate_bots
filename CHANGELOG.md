@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- GHL `ai_mode` custom field now synced on all early-return paths: `manual_takeover`, `lead_intake`, buyer-to-seller handoff, and admin reassign — prevents misroute after Redis TTL expiry
+- Seller and buyer DB fallback paths now restore `conversation:mode:{id}` cache key after Redis restart, closing a one-message misroute window
+- Admin `/reassign-bot` now calls `update_conversation_mode()` (targeted update) instead of `upsert_conversation()` — preserves existing `stage` and `temperature`
+- `seed_demo_data.py` and `billing/quota_enforcement.py` now use canonical `bot_type` values (`lead`, `seller`, `buyer`) instead of legacy `_bot`-suffixed values
+
+### Added
+- `database.repository.update_conversation_mode()` — targeted mode-only update that preserves all other conversation columns
+- 8 new edge-case tests covering all fixed paths (GHL sync, DB fallback, admin reassign); total 1759 passed
+
+### Removed
+- `assigned_bot:{contact_id}` Redis compatibility shim — fully retired, zero production references remain
+
 ## [0.1.0] - 2026-02-09
 
 ### Added
