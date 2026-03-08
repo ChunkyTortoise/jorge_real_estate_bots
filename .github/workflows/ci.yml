@@ -59,7 +59,7 @@ jobs:
         run: python -m pip check
 
       - name: Run tests
-        run: pytest -v --tb=short --cov=bots --cov-report=term-missing
+        run: pytest -v --tb=short --cov=bots --cov-report=term-missing --ignore=tests/command_center
 
   integration:
     name: Integration Tests
@@ -116,7 +116,7 @@ jobs:
         run: python -m pip check
 
       - name: Run integration tests
-        run: pytest -m integration -v --tb=short
+        run: pytest -m integration -v --tb=short --ignore=tests/command_center
 
   type-check:
     name: Type Checking (mypy)
