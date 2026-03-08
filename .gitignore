@@ -57,5 +57,6 @@ coverage.xml
 
 # Artifacts
 test.db
+test_local.db
 .claude/
 docs/TAG_SLEEP_PROPOSAL.md

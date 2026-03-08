@@ -2,14 +2,16 @@
 
 ## What's Included
 
-Three AI bots for GoHighLevel, a Streamlit command center, and a full test suite -- 1792 tests passing.
+Three AI bots (Lead, Buyer, Seller) running as a single FastAPI app, a Streamlit command center, and a full test suite.
 
-| Component | Port | Purpose |
-|-----------|------|---------|
-| **Lead Bot** | 8001 | 5-minute SLA enforcement, Q0-Q4 qualification, temperature scoring |
-| **Seller Bot** | 8002 | FRS/PCS scoring, CMA analysis, pricing strategy |
-| **Buyer Bot** | 8003 | Financial readiness checks, pre-approval flow, property matching |
-| **Command Center** | 8501 | Streamlit dashboard -- lead flow, bot performance, commission tracking |
+| Component | Purpose |
+|-----------|---------|
+| **Lead Bot** | 5-minute SLA enforcement, Q0-Q4 qualification, temperature scoring |
+| **Seller Bot** | Q1-Q4 seller qualification (condition, price, motivation, cash offer), HOT/WARM/COLD scoring |
+| **Buyer Bot** | Financial readiness checks, pre-approval flow, property matching |
+| **Command Center** | Streamlit dashboard -- lead flow, bot performance, commission tracking |
+
+All three bots run in the same process (`bots/lead_bot/main.py`) and route via `ConversationMode` (SELLER / BUYER / LEAD_INTAKE) set on the GHL contact.
 
 ---
 
@@ -17,10 +19,8 @@ Three AI bots for GoHighLevel, a Streamlit command center, and a full test suite
 
 **URL:** `https://jorge-realty-ai-xxdf.onrender.com`
 
-- Lead Bot: `https://jorge-realty-ai-xxdf.onrender.com/lead/`
-- Seller Bot: `https://jorge-realty-ai-xxdf.onrender.com/seller/`
-- Buyer Bot: `https://jorge-realty-ai-xxdf.onrender.com/buyer/`
-- Swagger docs: append `/docs` to any bot URL
+- API docs: `https://jorge-realty-ai-xxdf.onrender.com/docs`
+- Health: `https://jorge-realty-ai-xxdf.onrender.com/health/aggregate`
 
 ---
 
@@ -40,7 +40,6 @@ Three AI bots for GoHighLevel, a Streamlit command center, and a full test suite
 | `ANTHROPIC_API_KEY` | Yes | Claude API key for AI responses |
 | `GHL_API_KEY` | Yes | GoHighLevel API key for CRM operations |
 | `GHL_LOCATION_ID` | Yes | GHL location (sub-account) ID |
-| `GHL_CALENDAR_ID` | Yes | GHL calendar ID for booking appointments |
 | `JORGE_USER_ID` | Yes | Jorge's GHL user ID for assignment |
 | `JORGE_CALENDAR_ID` | Yes | Jorge's calendar ID for availability lookups |
 | `REDIS_URL` | Yes | Redis connection URL (conversation state, rate limiting, funnel data) |
@@ -53,6 +52,25 @@ Copy `.env.example` to `.env` for local development. On Render, set these in the
 
 ---
 
+## GHL Webhook Setup
+
+Point your GHL workflow webhooks to:
+
+```
+# Unified dispatcher -- all inbound messages
+POST https://jorge-realty-ai-xxdf.onrender.com/api/ghl/webhook
+
+# New-lead entry point (trigger on Contact Created workflows)
+POST https://jorge-realty-ai-xxdf.onrender.com/ghl/webhook/new-lead
+
+# SMS delivery status callbacks (optional)
+POST https://jorge-realty-ai-xxdf.onrender.com/api/ghl/webhook/message-status
+```
+
+**Routing logic**: The unified webhook reads the contact's `conversationMode` custom field (set automatically or via admin API) and routes to SELLER, BUYER, or LEAD_INTAKE.
+
+---
+
 ## Common Operations
 
 ### Reset a conversation
@@ -62,13 +80,9 @@ curl -X DELETE https://jorge-realty-ai-xxdf.onrender.com/admin/reset-state/{bot}
   -H "X-Admin-Key: YOUR_ADMIN_KEY"
 ```
 
-Replace `{bot}` with `lead`, `buyer`, or `seller` and `{contact_id}` with the GHL contact ID.
+Replace `{bot}` with `lead`, `buyer`, or `seller`.
 
 ### Reassign a contact to a different bot
-
-Update the contact's `customData.botType` field in GoHighLevel to `buyer` or `seller`. The next incoming message will route to the new bot.
-
-Alternatively, use the admin API:
 
 ```bash
 curl -X POST https://jorge-realty-ai-xxdf.onrender.com/admin/reassign-bot \
@@ -77,11 +91,35 @@ curl -X POST https://jorge-realty-ai-xxdf.onrender.com/admin/reassign-bot \
   -d '{"contact_id": "CONTACT_ID", "mode": "buyer"}'
 ```
 
+Or update the contact's `conversationMode` custom field in GoHighLevel directly (`seller`, `buyer`, or `lead_intake`).
+
 ### Manual takeover (bot goes silent)
 
-Add the **"Jorge-Active"** tag to the contact in GoHighLevel. When this tag is present, the bot will not respond to messages from that contact, allowing a human agent to take over.
+Add the **"Jorge-Active"** tag to the contact in GoHighLevel. The bot will stop responding to that contact immediately.
 
 Remove the tag to re-enable bot responses.
+
+### Check live health
+
+```bash
+curl https://jorge-realty-ai-xxdf.onrender.com/health/aggregate
+# Returns: {"status":"healthy","services":{"lead_bot":"ok","seller_bot":"ok","buyer_bot":"ok","redis":"ok","postgres":"ok"}}
+```
+
+---
+
+## Admin Endpoints
+
+All admin endpoints require `X-Admin-Key: YOUR_ADMIN_KEY` header.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/admin/reset-state/{bot}/{contact_id}` | DELETE | Clear conversation state |
+| `/admin/reassign-bot` | POST | Change a contact's bot mode |
+| `/admin/bot-settings` | GET/PUT | View or update bot tone/behavior settings |
+| `/api/dashboard/funnel` | GET | Funnel conversion stats |
+| `/api/dashboard/stall-stats` | GET | Stalled conversation breakdown |
+| `/api/events/recent` | GET | Recent webhook events (last 50) |
 
 ---
 
@@ -94,7 +132,7 @@ Remove the tag to re-enable bot responses.
 | Bot not responding | Service down or misconfigured | Check `/health/aggregate`, verify Redis is up, verify `GHL_API_KEY` is valid |
 | Admin endpoints return 503 | `ADMIN_API_KEY` not set | Set `ADMIN_API_KEY` in Render environment variables |
 | Bot responds in English | Missing Spanish config | Verify bot system prompts include Spanish language instruction |
-| Rate limit errors (429) | Too many messages per contact | Default: 10 messages/min per contact. Wait or adjust in admin settings |
+| Rate limit errors (429) | Too many messages per contact | Default: 10 messages/min per contact. Wait or adjust via `/admin/bot-settings` |
 
 See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for the full troubleshooting guide.
 
@@ -102,32 +140,33 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for the full troubleshoot
 
 ## Running Locally
 
-**Demo mode** (mock AI, no API keys needed):
-
-```bash
-pip install -r requirements.txt
-python jorge_launcher.py --demo
-```
-
-**Full stack with Docker Compose** (PostgreSQL + Redis + all 3 bots + dashboard):
+**Full stack with Docker Compose** (PostgreSQL + Redis + bot):
 
 ```bash
 cp .env.example .env   # fill in your keys
 docker compose up
 ```
 
+**Single bot (no Docker)**:
+
+```bash
+pip install -r requirements.txt
+uvicorn bots.lead_bot.main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+API docs available at `http://localhost:8001/docs`.
+
 **Run tests:**
 
 ```bash
 pytest tests/ -v
-# 1792 passing, ~70s
 ```
 
 ---
 
 ## Deploying to Render
 
-The repo includes a `Dockerfile` and `docker-compose.yml`. On Render:
+The repo includes a `Dockerfile`, `docker-compose.yml`, and `render.yaml` blueprint.
 
 1. Connect the GitHub repo (`ChunkyTortoise/jorge_real_estate_bots`)
 2. Create a **Web Service** pointing to the Dockerfile
@@ -138,43 +177,21 @@ Or re-deploy to the existing service: `jorge-realty-ai-xxdf.onrender.com` (srv-d
 
 ---
 
-## GHL Webhook Setup
-
-Point your GHL workflow webhooks to:
-
-```
-POST https://jorge-realty-ai-xxdf.onrender.com/lead/webhook/ghl
-POST https://jorge-realty-ai-xxdf.onrender.com/seller/webhook/ghl
-POST https://jorge-realty-ai-xxdf.onrender.com/buyer/webhook/ghl
-```
-
-See `docs/02-ghl-setup-guide.md` for the full GHL workflow configuration.
-
----
-
 ## Current Status
 
-- **1792 tests passing** (as of 2026-03-07)
+- **1732 tests passing** (as of 2026-03-08)
 - All three bots working end-to-end with GHL
-- **Redis connected** (`redis: ok` in `/health/aggregate`) — Render Redis fully reachable, no MemoryCache fallback
-- **All 9 DB tables migrated** — confirmed via `/health/schema-check`. Alembic runs on every boot (fail-loud: container won't start if Postgres is down)
-- **Lyrio Dashboard on live data** — wired to live GHL + Jorge API via `JorgeApiDataProvider`
+- **Redis connected** -- Render Redis fully reachable
+- **PostgreSQL** -- all DB tables migrated (Alembic runs on boot)
 - Rate limiting active (Redis-backed, `X-RateLimit-*` headers)
-- Cross-bot handoff with 0.7 confidence threshold and circular prevention
-- CI/CD pipeline active on GitHub Actions
 - Buyer Q4 loop limit (3 attempts before STALLED)
 - Funnel attribution with Redis persistence (30-day TTL)
-- Dashboard endpoints for funnel and stall stats
+- Manual takeover via Jorge-Active tag
 
----
+### Known Blockers (require Jorge Salas)
 
-## Remaining Client Actions
-
-Two items that only you can complete:
-
-1. **Anthropic credits** -- Top up at [console.anthropic.com](https://console.anthropic.com/). The bots use Claude Haiku (fast, cheap) for most messages and Claude Sonnet for complex analysis. Estimated cost: ~$0.10-0.50/day at typical lead volume.
-
-2. **A2P 10DLC registration** -- Required for SMS via Twilio. Register your business at [twilio.com/trust-hub](https://www.twilio.com/en-us/trust-hub). Without this, SMS messages may be filtered as spam. This is a carrier-level requirement, not a bot limitation.
+1. **Booking returns 404** -- GHL API key needs `calendars.write` scope. Go to GHL Settings > Integrations > Private Integrations, find the API key, add Calendar permissions.
+2. **GHL Automation workflows** -- Need a quick audit to confirm webhook URLs are correct and no duplicate triggers are active.
 
 ---
 
@@ -183,36 +200,30 @@ Two items that only you can complete:
 ```
 jorge-real-estate-bots/
 ├── bots/
-│   ├── lead_bot/       # Lead qualification + GHL webhook handler
-│   ├── seller_bot/     # CMA + pricing strategy
-│   └── buyer_bot/      # Pre-approval + property matching
-├── agents/             # AI agent logic (intent decoder, handoff, temperature)
-├── api/                # Shared FastAPI routes + middleware
-├── command_center/     # Streamlit dashboard
-├── database/           # SQLAlchemy models + Alembic migrations
-├── services/           # GHL API client, Redis client, shared services
-├── tests/              # 1330+ tests (unit + integration + E2E)
-├── docs/               # Setup guides, specs, troubleshooting, operations runbook
-├── docker-compose.yml  # Full stack (Postgres, Redis, 3 bots, dashboard)
-├── Dockerfile          # Production image
-├── jorge_launcher.py   # Dev launcher (--demo flag for mock mode)
-└── .env.example        # All env var reference with descriptions
+│   ├── lead_bot/           # FastAPI app entry point + all routes
+│   │   ├── main.py         # App factory, health endpoints
+│   │   ├── routes_webhook.py   # /api/ghl/webhook (unified dispatcher)
+│   │   ├── routes_admin.py     # /admin/* endpoints
+│   │   ├── routes_dashboard.py # /api/dashboard/* endpoints
+│   │   ├── routes_realtime.py  # WebSocket / SSE
+│   │   └── routes_productization.py  # Multi-tenant productization
+│   ├── seller_bot/         # Seller qualification logic
+│   └── buyer_bot/          # Buyer qualification logic
+├── bots/shared/            # Config, GHL client, Claude client, Redis, business rules
+├── command_center/         # Streamlit dashboard
+├── database/               # SQLAlchemy models + Alembic migrations
+├── billing/                # Billing module (for future productization)
+├── adapters/               # Adapter layer (for future productization)
+├── api/                    # Additional API modules (for future productization)
+├── tests/                  # 1717+ tests (unit + integration)
+├── docs/                   # Setup guides, specs, troubleshooting, operations runbook
+├── docker-compose.yml      # Full stack (Postgres, Redis, bot)
+├── Dockerfile              # Production image
+└── .env.example            # All env var reference with descriptions
 ```
-
----
-
-## API Docs
-
-Each bot serves Swagger UI when running:
-
-- Lead Bot: `http://localhost:8001/docs`
-- Seller Bot: `http://localhost:8002/docs`
-- Buyer Bot: `http://localhost:8003/docs`
 
 ---
 
 ## GitHub Repo
 
 `https://github.com/ChunkyTortoise/jorge_real_estate_bots`
-
-The repo is public. All code, tests, docs, and Docker configuration are included.

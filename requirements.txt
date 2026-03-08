@@ -9,8 +9,6 @@ python-multipart==0.0.21
 
 # ========== AI/LLM ==========
 anthropic==0.76.0
-langchain-anthropic==1.3.1
-langchain-core==1.2.7
 
 # ========== DATABASE ==========
 sqlalchemy==2.0.46
@@ -34,13 +32,6 @@ requests==2.32.5
 aiohttp==3.13.3
 tenacity==9.1.2
 
-# ========== REAL ESTATE DATA ==========
-beautifulsoup4==4.14.3
-lxml==6.0.2
-
-# ========== COMMUNICATIONS ==========
-twilio==9.10.0
-sendgrid==6.12.5
 
 # ========== UTILITIES ==========
 python-dotenv==1.2.1
