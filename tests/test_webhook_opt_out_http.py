@@ -102,6 +102,7 @@ class TestOptOutHTTPFlow:
 
         with (
             patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook._get_raw_redis", return_value=cache),
             patch("bots.lead_bot.routes_webhook.upsert_conversation", new_callable=AsyncMock),
         ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -125,6 +126,7 @@ class TestOptOutHTTPFlow:
 
         with (
             patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook._get_raw_redis", return_value=cache),
             patch("bots.lead_bot.routes_webhook.upsert_conversation", new_callable=AsyncMock),
         ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -148,6 +150,7 @@ class TestOptOutHTTPFlow:
 
         with (
             patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook._get_raw_redis", return_value=cache),
             patch("bots.lead_bot.routes_webhook.upsert_conversation", new_callable=AsyncMock),
         ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -203,6 +206,7 @@ class TestOptOutHTTPFlow:
 
         with (
             patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook._get_raw_redis", return_value=cache),
             patch("bots.lead_bot.routes_webhook.upsert_conversation", new_callable=AsyncMock),
         ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

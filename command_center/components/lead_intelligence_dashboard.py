@@ -628,15 +628,3 @@ class LeadIntelligenceDashboard:
                     <div style="background: #e5e7eb; height: 200px; border-radius: 4px;"></div>
                 </div>
                 """, unsafe_allow_html=True)
-
-
-# Factory function for component
-def render_lead_intelligence_dashboard(location_id: str) -> None:
-    """
-    Main function to render lead intelligence dashboard.
-
-    Args:
-        location_id: GHL location ID
-    """
-    dashboard = LeadIntelligenceDashboard()
-    dashboard.render_lead_intelligence_section(location_id)

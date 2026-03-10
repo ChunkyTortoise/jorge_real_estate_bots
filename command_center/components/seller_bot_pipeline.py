@@ -519,15 +519,3 @@ class SellerBotPipelineViz:
                     <div style="background: #e5e7eb; height: 200px; border-radius: 4px;"></div>
                 </div>
                 """, unsafe_allow_html=True)
-
-
-# Factory function for component
-def render_seller_bot_pipeline(location_id: str) -> None:
-    """
-    Main function to render seller bot pipeline visualization.
-
-    Args:
-        location_id: GHL location ID
-    """
-    pipeline_viz = SellerBotPipelineViz()
-    pipeline_viz.render_seller_pipeline_section(location_id)

@@ -18,17 +18,6 @@ class LeadMessage(BaseModel):
     force_ai_analysis: bool = Field(False, description="Force Claude AI analysis even if cached")
 
 
-class GHLWebhook(BaseModel):
-    """GoHighLevel webhook payload model."""
-    type: str = Field(..., description="Webhook event type")
-    location_id: str = Field(..., description="GHL location ID")
-    contact_id: str = Field(..., description="Contact ID")
-    message: Optional[str] = Field(None, description="Message content")
-    contact: Optional[Dict[str, Any]] = Field(None, description="Contact data")
-    conversation: Optional[Dict[str, Any]] = Field(None, description="Conversation data")
-    timestamp: Optional[str] = Field(None, description="Event timestamp")
-
-
 class LeadAnalysisResponse(BaseModel):
     """Lead analysis response model."""
     success: bool = Field(..., description="Analysis success status")

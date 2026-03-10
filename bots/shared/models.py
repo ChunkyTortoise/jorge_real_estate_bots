@@ -6,7 +6,6 @@ Contains dataclasses and Pydantic models used across the system.
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
 
 
 @dataclass
@@ -40,31 +39,3 @@ class PerformanceMetrics:
         }
 
 
-class ProcessMessageRequest(BaseModel):
-    """
-    Request model for bot message processing endpoints.
-    
-    Used by seller_bot and buyer_bot /process endpoints to validate
-    incoming message data with Pydantic.
-    """
-    contact_id: str = Field(..., description="GHL contact ID")
-    location_id: str = Field(..., description="GHL location ID")
-    message: str = Field(..., description="User message content")
-    contact_info: Optional[Dict[str, Any]] = Field(None, description="Additional contact information")
-    
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "contact_id": "abc123",
-                    "location_id": "loc456",
-                    "message": "I'm interested in selling my house",
-                    "contact_info": {
-                        "name": "John Doe",
-                        "email": "john@example.com",
-                        "phone": "+1234567890",
-                    },
-                }
-            ]
-        }
-    )

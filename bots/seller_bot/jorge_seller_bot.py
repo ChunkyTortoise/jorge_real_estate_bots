@@ -42,7 +42,7 @@ from bots.shared.conversation_contract import (
     has_jorge_active_tag,
     is_likely_spanish,
 )
-from bots.shared.ghl_client import GHLClient
+from bots.shared.ghl_client import GHLClient, unwrap_ghl_response
 from bots.shared.logger import get_logger
 from database.repository import fetch_conversation, upsert_contact, upsert_conversation
 
@@ -576,7 +576,8 @@ class JorgeSellerBot:
                 _tags = []
                 try:
                     _contact_data = await self.ghl_client.get_contact(contact_id)
-                    _tags = _contact_data.get("tags") or []
+                    _inner = unwrap_ghl_response(_contact_data)
+                    _tags = _inner.get("contact", _inner).get("tags") or _inner.get("tags") or []
                 except Exception as _tag_err:
                     self.logger.warning(f"Could not fetch tags for {contact_id}: {_tag_err}")
             if has_jorge_active_tag(_tags):

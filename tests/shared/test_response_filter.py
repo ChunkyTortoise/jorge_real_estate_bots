@@ -156,3 +156,37 @@ class TestCombined:
         text = "Hello   there   friend."
         result = sanitize_bot_response(text)
         assert "  " not in result
+
+
+
+# ---------------------------------------------------------------------------
+# New identity patterns (BUG-2 fix)
+# ---------------------------------------------------------------------------
+
+import pytest as _pytest
+
+@_pytest.mark.parametrize("input_text,should_not_contain", [
+    ("I'm a virtual assistant helping you today", "virtual assistant"),
+    ("I am a virtual assistant at your service", "virtual assistant"),
+    ("As a digital assistant, I can help", "digital assistant"),
+    ("This is powered by GPT technology", "GPT"),
+    ("I was created by OpenAI for this purpose", "OpenAI"),
+    ("I was built by a machine learning team", "machine learning"),
+    ("I was created by Anthropic engineers", "created by"),
+    ("I was built by developers at a lab", "built by"),
+    ("This uses LLM technology", "LLM"),
+])
+def test_new_identity_patterns_filtered(input_text, should_not_contain):
+    result = sanitize_bot_response(input_text)
+    assert should_not_contain not in result, f"Expected {should_not_contain!r} to be removed from: {result!r}"
+
+
+def test_virtual_assistant_replaced_with_professional():
+    result = sanitize_bot_response("I'm a virtual assistant ready to help!")
+    assert "real estate professional" in result
+
+
+def test_gpt_replaced_with_jorge():
+    result = sanitize_bot_response("Hi, this is GPT speaking.")
+    assert "Jorge" in result
+    assert "GPT" not in result

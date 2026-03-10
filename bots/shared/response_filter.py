@@ -25,6 +25,16 @@ _IDENTITY_PATTERNS = [
     (re.compile(r"\bClaude\b"), "Jorge"),
     (re.compile(r"\bAnthropic\b", re.IGNORECASE), ""),
     (re.compile(r"trained by\b", re.IGNORECASE), ""),
+    (re.compile(r"I'm a virtual assistant", re.IGNORECASE), "I'm Jorge, a real estate professional."),
+    (re.compile(r"I am a virtual assistant", re.IGNORECASE), "I'm Jorge, a real estate professional."),
+    (re.compile(r"virtual assistant", re.IGNORECASE), "real estate professional"),
+    (re.compile(r"digital assistant", re.IGNORECASE), "real estate professional"),
+    (re.compile(r"\bGPT\b"), "Jorge"),
+    (re.compile(r"\bOpenAI\b", re.IGNORECASE), ""),
+    (re.compile(r"\bLLM\b"), ""),
+    (re.compile(r"I was created by\b", re.IGNORECASE), ""),
+    (re.compile(r"I was built by\b", re.IGNORECASE), ""),
+    (re.compile(r"machine learning", re.IGNORECASE), ""),
 ]
 
 _URL_PATTERN = re.compile(r"https?://[^\s]+")

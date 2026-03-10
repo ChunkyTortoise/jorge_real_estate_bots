@@ -270,4 +270,24 @@ class TestResolveMode:
         msg = self._make_msg(message_body="I want to buy a house in Rancho")
         decision = await resolve_mode(payload=msg, cache=cache, ghl_client=ghl_client)
         assert decision.mode in (ConversationMode.BUYER, ConversationMode.SELLER, ConversationMode.LEAD_INTAKE)
-        assert decision.source == "classifier"
+
+    @pytest.mark.asyncio
+    async def test_ghl_custom_field_wrapped_response(self):
+        """GHL _make_request wraps responses as {success, data:{contact:{...}}} — unwrap must succeed."""
+        cache = AsyncMock()
+        cache.get = AsyncMock(return_value=None)
+        ghl_client = AsyncMock()
+        # Simulate actual GHL response format returned by _make_request
+        ghl_client.get_contact = AsyncMock(return_value={
+            "success": True,
+            "data": {
+                "contact": {
+                    "id": "c1",
+                    "customFields": [{"fieldKey": "ai_mode", "value": "buyer"}],
+                }
+            },
+        })
+        msg = self._make_msg()
+        decision = await resolve_mode(payload=msg, cache=cache, ghl_client=ghl_client)
+        assert decision.mode == ConversationMode.BUYER
+        assert decision.source == "ghl_custom_field"

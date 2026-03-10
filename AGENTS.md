@@ -34,33 +34,21 @@ alembic upgrade head
 # docker compose exec lead-bot alembic upgrade head
 ```
 
-### Run the services (local)
-FastAPI bots are separate apps.
+### Run the service (local)
+All three bots (Lead, Seller, Buyer) run in a **single FastAPI process** using APIRouter. There is one entry point.
 ```bash
-# Lead bot (:8001)
-python -m uvicorn bots.lead_bot.main:app --host 0.0.0.0 --port 8001 --reload
+# Single bot process (:8001) — handles all webhook routes
+uvicorn bots.lead_bot.main:app --host 0.0.0.0 --port 8001 --reload
 
-# Seller bot (:8002)
-python -m uvicorn bots.seller_bot.main:app --host 0.0.0.0 --port 8002 --reload
-
-# Buyer bot (:8003)
-python -m uvicorn bots.buyer_bot.main:app --host 0.0.0.0 --port 8003 --reload
+# Or via Makefile shortcut
+make demo
 
 # Streamlit command center (:8501)
 streamlit run command_center/dashboard_v3.py --server.port 8501
 ```
-Notes:
-- Some docs reference `command_center/main.py`; the current Streamlit entrypoint in this repo is `command_center/dashboard_v3.py`.
-
-Single-command launcher (starts only services with `enabled: True` in `jorge_launcher.py`):
-```bash
-python jorge_launcher.py
-```
-Quick health checks:
+Quick health check:
 ```bash
 curl http://localhost:8001/health
-curl http://localhost:8002/health
-curl http://localhost:8003/health
 ```
 
 ### Run everything (Docker)
@@ -106,9 +94,10 @@ mypy bots/ command_center/ database/
 ## High-level architecture (big picture)
 
 ### Services and boundaries
-- `bots/lead_bot/`: Lead Bot FastAPI app (webhook receiver + analysis endpoints). Entry: `bots/lead_bot/main.py`.
-- `bots/seller_bot/`: Seller Bot FastAPI app (Q0–Q4 qualification flow). Entry: `bots/seller_bot/main.py`.
-- `bots/buyer_bot/`: Buyer Bot FastAPI app (qualification + property matching). Entry: `bots/buyer_bot/main.py` + routes in `bots/buyer_bot/buyer_routes.py`.
+Single-process architecture — all bots mount as APIRouters into `bots/lead_bot/main.py`:
+- `bots/lead_bot/`: **Sole entry point** (`main.py`). Hosts all routers: `routes_webhook.py`, `routes_dashboard.py`, `routes_admin.py`, `routes_realtime.py`, `routes_productization.py`, `routes_test_endpoints.py`.
+- `bots/seller_bot/`: Seller qualification logic (Q0–Q4). Imported as a class by `routes_webhook.py`. No separate FastAPI app.
+- `bots/buyer_bot/`: Buyer qualification logic. Imported as a class by `routes_webhook.py`. No separate FastAPI app.
 - `command_center/`: Streamlit dashboard (“Command Center”). Entry: `command_center/dashboard_v3.py`.
 - `database/`: Async SQLAlchemy models/session + small “repository” helper functions.
 

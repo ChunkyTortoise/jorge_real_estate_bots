@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from bots.shared.ghl_client import unwrap_ghl_response
 from bots.shared.logger import get_logger
 from bots.shared.conversation_contract import (
     CONVERSATION_MODE_CACHE_PREFIX,
@@ -114,7 +115,8 @@ async def resolve_mode(
                 ghl_client.get_contact(payload.contact_id), timeout=5.0
             )
             _ghl_contact = contact_resp
-            custom_fields = (contact_resp.get("contact", contact_resp).get("customFields", []))
+            _inner = unwrap_ghl_response(contact_resp)
+            custom_fields = _inner.get("contact", _inner).get("customFields", [])
             for cf in custom_fields:
                 key = (cf.get("fieldKey") or cf.get("name") or "").lower().replace(" ", "_")
                 if key in ("ai_mode", "bot_type"):

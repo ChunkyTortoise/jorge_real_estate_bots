@@ -1143,9 +1143,13 @@ class TestOptOut:
     @pytest.mark.asyncio
     async def test_opt_out_message_skipped(self, app):
         """'STOP' message → opt-out path, no bot processing."""
-        state, mock_seller, mock_buyer, mock_ghl, mock_lead = _make_state()
+        cache = MockCache()
+        state, mock_seller, mock_buyer, mock_ghl, mock_lead = _make_state(cache=cache)
 
-        with patch("bots.lead_bot.routes_webhook._get_state", return_value=state):
+        with (
+            patch("bots.lead_bot.routes_webhook._get_state", return_value=state),
+            patch("bots.lead_bot.routes_webhook._get_raw_redis", return_value=cache),
+        ):
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
                 r = await c.post(
                     "/api/ghl/webhook",
