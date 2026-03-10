@@ -4,7 +4,7 @@ Shared data models for Jorge's Real Estate Bots.
 Contains dataclasses and Pydantic models used across the system.
 """
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Optional
 
 
 

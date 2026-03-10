@@ -163,9 +163,7 @@ class TestCombined:
 # New identity patterns (BUG-2 fix)
 # ---------------------------------------------------------------------------
 
-import pytest as _pytest
-
-@_pytest.mark.parametrize("input_text,should_not_contain", [
+@pytest.mark.parametrize("input_text,should_not_contain", [
     ("I'm a virtual assistant helping you today", "virtual assistant"),
     ("I am a virtual assistant at your service", "virtual assistant"),
     ("As a digital assistant, I can help", "digital assistant"),

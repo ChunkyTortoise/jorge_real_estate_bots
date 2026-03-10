@@ -1045,5 +1045,3 @@ class JorgeBuyerBot:
         return states
 
 
-def create_buyer_bot(ghl_client: Optional[GHLClient] = None) -> JorgeBuyerBot:
-    return JorgeBuyerBot(ghl_client=ghl_client)

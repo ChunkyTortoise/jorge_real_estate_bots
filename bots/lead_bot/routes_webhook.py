@@ -22,7 +22,15 @@ from bots.shared.conversation_contract import (
 import redis.asyncio as _redis_lib
 
 from bots.shared.funnel_attribution import FunnelEvent, FunnelTracker
+from bots.shared.logger import get_logger, set_contact_id
+from bots.shared.response_filter import sanitize_bot_response
+from bots.shared.sms_metrics_collector import SmsMetricsCollector
 from bots.shared.stall_reengagement import StallReengagementService
+from database.repository import (
+    merge_conversation_metadata,
+    update_conversation_outbound_at,
+    upsert_conversation,
+)
 
 # Lazy raw Redis client — initialized on first use so import doesn't fail without REDIS_URL
 _raw_redis: Optional[_redis_lib.Redis] = None
@@ -33,14 +41,6 @@ def _get_raw_redis() -> _redis_lib.Redis:
     if _raw_redis is None:
         _raw_redis = _redis_lib.from_url(settings.redis_url, decode_responses=True)
     return _raw_redis
-from bots.shared.logger import get_logger, set_contact_id
-from bots.shared.response_filter import sanitize_bot_response
-from bots.shared.sms_metrics_collector import SmsMetricsCollector
-from database.repository import (
-    merge_conversation_metadata,
-    update_conversation_outbound_at,
-    upsert_conversation,
-)
 
 logger = get_logger(__name__)
 

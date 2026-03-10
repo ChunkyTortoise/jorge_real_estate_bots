@@ -6,13 +6,13 @@
 
 ## Summary
 
-- Date: 2026-03-07
+- Date: 2026-03-09
 - Tester: Codex / Cayman Roden
-- Deploy version / commit: `604fea2` (2026-03-07) — **production hardening complete. ADMIN_API_KEY rotated. LOG_FORMAT=json active. 2 blockers remain (B1, B4) — both require Jorge Salas.**
-- Previous: `55fdea4` (fix: B3 suppression bug)
+- Deploy version / commit: `83a4481` (2026-03-09) — **production audit complete. 4 critical bugs fixed (GHL wrapper, TCPA opt-out, response filter, lazy init). Dead code purged. asyncio circuit breaker. 1753 tests passing.**
+- Previous: `604fea2` (2026-03-07, production hardening)
 - Environment: `https://jorge-realty-ai-xxdf.onrender.com`
 - Handoff decision: `not ready` — pending B1 + B4 (Jorge Salas)
-- Repo validation baseline: `1717 passed, 21 skipped` (2026-03-07, b0ef6d9)
+- Repo validation baseline: `1753 passed, 21 skipped` (2026-03-09, 83a4481)
 
 ## Evidence Sources
 
@@ -93,6 +93,9 @@
 | Ambiguous lead | Pass | Webhook API validated 2026-03-07 (after fix `0a7d8c3`). `status=processed`, routes to `lead_intake`. |
 | Bilingual handoff | Pass | Webhook API validated 2026-03-07 (after fix `0a7d8c3`). Spanish message → `mode=bilingual_handoff`, `handoff_reason=needs_bilingual`. |
 | Manual takeover | Pass | B3 suppression bug fixed 2026-03-07 (commit `55fdea4`): GHL tag extraction now correctly unwraps `_make_request()` response wrapper. Manual takeover + resume confirmed PASS. |
+| Custom field routing (ai_mode) | Pass | BUG-1 fixed 2026-03-09 (commit `83a4481`): `unwrap_ghl_response()` added; orchestrator now correctly reads `customFields` from GHL response wrapper. Custom field `ai_mode=buyer/seller` routing verified in tests. |
+| TCPA opt-out (STOP keyword) | Pass | BUG-3 fixed 2026-03-09: `StallReengagementService` now uses raw Redis (`ex=` kwarg); opt-out no longer silently dropped. Word-boundary TCPA matching confirmed. `opted-out-sms` GHL tag applied. |
+| AI identity leak prevention | Pass | BUG-2 fixed 2026-03-09: 10 new patterns added to `response_filter.py` (`virtual assistant`, `GPT`, `OpenAI`, `LLM`, `machine learning`, `I was created/built by`, `digital assistant`). 11 new filter tests passing. |
 | Resume after takeover | Pass | Live confirmed 2026-03-07: removed `jorge-active` tag → sent inbound → bot resumed without restarting conversation. |
 | Duplicate/race safety | Pass | Dedup confirmed: same message+contact_id returns `status=skipped, reason=duplicate`. |
 | Qualified outcome side effects | Pass | Seller and buyer both correctly reach `qualification_complete=true` and fire GHL tag/field updates via webhook handler deferred actions. |
