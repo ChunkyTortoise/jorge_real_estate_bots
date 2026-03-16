@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +32,17 @@ from database.repository import (
     update_conversation_outbound_at,
     upsert_conversation,
 )
+
+
+@dataclass
+class _ModeResult:
+    """Carries per-mode handler output back to the dispatcher."""
+    response_message: Optional[str] = None
+    result_meta: Dict[str, Any] = field(default_factory=dict)
+    deferred_actions: List[Dict[str, Any]] = field(default_factory=list)
+    post_send_actions: List[Dict[str, Any]] = field(default_factory=list)
+    canonical: Any = None
+    early_return: Optional[Dict[str, Any]] = None
 
 # Lazy raw Redis client — initialized on first use so import doesn't fail without REDIS_URL
 _raw_redis: Optional[_redis_lib.Redis] = None
@@ -370,372 +382,62 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
             )
 
             if manual_takeover:
-                canonical = build_canonical_conversation(
-                    contact_id=contact_id,
-                    location_id=location_id,
-                    mode=ConversationMode.HUMAN_HANDOFF,
-                    current_stage="SUPPRESSED",
-                    questions_answered=0,
-                    temperature="cold",
-                    qualification_complete=False,
-                    next_recommended_action="Jorge handling manually",
-                    human_takeover=True,
-                    handoff_reason=HandoffReason.JORGE_ACTIVE.value,
-                    suppressed=True,
-                    message_suppression_reason=HandoffReason.JORGE_ACTIVE.value,
-                    qualification_summary={},
-                    last_inbound_at=datetime.now(timezone.utc).isoformat(),
+                mr = await _handle_manual_takeover(
+                    contact_id=contact_id, location_id=location_id,
+                    bot_type_lower=bot_type_lower, state=state,
                 )
-                try:
-                    await upsert_conversation(
-                        contact_id=contact_id,
-                        bot_type=bot_type_lower,
-                        stage="SUPPRESSED",
-                        temperature="cold",
-                        current_question=0,
-                        questions_answered=0,
-                        is_qualified=False,
-                        conversation_history=None,
-                        extracted_data={},
-                        last_activity=datetime.now(timezone.utc),
-                        conversation_started=datetime.now(timezone.utc),
-                        metadata_json={"location_id": location_id, **canonical.to_metadata()},
-                        **canonical.to_columns(),
-                    )
-                except Exception as db_err:
-                    logger.warning(f"DB upsert skipped for manual_takeover {contact_id}: {db_err}")
-                if state._ghl_client:
-                    try:
-                        await _apply_post_send_updates(
-                            state._ghl_client, contact_id, [
-                                {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.HUMAN_HANDOFF.value},
-                                {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
-                            ],
-                        )
-                    except Exception as e:
-                        logger.warning(f"Could not sync GHL fields for manual_takeover {contact_id}: {e}")
-                return {
-                    "status": "processed",
-                    "bot_type": bot_type_lower,
-                    "mode": canonical.mode.value,
-                    "conversation_status": canonical.status.value,
-                    "handoff_reason": canonical.handoff_reason,
-                    "temperature": canonical.temperature,
-                    "message_suppression_reason": canonical.message_suppression_reason,
-                }
+                return mr.early_return
 
-            response_message: Optional[str] = None
             result_meta: Dict = {"bot_type": bot_type_lower, "mode": mode.value}
-            deferred_actions: List[Dict[str, Any]] = []
-            post_send_actions: List[Dict[str, Any]] = []
-            canonical = None
 
             if mode == ConversationMode.SELLER:
-                if not state.seller_bot_instance:
-                    logger.error("Seller bot not initialized")
-                    return {"status": "error", "detail": "seller bot unavailable"}
-                result = await state.seller_bot_instance.process_seller_message(
-                    contact_id=contact_id,
-                    location_id=location_id,
-                    message=message_body,
-                    contact_info=contact_info,
+                mr = await _handle_seller_mode(
+                    contact_id=contact_id, location_id=location_id,
+                    message_body=message_body, contact_info=contact_info,
+                    result_meta=result_meta, state=state,
                 )
-                response_message = result.response_message
-                result_meta.update(
-                    {
-                        "temperature": result.seller_temperature,
-                        "questions_answered": result.questions_answered,
-                        "qualification_complete": result.qualification_complete,
-                    }
-                )
-                deferred_actions = [a for a in result.actions_taken if a.get("type") in ("add_tag", "remove_tag", "trigger_workflow")]
-                post_send_actions = [a for a in result.actions_taken if a.get("type") not in ("add_tag", "remove_tag", "trigger_workflow")]
-                if result.qualification_complete:
-                    deferred_actions.append({"type": "add_tag", "tag": "jorge-qualified-seller"})
-                    temp = result.seller_temperature or "warm"
-                    deferred_actions.append({"type": "add_tag", "tag": f"jorge-temp-{temp}"})
-                    for stale_temp in ("hot", "warm", "cold"):
-                        if stale_temp != temp:
-                            deferred_actions.append({"type": "remove_tag", "tag": f"jorge-temp-{stale_temp}"})
-                handoff_reason = None
-                if any(a.get("tag") == "needs-human-review" for a in result.actions_taken):
-                    handoff_reason = HandoffReason.NEEDS_HUMAN_REVIEW.value
-                canonical = build_canonical_conversation(
-                    contact_id=contact_id,
-                    location_id=location_id,
-                    mode=ConversationMode.SELLER,
-                    current_stage="STALLED" if handoff_reason else ("QUALIFIED" if result.qualification_complete else "ACTIVE"),
-                    questions_answered=result.questions_answered,
-                    temperature=result.seller_temperature,
-                    qualification_complete=result.qualification_complete,
-                    next_recommended_action=result.next_steps,
-                    handoff_reason=handoff_reason,
-                    human_takeover=handoff_reason is not None,
-                    qualification_summary=result.analytics,
-                    conversation_history=[],
-                    last_inbound_at=datetime.now(timezone.utc).isoformat(),
-                )
-                # Funnel: CONSIDERATION (Q2+), INTENT (qualified), CONVERSION (appointment)
-                try:
-                    if result.questions_answered >= 2:
-                        await _get_funnel_tracker().record_event_async(FunnelEvent(
-                            contact_id=contact_id, stage="consideration",
-                            bot_name="seller", timestamp=datetime.now(timezone.utc),
-                        ))
-                    if result.qualification_complete:
-                        await _get_funnel_tracker().record_event_async(FunnelEvent(
-                            contact_id=contact_id, stage="intent",
-                            bot_name="seller", timestamp=datetime.now(timezone.utc),
-                        ))
-                    if "Appointment booked" in (result.next_steps or ""):
-                        await _get_funnel_tracker().record_event_async(FunnelEvent(
-                            contact_id=contact_id, stage="purchase",
-                            bot_name="seller", timestamp=datetime.now(timezone.utc),
-                        ))
-                except Exception as _e:
-                    logger.debug(f"Funnel tracker seller event failed: {_e}")
-
+                if mr.early_return is not None:
+                    return mr.early_return
             elif mode == ConversationMode.BUYER:
-                if not state.buyer_bot_instance:
-                    logger.error("Buyer bot not initialized")
-                    return {"status": "error", "detail": "buyer bot unavailable"}
-                result = await state.buyer_bot_instance.process_buyer_message(
-                    contact_id=contact_id,
-                    location_id=location_id,
-                    message=message_body,
-                    contact_info=contact_info,
+                mr = await _handle_buyer_mode(
+                    contact_id=contact_id, location_id=location_id,
+                    message_body=message_body, contact_info=contact_info,
+                    result_meta=result_meta, state=state,
                 )
-                response_message = result.response_message
-                result_meta.update(
-                    {
-                        "temperature": result.buyer_temperature,
-                        "questions_answered": result.questions_answered,
-                        "qualification_complete": result.qualification_complete,
-                    }
-                )
-                deferred_actions = [a for a in result.actions_taken if a.get("type") in ("add_tag", "remove_tag", "trigger_workflow")]
-                post_send_actions = [a for a in result.actions_taken if a.get("type") not in ("add_tag", "remove_tag", "trigger_workflow")]
-                if result.qualification_complete:
-                    deferred_actions.append({"type": "add_tag", "tag": "jorge-qualified-buyer"})
-                    temp = result.buyer_temperature or "warm"
-                    deferred_actions.append({"type": "add_tag", "tag": f"jorge-temp-{temp}"})
-                    for stale_temp in ("hot", "warm", "cold"):
-                        if stale_temp != temp:
-                            deferred_actions.append({"type": "remove_tag", "tag": f"jorge-temp-{stale_temp}"})
-                handoff_reason = None
-                if any(a.get("tag") == "needs-human-review" for a in result.actions_taken):
-                    handoff_reason = HandoffReason.NEEDS_HUMAN_REVIEW.value
-                elif any(a.get("tag") == "needs-bilingual" for a in result.actions_taken):
-                    handoff_reason = HandoffReason.NEEDS_BILINGUAL.value
-                canonical = build_canonical_conversation(
-                    contact_id=contact_id,
-                    location_id=location_id,
-                    mode=ConversationMode.BUYER,
-                    current_stage="STALLED" if handoff_reason == HandoffReason.NEEDS_HUMAN_REVIEW.value else ("QUALIFIED" if result.qualification_complete else "ACTIVE"),
-                    questions_answered=result.questions_answered,
-                    temperature=result.buyer_temperature,
-                    qualification_complete=result.qualification_complete,
-                    next_recommended_action=result.next_steps,
-                    handoff_reason=handoff_reason,
-                    human_takeover=handoff_reason == HandoffReason.NEEDS_HUMAN_REVIEW.value,
-                    bilingual_required=handoff_reason == HandoffReason.NEEDS_BILINGUAL.value,
-                    qualification_summary=result.analytics,
-                    conversation_history=[],
-                    last_inbound_at=datetime.now(timezone.utc).isoformat(),
-                )
-                # Funnel: CONSIDERATION (Q2+), INTENT (qualified), CONVERSION (appointment)
-                try:
-                    if result.questions_answered >= 2:
-                        await _get_funnel_tracker().record_event_async(FunnelEvent(
-                            contact_id=contact_id, stage="consideration",
-                            bot_name="buyer", timestamp=datetime.now(timezone.utc),
-                        ))
-                    if result.qualification_complete:
-                        await _get_funnel_tracker().record_event_async(FunnelEvent(
-                            contact_id=contact_id, stage="intent",
-                            bot_name="buyer", timestamp=datetime.now(timezone.utc),
-                        ))
-                except Exception as _e:
-                    logger.debug(f"Funnel tracker buyer event failed: {_e}")
-
+                if mr.early_return is not None:
+                    return mr.early_return
             elif mode == ConversationMode.BILINGUAL_HANDOFF:
-                response_message = (
-                    "Hola! Soy Jorge. Lamentablemente no hablo espanol bien. "
-                    "Voy a tener a mi asistente bilingue que se comunique contigo. / "
-                    "Hi! I'm Jorge — I'll have my bilingual assistant reach out to you shortly."
+                mr = await _handle_bilingual_handoff(
+                    contact_id=contact_id, location_id=location_id,
+                    result_meta=result_meta, state=state,
+                    _webhook_cache=_webhook_cache,
                 )
-                deferred_actions = [{"type": "add_tag", "tag": "needs-bilingual"}]
-                canonical = build_canonical_conversation(
-                    contact_id=contact_id,
-                    location_id=location_id,
-                    mode=ConversationMode.BILINGUAL_HANDOFF,
-                    current_stage="HANDOFF",
-                    questions_answered=0,
-                    temperature="cold",
-                    qualification_complete=False,
-                    next_recommended_action="Route to bilingual assistant",
-                    bilingual_required=True,
-                    handoff_reason=HandoffReason.NEEDS_BILINGUAL.value,
-                    suppressed=True,
-                    message_suppression_reason=HandoffReason.NEEDS_BILINGUAL.value,
-                    qualification_summary={},
-                    conversation_history=[],
-                    last_inbound_at=datetime.now(timezone.utc).isoformat(),
-                )
-                try:
-                    await upsert_conversation(
-                        contact_id=contact_id,
-                        bot_type="lead",
-                        stage="HANDOFF",
-                        temperature="cold",
-                        current_question=0,
-                        questions_answered=0,
-                        is_qualified=False,
-                        conversation_history=None,
-                        extracted_data={},
-                        last_activity=datetime.now(timezone.utc),
-                        conversation_started=datetime.now(timezone.utc),
-                        metadata_json={"location_id": location_id, **canonical.to_metadata()},
-                        **canonical.to_columns(),
-                    )
-                except Exception as db_err:
-                    logger.warning(f"DB upsert skipped for bilingual_handoff {contact_id}: {db_err}")
-                if _webhook_cache:
-                    await _webhook_cache.set(
-                        f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
-                        ConversationMode.HUMAN_HANDOFF.value,
-                        ttl=_CANONICAL_MODE_TTL,
-                    )
-                if state._ghl_client:
-                    try:
-                        await _apply_post_send_updates(
-                            state._ghl_client, contact_id, [
-                                {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.HUMAN_HANDOFF.value},
-                                {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
-                            ],
-                        )
-                    except Exception as e:
-                        logger.warning(f"Could not sync GHL fields for bilingual {contact_id}: {e}")
-                result_meta.update({"temperature": "cold", "questions_answered": 0, "qualification_complete": False})
             elif mode == ConversationMode.HUMAN_HANDOFF:
-                canonical = build_canonical_conversation(
-                    contact_id=contact_id,
-                    location_id=location_id,
-                    mode=ConversationMode.HUMAN_HANDOFF,
-                    current_stage="SUPPRESSED",
-                    questions_answered=0,
-                    temperature="cold",
-                    qualification_complete=False,
-                    next_recommended_action="Await Jorge follow-up",
-                    human_takeover=True,
-                    handoff_reason=routing.handoff_reason or HandoffReason.MANUAL_OVERRIDE.value,
-                    suppressed=True,
-                    message_suppression_reason=routing.handoff_reason or HandoffReason.MANUAL_OVERRIDE.value,
-                    qualification_summary={},
-                    conversation_history=[],
-                    last_inbound_at=datetime.now(timezone.utc).isoformat(),
+                mr = await _handle_human_handoff(
+                    contact_id=contact_id, location_id=location_id,
+                    bot_type_lower=bot_type_lower, result_meta=result_meta,
+                    routing=routing, state=state,
+                    _webhook_cache=_webhook_cache, dedup_key=dedup_key,
                 )
-                try:
-                    await upsert_conversation(
-                        contact_id=contact_id,
-                        bot_type=bot_type_lower,
-                        stage="SUPPRESSED",
-                        temperature="cold",
-                        current_question=0,
-                        questions_answered=0,
-                        is_qualified=False,
-                        conversation_history=None,
-                        extracted_data={},
-                        last_activity=datetime.now(timezone.utc),
-                        conversation_started=datetime.now(timezone.utc),
-                        metadata_json={"location_id": location_id, **canonical.to_metadata()},
-                        **canonical.to_columns(),
-                    )
-                except Exception as db_err:
-                    logger.warning(f"DB upsert skipped for human_handoff {contact_id}: {db_err}")
-                if state._ghl_client:
-                    try:
-                        await _apply_post_send_updates(
-                            state._ghl_client, contact_id, [
-                                {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.HUMAN_HANDOFF.value},
-                                {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
-                            ],
-                        )
-                    except Exception as e:
-                        logger.warning(f"Could not sync GHL fields for human_handoff {contact_id}: {e}")
-                result_meta.update(
-                    {
-                        "temperature": canonical.temperature,
-                        "questions_answered": 0,
-                        "qualification_complete": False,
-                        "conversation_status": canonical.status.value,
-                        "handoff_reason": canonical.handoff_reason,
-                        "message_suppression_reason": canonical.message_suppression_reason,
-                    }
-                )
-                if _webhook_cache and dedup_key:
-                    await _webhook_cache.set(dedup_key, "1", ttl=300)
-                return {"status": "processed", **result_meta}
+                if mr.early_return is not None:
+                    return mr.early_return
             else:
-                lead_data = {"id": contact_id, "message": message_body, **contact_info}
-                analysis, metrics = await state.lead_analyzer.analyze_lead(lead_data)
-                canonical = build_canonical_conversation(
-                    contact_id=contact_id,
-                    location_id=location_id,
-                    mode=ConversationMode.LEAD_INTAKE,
-                    current_stage="Q0",
-                    questions_answered=0,
-                    temperature=analysis.get("temperature", "warm"),
-                    qualification_complete=False,
-                    next_recommended_action=analysis.get("recommended_action", "Continue intake qualification"),
-                    handoff_reason=routing.handoff_reason,
-                    qualification_summary=analysis,
-                    conversation_history=[],
-                    last_inbound_at=datetime.now(timezone.utc).isoformat(),
+                mr = await _handle_lead_intake(
+                    contact_id=contact_id, location_id=location_id,
+                    message_body=message_body, contact_info=contact_info,
+                    result_meta=result_meta, routing=routing, state=state,
+                    _webhook_cache=_webhook_cache, dedup_key=dedup_key,
                 )
-                try:
-                    await upsert_conversation(
-                        contact_id=contact_id,
-                        bot_type="lead",
-                        stage="Q0",
-                        temperature=analysis.get("temperature", "warm"),
-                        current_question=0,
-                        questions_answered=0,
-                        is_qualified=False,
-                        conversation_history=[],
-                        extracted_data=analysis,
-                        last_activity=datetime.now(timezone.utc),
-                        conversation_started=datetime.now(timezone.utc),
-                        metadata_json={"location_id": location_id, **canonical.to_metadata()},
-                        **canonical.to_columns(),
-                    )
-                except Exception as db_err:
-                    logger.warning(f"DB upsert skipped for lead_intake {contact_id}: {db_err}")
-                result_meta.update(
-                    {
-                        "score": analysis.get("score", 0),
-                        "temperature": analysis.get("temperature", "warm"),
-                        "jorge_priority": analysis.get("jorge_priority", "normal"),
-                        "conversation_status": canonical.status.value,
-                        "handoff_reason": canonical.handoff_reason,
-                        "message_suppression_reason": canonical.message_suppression_reason,
-                    }
-                )
-                if state._ghl_client:
-                    try:
-                        await _apply_post_send_updates(
-                            state._ghl_client, contact_id, [
-                                {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.LEAD_INTAKE.value},
-                                {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
-                            ],
-                        )
-                    except Exception as e:
-                        logger.warning(f"Could not sync GHL fields for lead_intake {contact_id}: {e}")
-                if _webhook_cache and dedup_key:
-                    await _webhook_cache.set(dedup_key, "1", ttl=300)
-                return {"status": "processed", **result_meta}
+                if mr.early_return is not None:
+                    return mr.early_return
 
-            # Send reply via GHL SMS (seller / buyer bots)
+            response_message = mr.response_message
+            deferred_actions = mr.deferred_actions
+            post_send_actions = mr.post_send_actions
+            canonical = mr.canonical
+            result_meta = mr.result_meta
+
+            # Send reply via GHL SMS (seller / buyer / bilingual bots)
             response_message = sanitize_bot_response(response_message, bot_type=bot_type_lower)
             if response_message and state._ghl_client:
                 try:
@@ -803,6 +505,415 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
     except Exception as e:
         logger.error(f"Unified webhook unhandled error: {e}", exc_info=True)
         return {"status": "error", "detail": "internal server error"}
+
+
+
+# ---------------------------------------------------------------------------
+# Extracted mode handlers — pure refactor, zero behavior changes
+# ---------------------------------------------------------------------------
+
+
+async def _handle_manual_takeover(
+    *, contact_id: str, location_id: str, bot_type_lower: str, state: Any,
+) -> _ModeResult:
+    canonical = build_canonical_conversation(
+        contact_id=contact_id,
+        location_id=location_id,
+        mode=ConversationMode.HUMAN_HANDOFF,
+        current_stage="SUPPRESSED",
+        questions_answered=0,
+        temperature="cold",
+        qualification_complete=False,
+        next_recommended_action="Jorge handling manually",
+        human_takeover=True,
+        handoff_reason=HandoffReason.JORGE_ACTIVE.value,
+        suppressed=True,
+        message_suppression_reason=HandoffReason.JORGE_ACTIVE.value,
+        qualification_summary={},
+        last_inbound_at=datetime.now(timezone.utc).isoformat(),
+    )
+    try:
+        await upsert_conversation(
+            contact_id=contact_id,
+            bot_type=bot_type_lower,
+            stage="SUPPRESSED",
+            temperature="cold",
+            current_question=0,
+            questions_answered=0,
+            is_qualified=False,
+            conversation_history=None,
+            extracted_data={},
+            last_activity=datetime.now(timezone.utc),
+            conversation_started=datetime.now(timezone.utc),
+            metadata_json={"location_id": location_id, **canonical.to_metadata()},
+            **canonical.to_columns(),
+        )
+    except Exception as db_err:
+        logger.warning(f"DB upsert skipped for manual_takeover {contact_id}: {db_err}")
+    if state._ghl_client:
+        try:
+            await _apply_post_send_updates(
+                state._ghl_client, contact_id, [
+                    {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.HUMAN_HANDOFF.value},
+                    {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
+                ],
+            )
+        except Exception as e:
+            logger.warning(f"Could not sync GHL fields for manual_takeover {contact_id}: {e}")
+    return _ModeResult(early_return={
+        "status": "processed",
+        "bot_type": bot_type_lower,
+        "mode": canonical.mode.value,
+        "conversation_status": canonical.status.value,
+        "handoff_reason": canonical.handoff_reason,
+        "temperature": canonical.temperature,
+        "message_suppression_reason": canonical.message_suppression_reason,
+    })
+
+
+async def _handle_seller_mode(
+    *, contact_id: str, location_id: str, message_body: str,
+    contact_info: Dict[str, Any], result_meta: Dict[str, Any], state: Any,
+) -> _ModeResult:
+    if not state.seller_bot_instance:
+        logger.error("Seller bot not initialized")
+        return _ModeResult(early_return={"status": "error", "detail": "seller bot unavailable"})
+    result = await state.seller_bot_instance.process_seller_message(
+        contact_id=contact_id,
+        location_id=location_id,
+        message=message_body,
+        contact_info=contact_info,
+    )
+    response_message = result.response_message
+    result_meta.update(
+        {
+            "temperature": result.seller_temperature,
+            "questions_answered": result.questions_answered,
+            "qualification_complete": result.qualification_complete,
+        }
+    )
+    deferred_actions = [a for a in result.actions_taken if a.get("type") in ("add_tag", "remove_tag", "trigger_workflow")]
+    post_send_actions = [a for a in result.actions_taken if a.get("type") not in ("add_tag", "remove_tag", "trigger_workflow")]
+    if result.qualification_complete:
+        deferred_actions.append({"type": "add_tag", "tag": "jorge-qualified-seller"})
+        temp = result.seller_temperature or "warm"
+        deferred_actions.append({"type": "add_tag", "tag": f"jorge-temp-{temp}"})
+        for stale_temp in ("hot", "warm", "cold"):
+            if stale_temp != temp:
+                deferred_actions.append({"type": "remove_tag", "tag": f"jorge-temp-{stale_temp}"})
+    handoff_reason = None
+    if any(a.get("tag") == "needs-human-review" for a in result.actions_taken):
+        handoff_reason = HandoffReason.NEEDS_HUMAN_REVIEW.value
+    canonical = build_canonical_conversation(
+        contact_id=contact_id,
+        location_id=location_id,
+        mode=ConversationMode.SELLER,
+        current_stage="STALLED" if handoff_reason else ("QUALIFIED" if result.qualification_complete else "ACTIVE"),
+        questions_answered=result.questions_answered,
+        temperature=result.seller_temperature,
+        qualification_complete=result.qualification_complete,
+        next_recommended_action=result.next_steps,
+        handoff_reason=handoff_reason,
+        human_takeover=handoff_reason is not None,
+        qualification_summary=result.analytics,
+        conversation_history=[],
+        last_inbound_at=datetime.now(timezone.utc).isoformat(),
+    )
+    # Funnel: CONSIDERATION (Q2+), INTENT (qualified), CONVERSION (appointment)
+    try:
+        if result.questions_answered >= 2:
+            await _get_funnel_tracker().record_event_async(FunnelEvent(
+                contact_id=contact_id, stage="consideration",
+                bot_name="seller", timestamp=datetime.now(timezone.utc),
+            ))
+        if result.qualification_complete:
+            await _get_funnel_tracker().record_event_async(FunnelEvent(
+                contact_id=contact_id, stage="intent",
+                bot_name="seller", timestamp=datetime.now(timezone.utc),
+            ))
+        if "Appointment booked" in (result.next_steps or ""):
+            await _get_funnel_tracker().record_event_async(FunnelEvent(
+                contact_id=contact_id, stage="purchase",
+                bot_name="seller", timestamp=datetime.now(timezone.utc),
+            ))
+    except Exception as _e:
+        logger.debug(f"Funnel tracker seller event failed: {_e}")
+    return _ModeResult(
+        response_message=response_message, result_meta=result_meta,
+        deferred_actions=deferred_actions, post_send_actions=post_send_actions,
+        canonical=canonical,
+    )
+
+
+async def _handle_buyer_mode(
+    *, contact_id: str, location_id: str, message_body: str,
+    contact_info: Dict[str, Any], result_meta: Dict[str, Any], state: Any,
+) -> _ModeResult:
+    if not state.buyer_bot_instance:
+        logger.error("Buyer bot not initialized")
+        return _ModeResult(early_return={"status": "error", "detail": "buyer bot unavailable"})
+    result = await state.buyer_bot_instance.process_buyer_message(
+        contact_id=contact_id,
+        location_id=location_id,
+        message=message_body,
+        contact_info=contact_info,
+    )
+    response_message = result.response_message
+    result_meta.update(
+        {
+            "temperature": result.buyer_temperature,
+            "questions_answered": result.questions_answered,
+            "qualification_complete": result.qualification_complete,
+        }
+    )
+    deferred_actions = [a for a in result.actions_taken if a.get("type") in ("add_tag", "remove_tag", "trigger_workflow")]
+    post_send_actions = [a for a in result.actions_taken if a.get("type") not in ("add_tag", "remove_tag", "trigger_workflow")]
+    if result.qualification_complete:
+        deferred_actions.append({"type": "add_tag", "tag": "jorge-qualified-buyer"})
+        temp = result.buyer_temperature or "warm"
+        deferred_actions.append({"type": "add_tag", "tag": f"jorge-temp-{temp}"})
+        for stale_temp in ("hot", "warm", "cold"):
+            if stale_temp != temp:
+                deferred_actions.append({"type": "remove_tag", "tag": f"jorge-temp-{stale_temp}"})
+    handoff_reason = None
+    if any(a.get("tag") == "needs-human-review" for a in result.actions_taken):
+        handoff_reason = HandoffReason.NEEDS_HUMAN_REVIEW.value
+    elif any(a.get("tag") == "needs-bilingual" for a in result.actions_taken):
+        handoff_reason = HandoffReason.NEEDS_BILINGUAL.value
+    canonical = build_canonical_conversation(
+        contact_id=contact_id,
+        location_id=location_id,
+        mode=ConversationMode.BUYER,
+        current_stage="STALLED" if handoff_reason == HandoffReason.NEEDS_HUMAN_REVIEW.value else ("QUALIFIED" if result.qualification_complete else "ACTIVE"),
+        questions_answered=result.questions_answered,
+        temperature=result.buyer_temperature,
+        qualification_complete=result.qualification_complete,
+        next_recommended_action=result.next_steps,
+        handoff_reason=handoff_reason,
+        human_takeover=handoff_reason == HandoffReason.NEEDS_HUMAN_REVIEW.value,
+        bilingual_required=handoff_reason == HandoffReason.NEEDS_BILINGUAL.value,
+        qualification_summary=result.analytics,
+        conversation_history=[],
+        last_inbound_at=datetime.now(timezone.utc).isoformat(),
+    )
+    # Funnel: CONSIDERATION (Q2+), INTENT (qualified), CONVERSION (appointment)
+    try:
+        if result.questions_answered >= 2:
+            await _get_funnel_tracker().record_event_async(FunnelEvent(
+                contact_id=contact_id, stage="consideration",
+                bot_name="buyer", timestamp=datetime.now(timezone.utc),
+            ))
+        if result.qualification_complete:
+            await _get_funnel_tracker().record_event_async(FunnelEvent(
+                contact_id=contact_id, stage="intent",
+                bot_name="buyer", timestamp=datetime.now(timezone.utc),
+            ))
+    except Exception as _e:
+        logger.debug(f"Funnel tracker buyer event failed: {_e}")
+    return _ModeResult(
+        response_message=response_message, result_meta=result_meta,
+        deferred_actions=deferred_actions, post_send_actions=post_send_actions,
+        canonical=canonical,
+    )
+
+
+async def _handle_bilingual_handoff(
+    *, contact_id: str, location_id: str,
+    result_meta: Dict[str, Any], state: Any,
+    _webhook_cache: Any,
+) -> _ModeResult:
+    response_message = (
+        "Hola! Soy Jorge. Lamentablemente no hablo espanol bien. "
+        "Voy a tener a mi asistente bilingue que se comunique contigo. / "
+        "Hi! I'm Jorge — I'll have my bilingual assistant reach out to you shortly."
+    )
+    deferred_actions: List[Dict[str, Any]] = [{"type": "add_tag", "tag": "needs-bilingual"}]
+    canonical = build_canonical_conversation(
+        contact_id=contact_id,
+        location_id=location_id,
+        mode=ConversationMode.BILINGUAL_HANDOFF,
+        current_stage="HANDOFF",
+        questions_answered=0,
+        temperature="cold",
+        qualification_complete=False,
+        next_recommended_action="Route to bilingual assistant",
+        bilingual_required=True,
+        handoff_reason=HandoffReason.NEEDS_BILINGUAL.value,
+        suppressed=True,
+        message_suppression_reason=HandoffReason.NEEDS_BILINGUAL.value,
+        qualification_summary={},
+        conversation_history=[],
+        last_inbound_at=datetime.now(timezone.utc).isoformat(),
+    )
+    try:
+        await upsert_conversation(
+            contact_id=contact_id,
+            bot_type="lead",
+            stage="HANDOFF",
+            temperature="cold",
+            current_question=0,
+            questions_answered=0,
+            is_qualified=False,
+            conversation_history=None,
+            extracted_data={},
+            last_activity=datetime.now(timezone.utc),
+            conversation_started=datetime.now(timezone.utc),
+            metadata_json={"location_id": location_id, **canonical.to_metadata()},
+            **canonical.to_columns(),
+        )
+    except Exception as db_err:
+        logger.warning(f"DB upsert skipped for bilingual_handoff {contact_id}: {db_err}")
+    if _webhook_cache:
+        await _webhook_cache.set(
+            f"{CONVERSATION_MODE_CACHE_PREFIX}{contact_id}",
+            ConversationMode.HUMAN_HANDOFF.value,
+            ttl=_CANONICAL_MODE_TTL,
+        )
+    if state._ghl_client:
+        try:
+            await _apply_post_send_updates(
+                state._ghl_client, contact_id, [
+                    {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.HUMAN_HANDOFF.value},
+                    {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
+                ],
+            )
+        except Exception as e:
+            logger.warning(f"Could not sync GHL fields for bilingual {contact_id}: {e}")
+    result_meta.update({"temperature": "cold", "questions_answered": 0, "qualification_complete": False})
+    return _ModeResult(
+        response_message=response_message, result_meta=result_meta,
+        deferred_actions=deferred_actions, canonical=canonical,
+    )
+
+
+async def _handle_human_handoff(
+    *, contact_id: str, location_id: str, bot_type_lower: str,
+    result_meta: Dict[str, Any], routing: Any, state: Any,
+    _webhook_cache: Any, dedup_key: Optional[str],
+) -> _ModeResult:
+    canonical = build_canonical_conversation(
+        contact_id=contact_id,
+        location_id=location_id,
+        mode=ConversationMode.HUMAN_HANDOFF,
+        current_stage="SUPPRESSED",
+        questions_answered=0,
+        temperature="cold",
+        qualification_complete=False,
+        next_recommended_action="Await Jorge follow-up",
+        human_takeover=True,
+        handoff_reason=routing.handoff_reason or HandoffReason.MANUAL_OVERRIDE.value,
+        suppressed=True,
+        message_suppression_reason=routing.handoff_reason or HandoffReason.MANUAL_OVERRIDE.value,
+        qualification_summary={},
+        conversation_history=[],
+        last_inbound_at=datetime.now(timezone.utc).isoformat(),
+    )
+    try:
+        await upsert_conversation(
+            contact_id=contact_id,
+            bot_type=bot_type_lower,
+            stage="SUPPRESSED",
+            temperature="cold",
+            current_question=0,
+            questions_answered=0,
+            is_qualified=False,
+            conversation_history=None,
+            extracted_data={},
+            last_activity=datetime.now(timezone.utc),
+            conversation_started=datetime.now(timezone.utc),
+            metadata_json={"location_id": location_id, **canonical.to_metadata()},
+            **canonical.to_columns(),
+        )
+    except Exception as db_err:
+        logger.warning(f"DB upsert skipped for human_handoff {contact_id}: {db_err}")
+    if state._ghl_client:
+        try:
+            await _apply_post_send_updates(
+                state._ghl_client, contact_id, [
+                    {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.HUMAN_HANDOFF.value},
+                    {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
+                ],
+            )
+        except Exception as e:
+            logger.warning(f"Could not sync GHL fields for human_handoff {contact_id}: {e}")
+    result_meta.update(
+        {
+            "temperature": canonical.temperature,
+            "questions_answered": 0,
+            "qualification_complete": False,
+            "conversation_status": canonical.status.value,
+            "handoff_reason": canonical.handoff_reason,
+            "message_suppression_reason": canonical.message_suppression_reason,
+        }
+    )
+    if _webhook_cache and dedup_key:
+        await _webhook_cache.set(dedup_key, "1", ttl=300)
+    return _ModeResult(early_return={"status": "processed", **result_meta})
+
+
+async def _handle_lead_intake(
+    *, contact_id: str, location_id: str, message_body: str,
+    contact_info: Dict[str, Any], result_meta: Dict[str, Any],
+    routing: Any, state: Any,
+    _webhook_cache: Any, dedup_key: Optional[str],
+) -> _ModeResult:
+    lead_data = {"id": contact_id, "message": message_body, **contact_info}
+    analysis, metrics = await state.lead_analyzer.analyze_lead(lead_data)
+    canonical = build_canonical_conversation(
+        contact_id=contact_id,
+        location_id=location_id,
+        mode=ConversationMode.LEAD_INTAKE,
+        current_stage="Q0",
+        questions_answered=0,
+        temperature=analysis.get("temperature", "warm"),
+        qualification_complete=False,
+        next_recommended_action=analysis.get("recommended_action", "Continue intake qualification"),
+        handoff_reason=routing.handoff_reason,
+        qualification_summary=analysis,
+        conversation_history=[],
+        last_inbound_at=datetime.now(timezone.utc).isoformat(),
+    )
+    try:
+        await upsert_conversation(
+            contact_id=contact_id,
+            bot_type="lead",
+            stage="Q0",
+            temperature=analysis.get("temperature", "warm"),
+            current_question=0,
+            questions_answered=0,
+            is_qualified=False,
+            conversation_history=[],
+            extracted_data=analysis,
+            last_activity=datetime.now(timezone.utc),
+            conversation_started=datetime.now(timezone.utc),
+            metadata_json={"location_id": location_id, **canonical.to_metadata()},
+            **canonical.to_columns(),
+        )
+    except Exception as db_err:
+        logger.warning(f"DB upsert skipped for lead_intake {contact_id}: {db_err}")
+    result_meta.update(
+        {
+            "score": analysis.get("score", 0),
+            "temperature": analysis.get("temperature", "warm"),
+            "jorge_priority": analysis.get("jorge_priority", "normal"),
+            "conversation_status": canonical.status.value,
+            "handoff_reason": canonical.handoff_reason,
+            "message_suppression_reason": canonical.message_suppression_reason,
+        }
+    )
+    if state._ghl_client:
+        try:
+            await _apply_post_send_updates(
+                state._ghl_client, contact_id, [
+                    {"type": "update_custom_field", "field": "ai_mode", "value": ConversationMode.LEAD_INTAKE.value},
+                    {"type": "update_custom_field", "field": "ai_status", "value": canonical.status.value},
+                ],
+            )
+        except Exception as e:
+            logger.warning(f"Could not sync GHL fields for lead_intake {contact_id}: {e}")
+    if _webhook_cache and dedup_key:
+        await _webhook_cache.set(dedup_key, "1", ttl=300)
+    return _ModeResult(early_return={"status": "processed", **result_meta})
 
 
 @router.post("/api/ghl/webhook/message-status")

@@ -6,7 +6,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-1653%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1753%20passing-brightgreen)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
 ## What This Solves
@@ -19,7 +19,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Tests | **1653 passing** |
+| Tests | **1753 passing** |
 | Public model | 1 canonical conversation system |
 | Cross-Bot Handoff | 0.7 confidence threshold, circular prevention, rate limiting |
 | CRM Integration | GoHighLevel real-time sync |
@@ -132,7 +132,7 @@ The repo includes `render.yaml` for Render Blueprint deployment. Connect the rep
 | AI | Claude (Haiku/Sonnet routing) |
 | Cache | Redis (sorted sets, rate limiting, bot state, funnel attribution) |
 | CRM | GoHighLevel (webhooks, custom fields, workflows) |
-| Testing | pytest, pytest-asyncio (1653 tests passing) |
+| Testing | pytest, pytest-asyncio (1753 tests passing) |
 
 ## Project Structure
 
@@ -155,7 +155,7 @@ jorge_real_estate_bots/
 │   └── buyer_bot/           # Buyer qualification + property matching
 ├── database/                # SQLAlchemy models, async session
 ├── command_center/          # Streamlit dashboard components
-├── tests/                   # 1653 passing tests
+├── tests/                   # 1753 passing tests
 ├── docker-compose.yml       # Redis + app + dashboard
 ├── render.yaml              # Render Blueprint config
 └── Dockerfile
