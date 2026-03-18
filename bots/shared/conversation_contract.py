@@ -18,7 +18,7 @@ class ConversationMode(str, Enum):
     SELLER = "seller"
     BUYER = "buyer"
     LEAD_INTAKE = "lead_intake"
-    BILINGUAL_HANDOFF = "bilingual_handoff"
+    BILINGUAL_HANDOFF = "bilingual_handoff"  # One-shot mode: transitions to HUMAN_HANDOFF after alert
     HUMAN_HANDOFF = "human_handoff"
 
 
@@ -95,13 +95,18 @@ def normalize_conversation_mode(raw: Optional[str]) -> ConversationMode:
     }
     if value in mapping:
         return mapping[value]
+
+    # 3. Substring fallback — use word boundaries (\b) to avoid accidental
+    # matches like "misleading" matching "lead"
+    value_clean = value.replace("_", " ").replace("-", " ")
     for token, mode in (
         ("seller", ConversationMode.SELLER),
         ("buyer", ConversationMode.BUYER),
         ("lead", ConversationMode.LEAD_INTAKE),
     ):
-        if token in value:
+        if re.search(r"\b" + re.escape(token) + r"\b", value_clean):
             return mode
+
     return ConversationMode.LEAD_INTAKE
 
 

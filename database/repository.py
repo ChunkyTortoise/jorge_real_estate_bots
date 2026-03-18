@@ -87,7 +87,7 @@ async def upsert_conversation(
         stmt = select(ConversationModel).where(
             ConversationModel.contact_id == contact_id,
             ConversationModel.bot_type == bot_type,
-        )
+        ).with_for_update()
         result = await session.execute(stmt)
         existing = result.scalars().first()
         if existing:
@@ -322,8 +322,11 @@ async def merge_conversation_metadata(
     contact_id: str,
     bot_type: str,
     metadata_json: Dict[str, Any],
-) -> None:
-    """Merge metadata into an existing conversation record when present."""
+) -> bool:
+    """Merge metadata into an existing conversation record when present.
+
+    Returns True if the record was found and updated, False if no record exists.
+    """
     async with AsyncSessionFactory() as session:
         stmt = select(ConversationModel).where(
             ConversationModel.contact_id == contact_id,
@@ -337,7 +340,7 @@ async def merge_conversation_metadata(
                 contact_id,
                 bot_type,
             )
-            return
+            return False
         merged = dict(existing.metadata_json or {})
         merged.update(metadata_json)
         existing.metadata_json = merged
@@ -370,6 +373,7 @@ async def merge_conversation_metadata(
                 logger.warning(f"Could not parse last_outbound_at {metadata_json['last_outbound_at']!r}: {_ts_err}")
         existing.updated_at = _now()
         await session.commit()
+        return True
 
 
 async def update_conversation_outbound_at(

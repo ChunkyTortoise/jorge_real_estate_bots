@@ -281,7 +281,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 logger.warning(f"Rate limit check failed (allowing through): {_rl_err}")
 
         # Message deduplication — two-phase:
-        # Phase 1: 30s guard before processing (prevents concurrent GHL retries during AI call)
+        # Phase 1: 120s guard before processing (prevents concurrent GHL retries during AI call)
         # Phase 2: 300s guard written on success (prevents replays in GHL's 5-min retry window)
         dedup_key: Optional[str] = None
         if _webhook_cache:
@@ -290,7 +290,7 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 if await _webhook_cache.get(dedup_key):
                     logger.info(f"Duplicate message skipped: contact={contact_id}")
                     return {"status": "skipped", "reason": "duplicate"}
-                await _webhook_cache.set(dedup_key, "1", ttl=30)
+                await _webhook_cache.set(dedup_key, "1", ttl=120)
             except Exception as _dd_err:
                 logger.warning(f"Dedup check failed (allowing through): {_dd_err}")
                 dedup_key = None
@@ -465,7 +465,9 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                         )
                     else:
                         # Bilingual: bot already called upsert; merge is idempotent here.
-                        await merge_conversation_metadata(contact_id, bot_type_lower, canonical.to_metadata())
+                        merged = await merge_conversation_metadata(contact_id, bot_type_lower, canonical.to_metadata())
+                        if not merged:
+                            logger.warning(f"merge failed for {contact_id} — no existing record")
                 except Exception as e:
                     logger.warning(f"Could not persist canonical state for {contact_id}: {e}")
                 try:

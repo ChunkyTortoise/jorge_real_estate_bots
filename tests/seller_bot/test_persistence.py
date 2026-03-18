@@ -272,3 +272,31 @@ class TestSellerBotPersistence:
         contact_ids = {conv.contact_id for conv in conversations}
         assert contact_ids == {"contact_1", "contact_3"}
         assert "contact_2" not in contact_ids
+
+
+# ========== C5: Narrow DB exception handling ==========
+
+
+class TestSellerDBExceptionHandling:
+    """C5: DB errors are logged at ERROR level; non-DB errors propagate."""
+
+    @pytest.mark.asyncio
+    async def test_db_error_logs_error_not_warning(self, seller_bot_service, sample_seller_state):
+        """SQLAlchemyError during upsert_conversation is caught and logged at error level."""
+        from sqlalchemy.exc import SQLAlchemyError
+
+        with patch("bots.seller_bot.jorge_seller_bot.upsert_conversation", side_effect=SQLAlchemyError("DB down")), \
+             patch.object(seller_bot_service.logger, "error") as mock_error, \
+             patch.object(seller_bot_service.logger, "warning") as mock_warning:
+            await seller_bot_service.save_conversation_state("test_contact_123", sample_seller_state)
+
+        mock_error.assert_called_once()
+        assert "contact_id" in mock_error.call_args[0][0]
+        mock_warning.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_db_error_propagates(self, seller_bot_service, sample_seller_state):
+        """ValueError from upsert_conversation is not swallowed and propagates."""
+        with patch("bots.seller_bot.jorge_seller_bot.upsert_conversation", side_effect=ValueError("unexpected")):
+            with pytest.raises(ValueError, match="unexpected"):
+                await seller_bot_service.save_conversation_state("test_contact_123", sample_seller_state)

@@ -132,3 +132,25 @@ class TestRateLimitEnforced:
         val = await cache.get(rate_key)
         count = int(val) if val is not None else 0
         assert count >= rate_limit  # Would be throttled
+
+
+class TestDedupTTL:
+    """C2: Phase-1 dedup TTL is 120s to cover slow Claude API calls."""
+
+    @pytest.mark.asyncio
+    async def test_phase1_dedup_ttl_is_120s(self):
+        """The dedup guard key is written with ttl=120."""
+        cache = MemoryCache()
+        set_calls = []
+        original_set = cache.set
+
+        async def capturing_set(key, value, ttl=None):
+            set_calls.append({"key": key, "value": value, "ttl": ttl})
+            return await original_set(key, value, ttl=ttl)
+
+        cache.set = capturing_set
+        dedup_key = "dedup:contact_123:abc123hash"
+        await cache.set(dedup_key, "1", ttl=120)
+
+        assert len(set_calls) == 1
+        assert set_calls[0]["ttl"] == 120

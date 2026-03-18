@@ -190,19 +190,20 @@ Or re-deploy to the existing service: `jorge-realty-ai-xxdf.onrender.com` (srv-d
 
 ## Current Status
 
-- **1732 tests passing** (as of 2026-03-08)
+- **1753 tests passing** (as of 2026-03-09)
 - All three bots working end-to-end with GHL
 - **Redis connected** -- Render Redis fully reachable
-- **PostgreSQL** -- all DB tables migrated (Alembic runs on boot)
+- **PostgreSQL** -- all DB tables migrated (Alembic runs on boot, non-fatal if DB unreachable)
 - Rate limiting active (Redis-backed, `X-RateLimit-*` headers)
 - Buyer Q4 loop limit (3 attempts before STALLED)
 - Funnel attribution with Redis persistence (30-day TTL)
 - Manual takeover via Jorge-Active tag
+- **Calendar booking active** -- `calendars.write` scope enabled; `POST /calendars/events/appointments` returns HTTP 201
+- **GHL workflows clean** -- 3 conflicting inbound workflows deleted; single pipeline active
 
-### Known Blockers (require Jorge Salas)
+### Action Required
 
-1. **Booking returns 404** -- GHL API key needs `calendars.write` scope. Go to GHL Settings > Integrations > Private Integrations, find the API key, add Calendar permissions.
-2. **GHL Automation workflows** -- Need a quick audit to confirm webhook URLs are correct and no duplicate triggers are active.
+- **Render billing**: Service is suspended on Render (`srv-d6d5go15pdvs73fcjjq0`) due to a billing issue on the Jorge workspace. Go to `dashboard.render.com`, resolve the outstanding balance, and the service will resume automatically.
 
 ---
 

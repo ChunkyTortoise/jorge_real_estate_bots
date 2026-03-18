@@ -424,3 +424,122 @@ async def test_qualification_summary_can_be_cleared(real_db):
     assert conv is not None
     # qualification_summary should be {} (not preserved as the old non-empty value)
     assert conv.qualification_summary == {}
+
+
+# ========== MERGE CONVERSATION METADATA (M5) ==========
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_merge_returns_true_on_success(real_db):
+    """merge_conversation_metadata returns True when a matching record exists."""
+    from database.repository import merge_conversation_metadata, upsert_conversation
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    await upsert_conversation(
+        contact_id="ghl_merge_ok",
+        bot_type="seller",
+        stage="Q1",
+        temperature="warm",
+        current_question=1,
+        questions_answered=1,
+        is_qualified=False,
+        conversation_history=[],
+        extracted_data={},
+        last_activity=now,
+        conversation_started=now,
+    )
+
+    result = await merge_conversation_metadata(
+        "ghl_merge_ok", "seller", {"mode": "seller", "status": "active"}
+    )
+    assert result is True
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_merge_returns_false_when_not_found(real_db):
+    """merge_conversation_metadata returns False when no record exists."""
+    from database.repository import merge_conversation_metadata
+
+    result = await merge_conversation_metadata(
+        "ghl_no_such_contact", "seller", {"mode": "seller"}
+    )
+    assert result is False
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_merge_updates_fields(real_db):
+    """merge_conversation_metadata merges metadata into the existing record."""
+    from database.repository import merge_conversation_metadata, fetch_conversation, upsert_conversation
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    await upsert_conversation(
+        contact_id="ghl_merge_fields",
+        bot_type="seller",
+        stage="Q1",
+        temperature="warm",
+        current_question=1,
+        questions_answered=1,
+        is_qualified=False,
+        conversation_history=[],
+        extracted_data={},
+        last_activity=now,
+        conversation_started=now,
+    )
+
+    await merge_conversation_metadata(
+        "ghl_merge_fields", "seller", {"mode": "seller", "status": "qualified"}
+    )
+
+    conv = await fetch_conversation("ghl_merge_fields", "seller")
+    assert conv is not None
+    assert conv.mode == "seller"
+    assert conv.status == "qualified"
+
+
+# ========== UPSERT WITH ROW-LEVEL LOCK (C4) ==========
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_upsert_with_for_update_no_error(real_db):
+    """upsert_conversation with .with_for_update() succeeds and second call overwrites."""
+    from database.repository import fetch_conversation, upsert_conversation
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    await upsert_conversation(
+        contact_id="ghl_lock_test",
+        bot_type="seller",
+        stage="Q1",
+        temperature="cold",
+        current_question=1,
+        questions_answered=1,
+        is_qualified=False,
+        conversation_history=[],
+        extracted_data={},
+        last_activity=now,
+        conversation_started=now,
+    )
+    await upsert_conversation(
+        contact_id="ghl_lock_test",
+        bot_type="seller",
+        stage="Q2",
+        temperature="warm",
+        current_question=2,
+        questions_answered=2,
+        is_qualified=False,
+        conversation_history=[],
+        extracted_data={},
+        last_activity=now,
+        conversation_started=now,
+    )
+
+    conv = await fetch_conversation("ghl_lock_test", "seller")
+    assert conv is not None
+    assert conv.stage == "Q2"
+    assert conv.temperature == "warm"

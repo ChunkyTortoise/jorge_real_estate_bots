@@ -37,6 +37,7 @@ from database.repository import (
     upsert_contact,
     upsert_conversation,
 )
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = get_logger(__name__)
 
@@ -599,8 +600,8 @@ class JorgeBuyerBot:
                 },
                 matches_json=state.matches,
             )
-        except Exception as db_err:
-            self.logger.warning(f"DB persist skipped (schema not ready?): {db_err}")
+        except (SQLAlchemyError, OSError) as db_err:
+            self.logger.error(f"DB upsert_conversation failed for contact_id={contact_id}: {db_err}")
 
     async def _generate_response(self, state: BuyerQualificationState, user_message: str) -> Dict[str, Any]:
         if state.current_question == 0:

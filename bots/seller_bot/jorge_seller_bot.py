@@ -45,6 +45,7 @@ from bots.shared.conversation_contract import (
 from bots.shared.ghl_client import GHLClient, unwrap_ghl_response
 from bots.shared.logger import get_logger
 from database.repository import fetch_conversation, upsert_contact, upsert_conversation
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = get_logger(__name__)
 
@@ -483,8 +484,8 @@ class JorgeSellerBot:
                 metadata_json=merged_metadata,
                 **canonical.to_columns(),
             )
-        except Exception as db_err:
-            self.logger.warning(f"DB upsert_conversation skipped (schema not ready?): {db_err}")
+        except (SQLAlchemyError, OSError) as db_err:
+            self.logger.error(f"DB upsert_conversation failed for contact_id={contact_id}: {db_err}")
 
     async def get_all_active_conversations(self) -> List[SellerQualificationState]:
         """

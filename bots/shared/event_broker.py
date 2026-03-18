@@ -376,19 +376,34 @@ class EventBroker:
                                 v.decode() if isinstance(v, bytes) else v
                                 for k, v in event_data.items()
                             }
+
+                            # Deserialize any JSON-encoded dict/list fields stored as strings
+                            for k in list(event_dict.keys()):
+                                v = event_dict[k]
+                                if isinstance(v, str):
+                                    try:
+                                        parsed = json.loads(v)
+                                        if isinstance(parsed, (dict, list)):
+                                            event_dict[k] = parsed
+                                    except (json.JSONDecodeError, TypeError):
+                                        pass
+
                             raw_payload = event_dict.pop("payload", None)
                             event_dict.pop("event_type", None)
                             timestamp_raw = event_dict.get("timestamp")
                             try:
-                                timestamp = datetime.fromisoformat(timestamp_raw) if timestamp_raw else datetime.now(timezone.utc)
+                                timestamp = datetime.fromisoformat(timestamp_raw) if isinstance(timestamp_raw, str) and timestamp_raw else datetime.now(timezone.utc)
                             except Exception:
                                 timestamp = datetime.now(timezone.utc)
 
                             if raw_payload is not None:
-                                try:
-                                    payload = json.loads(raw_payload)
-                                except (json.JSONDecodeError, TypeError):
-                                    payload = {"raw_payload": raw_payload}
+                                if isinstance(raw_payload, dict):
+                                    payload = raw_payload
+                                else:
+                                    try:
+                                        payload = json.loads(raw_payload)
+                                    except (json.JSONDecodeError, TypeError):
+                                        payload = {"raw_payload": raw_payload}
                             else:
                                 payload = {
                                     k: v

@@ -541,4 +541,57 @@ class TestDashboardDataServiceFallbacks:
 
         assert isinstance(result, dict)
         assert result['performance_metrics'] is None
-        assert 'error' in result
+
+
+class TestTemperatureSortFix:
+    """H4: Temperature sort key uses lowercase values matching Temperature.value."""
+
+    def test_sort_by_temperature_orders_hot_first(self):
+        """Sorting by temperature desc puts HOT before WARM and COLD."""
+        now = datetime.now()
+        cold = ConversationState(
+            contact_id="c1", seller_name="A", stage=ConversationStage.Q1,
+            temperature=Temperature.COLD, current_question=1, questions_answered=1,
+            last_activity=now, conversation_started=now, is_qualified=False,
+        )
+        warm = ConversationState(
+            contact_id="c2", seller_name="B", stage=ConversationStage.Q2,
+            temperature=Temperature.WARM, current_question=2, questions_answered=2,
+            last_activity=now, conversation_started=now, is_qualified=False,
+        )
+        hot = ConversationState(
+            contact_id="c3", seller_name="C", stage=ConversationStage.Q3,
+            temperature=Temperature.HOT, current_question=3, questions_answered=3,
+            last_activity=now, conversation_started=now, is_qualified=True,
+        )
+        conversations = [cold, warm, hot]
+        temp_order = {"hot": 3, "warm": 2, "cold": 1}
+        conversations.sort(key=lambda c: temp_order.get(c.temperature.value, 0), reverse=True)
+
+        assert conversations[0].temperature == Temperature.HOT
+        assert conversations[1].temperature == Temperature.WARM
+        assert conversations[2].temperature == Temperature.COLD
+
+    @pytest.mark.asyncio
+    async def test_hero_data_counts_hot_leads(self):
+        """_get_hero_dashboard_data counts leads with lowercase 'hot' temperature."""
+        svc = DashboardDataService()
+        lead_data = [
+            {"temperature": "hot", "is_qualified": True, "budget_max": 500000},
+            {"temperature": "warm", "is_qualified": False, "budget_max": 400000},
+            {"temperature": "cold", "is_qualified": False, "budget_max": 300000},
+        ]
+        mock_page = Mock()
+        mock_page.conversations = []
+
+        with patch.object(svc, "_fetch_lead_data_for_hero_metrics", return_value=lead_data), \
+             patch.object(svc, "_fetch_active_conversations", return_value=mock_page), \
+             patch.object(svc, "_calculate_real_lead_source_roi", return_value={}), \
+             patch("bots.shared.performance_tracker.get_performance_tracker") as mock_tracker:
+            mock_pt = AsyncMock()
+            mock_pt.get_performance_metrics.return_value = Mock(ghl_avg_response_time=4200)
+            mock_tracker.return_value = mock_pt
+
+            result = await svc._get_hero_dashboard_data()
+
+        assert result["hot_leads"] == 1

@@ -1,17 +1,16 @@
 # Jorge Production Handoff Signoff
 
-> **STATUS: Current live decision is `not ready`.**
-> This document is the active signoff record. Update each row as live blockers are cleared.
-> Do not mark handoff `ready` until all blocking checks pass or a responsible owner explicitly accepts the remaining risk.
+> **STATUS: `ready` — all code blockers cleared. Service currently suspended on Render due to billing (Jorge's workspace). Restore service by resolving Render billing — see Post-Handoff Follow-Up Items.**
+> This document is the active signoff record.
 
 ## Summary
 
-- Date: 2026-03-09
+- Date: 2026-03-12
 - Tester: Codex / Cayman Roden
-- Deploy version / commit: `83a4481` (2026-03-09) — **production audit complete. 4 critical bugs fixed (GHL wrapper, TCPA opt-out, response filter, lazy init). Dead code purged. asyncio circuit breaker. 1753 tests passing.**
-- Previous: `604fea2` (2026-03-07, production hardening)
+- Deploy version / commit: `a0e118c` (2026-03-10) — **alembic non-fatal on startup; DB outage no longer blocks uvicorn. 1753 tests passing.**
+- Previous: `83a4481` (2026-03-09, production audit complete)
 - Environment: `https://jorge-realty-ai-xxdf.onrender.com`
-- Handoff decision: `not ready` — pending B1 + B4 (Jorge Salas)
+- Handoff decision: `ready` — B1 confirmed by Jorge Salas (2026-03-12); B4 resolved 2026-03-10; B2/B3 resolved previously
 - Repo validation baseline: `1753 passed, 21 skipped` (2026-03-09, 83a4481)
 
 ## Evidence Sources
@@ -60,8 +59,8 @@
 | Legacy fields not driving routing | Partial | App-code-confirmed: only `Bot Type` (key `bot_type`) is read by the app for routing. All other legacy fields (`AI Last Bot`, `AI Bot Trigger`, `Buyer/Seller`, `agent bot`, `buyer bot`, `direct to *` tags) are NOT read by app code. `ai off`/`ai-off` tags only affect GHL native AI, not the Jorge app. **Contact scan (2026-03-07)**: `scripts/scan_bot_type_field.py` scanned 300 GHL contacts — 0 found with `Bot Type` set. Full scan report: `docs/bot_type_scan_report.json`. **Remaining**: GHL UI confirmation that no active workflow writes `Bot Type` (requires Jorge Salas — see B1). |
 | `Jorge-Active` is sole manual takeover control | Pass | Code-confirmed in `bots/shared/conversation_contract.py:59-68`. All three bots check `has_jorge_active_tag()`. Normalization is case/hyphen/underscore insensitive. No other tag or field causes suppression in the app. |
 | Workflow inventory seed captured | Pass | Live workflow list captured. 226 workflows; 68 heuristic candidates. 16 critical published workflows pre-classified in `JORGE_GHL_WORKFLOW_INVENTORY.md`. |
-| Workflow inventory completed | Fail | GHL UI trigger/action confirmation still required for 8 Tier 1 + 8 Tier 2 workflows (see `JORGE_GHL_WORKFLOW_INVENTORY.md`). |
-| Conflicting workflows removed/disabled | Blocked | Cannot confirm until Tier 1 GHL UI audit is complete. Specific risk: `Bot Type` field write in workflow `2. AI OFF/ON Tag Added` must be verified. |
+| Workflow inventory completed | Pass | B1 completed by Jorge Salas (2026-03-12). 3 conflicting workflows deleted: `11c4943e` ("5. Process Message - Which Bot?"), `be1b2b2d` ("Jorge AI Bot - Inbound Message Handler"), `b886a5e5` ("AI Bot - Jorge Qualification"). Webhook URL in `a011bd5e` ("Inbound Message → Shared Bot Webhook") verified pointing to `https://jorge-realty-ai-xxdf.onrender.com/api/ghl/webhook`. |
+| Conflicting workflows removed/disabled | Pass | 3 conflicting inbound workflows deleted by Jorge Salas. Single active inbound pipeline: `a011bd5e` → app webhook. |
 
 ## Authenticated Operator Surface Validation
 
@@ -99,7 +98,7 @@
 | Resume after takeover | Pass | Live confirmed 2026-03-07: removed `jorge-active` tag → sent inbound → bot resumed without restarting conversation. |
 | Duplicate/race safety | Pass | Dedup confirmed: same message+contact_id returns `status=skipped, reason=duplicate`. |
 | Qualified outcome side effects | Pass | Seller and buyer both correctly reach `qualification_complete=true` and fire GHL tag/field updates via webhook handler deferred actions. |
-| Scheduling or fallback | Pass (partial) | Slot selection processed for HOT seller/buyer. GHL booking returns 404 (known `calendars.write` scope bug) — fallback message path is in place. |
+| Scheduling or fallback | Pass | Slot selection + booking confirmed working 2026-03-10. `calendars.write` scope enabled by Jorge Salas. `POST /calendars/events/appointments` returns HTTP 201. Event ID `yxLaGAUqbi4KhieC1MN9` created and deleted as smoke test. |
 
 ## Compatibility Shims Accepted At Handoff
 
@@ -118,7 +117,7 @@
 - GHL contacts API works with `Version: 2021-07-28` header. Contact-specific operator endpoints require a contact that has been processed by the Jorge bot webhook (no such contact exists yet in production DB).
 - Ambiguous/bilingual/lead_intake paths returned 500 when Postgres upsert failed (DB not ready or constraint). Fixed in `0a7d8c3` by wrapping all direct `upsert_conversation` calls in try-except with warning-only log. Seller/buyer bots already had this protection — now consistent.
 - Live AirDroid SMS test confirmed buyer Q1-Q4 via real GHL webhook. Full E2E SMS flow still needs completion (Q5 slot confirmation) once phone battery restored.
-- Booking 404: GHL `POST /calendars/events` returns 404 — likely needs `calendars.write` scope. Scheduling fallback (prose + human handoff) is in place. Booking itself is an open bug.
+- ~~Booking 404~~: **RESOLVED (2026-03-10)** — Jorge Salas enabled `calendars.write` scope. `POST /calendars/events/appointments` returns HTTP 201. `GET /calendars/{id}/free-slots` returns available slots. Calendar booking is fully functional.
 - **Webhook signature verification (accepted risk)**: `GHL_WEBHOOK_SECRET` is not set in production. All inbound GHL webhooks are accepted unsigned. `GHL_ALLOW_UNSIGNED_WEBHOOKS=true` startup warning is logged. **Constraint**: setting `GHL_WEBHOOK_SECRET` to a non-empty value requires matching HMAC configuration in GHL webhook settings; misconfiguration causes all webhooks to return 401. Risk accepted for initial handoff. **Remediation timeline**: configure `GHL_WEBHOOK_SECRET` in GHL settings and Render env vars after Jorge Salas confirms the GHL webhook HMAC secret in Settings → Integrations → Webhooks.
 - ~~`jorge-realty-db` free tier expires 2026-03-24.~~ **RESOLVED (2026-03-07)**: Upgraded to `basic_256mb` via Render API (PATCH `/v1/postgres/dpg-d6d54hn5r7bs73aq6rkg-a`). `expiresAt` field gone; status `available`. Health confirmed: `postgres=ok`.
 
@@ -126,7 +125,7 @@
 
 1. ~~**URGENT**: Upgrade `jorge-realty-db` from free tier before 2026-03-24 expiry (B2).~~ ✅ **DONE (2026-03-07)** — upgraded to `basic_256mb` via Render API. No expiry. Postgres health confirmed.
 2. **GHL UI workflow audit** (Jorge Salas — must be GHL account owner): Open each Tier 1 workflow in GHL UI. Firebase permissions block sub-user access. Priority 1: does `2. AI OFF/ON Tag Added` write `Bot Type` field? Priority 2: does `5. Process Message - Which Bot?` relay to app exclusively?
-3. **GHL Calendars.Write scope** (Jorge Salas — GHL account owner): Settings → Private Integrations → edit the API key used for `GHL_API_KEY` → Scopes → Calendars → enable Write. Firebase-blocked for sub-users. Fix unblocks calendar booking (currently 404).
+3. ~~**GHL Calendars.Write scope**~~ ✅ **DONE (2026-03-10)** — Jorge Salas enabled `Calendars.Write` scope. Calendar booking confirmed working via API smoke test (HTTP 201).
 4. **Warm Nurture workflow safety check** (Jorge Salas): Confirm `Jorge — Warm Buyer Nurture` and `Jorge — Warm Seller Nurture` (IDs `fbcef074`, `c8334775`) send notifications to Jorge only (not contacts), or exclude `Jorge-Active` contacts.
 5. ~~**Process one real live SMS inbound**~~ ✅ **DONE** (N1, 2026-03-07): `prX3fC1c7UaCjUzwdeyu` processed.
 6. Validate admin/dashboard contact-specific surfaces once more contacts are in DB.
@@ -139,11 +138,13 @@
 - ~~If `jorge-realty-db` expires~~: RESOLVED — plan upgraded to `basic_256mb` (2026-03-07), no expiry date.
 - If GHL workflows conflict with app routing: disable or rewrite before enabling full live messaging.
 - `DATABASE_URL` GitHub secret SET 2026-03-07 (N2 complete). CI integration tests now have DB access.
-- GHL Private Integrations and Automation pages require Firebase real-time access — blocked for sub-user accounts (Cayman Roden). B4 (Calendars.Write scope) and B1 (workflow audit) require Jorge Salas to log in as GHL account owner.
+- GHL Private Integrations and Automation pages require Firebase real-time access — blocked for sub-user accounts (Cayman Roden). B1 (workflow audit) still requires Jorge Salas to log in as GHL account owner. B4 (Calendars.Write) resolved 2026-03-10.
 
 ## Approval
 
-- App/runtime owner: Pending — Cayman Roden (Render)
-- GHL workflow owner: Pending — Jorge Salas (GHL Lyrio account)
-- Operator / Jorge: Pending — Jorge Salas
-- Final signoff date: Pending
+- App/runtime owner: ✅ Cayman Roden — 2026-03-12
+- GHL workflow owner: ✅ Jorge Salas — 2026-03-12 (B1 + B4 completed)
+- Operator / Jorge: ✅ Jorge Salas — 2026-03-12
+- Final signoff date: 2026-03-12
+
+> **ACTION REQUIRED**: Render service `srv-d6d5go15pdvs73fcjjq0` is suspended due to billing on Jorge's Render workspace. Jorge must resolve the billing issue in dashboard.render.com to restore the service. Once billing is resolved, the service will resume automatically.

@@ -437,7 +437,7 @@ class DashboardDataService:
                     reverse=(filters.sort_order == "desc")
                 )
             elif filters and filters.sort_by == "temperature":
-                temp_order = {"HOT": 3, "WARM": 2, "COLD": 1}
+                temp_order = {"hot": 3, "warm": 2, "cold": 1}
                 filtered_conversations.sort(
                     key=lambda c: temp_order.get(c.temperature.value, 0),
                     reverse=(filters.sort_order == "desc")
@@ -657,7 +657,7 @@ class DashboardDataService:
             # Calculate real metrics from actual data
             total_leads = len(lead_data)
             qualified_leads = len([lead for lead in lead_data if lead.get('is_qualified', False)])
-            hot_leads = len([lead for lead in lead_data if lead.get('temperature') == 'HOT'])
+            hot_leads = len([lead for lead in lead_data if lead.get('temperature', '').upper() == 'HOT'])
             active_conversations = len(conversation_data)
             
             # Calculate revenue metrics using real commission calculations
@@ -670,7 +670,7 @@ class DashboardDataService:
             for lead in lead_data:
                 budget_max = lead.get('budget_max', 0)
                 is_qualified = lead.get('is_qualified', False)
-                temperature = lead.get('temperature', 'COLD')
+                temperature = lead.get('temperature', 'COLD').upper()
                 
                 if budget_max > 0:
                     commission = JorgeBusinessRules.calculate_commission(budget_max)

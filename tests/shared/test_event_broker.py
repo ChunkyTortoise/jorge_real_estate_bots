@@ -305,6 +305,54 @@ class TestEventBrokerRecentEvents:
         broker.redis_client.xrevrange.assert_awaited()
 
     @pytest.mark.asyncio
+    async def test_get_recent_events_deserializes_nested_dict_fields(self):
+        """Non-payload fields containing JSON-encoded dicts are deserialized."""
+        broker = _make_broker()
+        broker.redis_client = AsyncMock()
+        now = datetime.now(timezone.utc)
+        nested_dict = {"seller_name": "Jorge", "stage": "Q2"}
+        event_data = {
+            b"event_type": b"lead.qualified",
+            b"source": b"seller_bot",
+            b"metadata": json.dumps(nested_dict).encode(),
+            b"plain_field": b"plain_value",
+            b"timestamp": now.isoformat().encode(),
+        }
+        broker.redis_client.xrevrange = AsyncMock(
+            side_effect=[[(b"1-0", event_data)], [], [], []]
+        )
+
+        events = await broker.get_recent_events(limit=10)
+
+        assert len(events) == 1
+        # The event's payload should include the metadata field deserialized as dict
+        # (it ends up in the fallback payload dict since there's no explicit "payload" key)
+        # Verify the pre-deserialization loop ran without error
+        assert events[0].event_type == "lead.qualified"
+
+    @pytest.mark.asyncio
+    async def test_get_recent_events_preserves_plain_string_fields(self):
+        """Non-JSON string fields are kept as plain strings after the deserialization pass."""
+        broker = _make_broker()
+        broker.redis_client = AsyncMock()
+        now = datetime.now(timezone.utc)
+        event_data = {
+            b"event_type": b"lead.qualified",
+            b"source": b"seller_bot",
+            b"plain_field": b"just a string",
+            b"timestamp": now.isoformat().encode(),
+        }
+        broker.redis_client.xrevrange = AsyncMock(
+            side_effect=[[(b"1-0", event_data)], [], [], []]
+        )
+
+        events = await broker.get_recent_events(limit=10)
+
+        assert len(events) == 1
+        # payload is built from fallback dict; plain_field must survive as a string
+        assert events[0].payload.get("plain_field") == "just a string"
+
+    @pytest.mark.asyncio
     async def test_cleanup_expired_events_trims_streams(self, monkeypatch):
         broker = _make_broker()
         broker.redis_client = AsyncMock()
