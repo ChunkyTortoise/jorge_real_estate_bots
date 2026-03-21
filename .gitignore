@@ -60,3 +60,6 @@ test.db
 test_local.db
 .claude/
 docs/TAG_SLEEP_PROPOSAL.md
+
+# Client deliverables (not for public repo)
+output/
