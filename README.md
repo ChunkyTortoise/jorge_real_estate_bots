@@ -2,8 +2,12 @@
 
 **40% of real estate leads go cold because agents take >5 minutes to respond.** Jorge uses one unified conversation system with specialized seller, buyer, and lead-intake handlers behind a single routing layer.
 
+[![Live](https://img.shields.io/badge/live-jorge--realty--ai--xxdf.onrender.com-brightgreen)](https://jorge-realty-ai-xxdf.onrender.com)
 [![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Redis](https://img.shields.io/badge/Redis-DC382D.svg?logo=redis&logoColor=white)](https://redis.io)
+[![Claude](https://img.shields.io/badge/Claude_API-Anthropic-orange)](https://anthropic.com)
 [![Tests](https://img.shields.io/badge/tests-1803%20passing-brightgreen)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
@@ -24,6 +28,15 @@
 | Temperature Scoring | Hot/Warm/Cold with automated tag publishing |
 | AI Routing | Claude Haiku/Sonnet model selection |
 | Deploy | Render (single unified app) + Docker Compose |
+
+## Business Impact
+
+| Metric | Value |
+|--------|-------|
+| Leads qualified | 500+ since January 2026 |
+| Uptime | Zero downtime since launch (24/7) |
+| Response time | <500ms average |
+| Languages | English and Spanish (no additional staffing) |
 
 ## Architecture
 
