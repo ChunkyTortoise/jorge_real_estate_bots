@@ -11,6 +11,12 @@
 [![Tests](https://img.shields.io/badge/tests-1824%20passing-brightgreen)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
+## API Overview
+
+**30+ endpoints** across webhook routing, lead dashboard, admin controls, and real-time events:
+
+![Jorge Lead Bot API](docs/screenshots/api-overview.png)
+
 ## What This Solves
 
 - **Missed leads** -- The app responds within seconds, not minutes, and routes each contact into the correct qualification path
