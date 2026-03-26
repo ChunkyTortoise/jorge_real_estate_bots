@@ -2,7 +2,7 @@
 
 **40% of real estate leads go cold because agents take >5 minutes to respond.** Jorge uses one unified conversation system with specialized seller, buyer, and lead-intake handlers behind a single routing layer.
 
-[![Live](https://img.shields.io/badge/live-jorge--realty--ai--xxdf.onrender.com-brightgreen)](https://jorge-realty-ai-xxdf.onrender.com)
+[![Deployed on Render](https://img.shields.io/badge/Deployed_on-Render-46E3B7)](https://render.com)
 [![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -11,11 +11,7 @@
 [![Tests](https://img.shields.io/badge/tests-1824%20passing-brightgreen)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
-## API Overview
-
-**30+ endpoints** across webhook routing, lead dashboard, admin controls, and real-time events:
-
-![Jorge Lead Bot API](docs/screenshots/api-overview.png)
+> **Production client project** — Built for Jorge Salas (Acuity Real Estate, Rancho Cucamonga CA) by Cayman Roden / Roden AI Solutions. This system handles live inbound leads via GoHighLevel CRM, qualifying 500+ contacts since January 2026 with zero downtime. This is not a tutorial or demo — it is a deployed, revenue-generating AI system.
 
 ## What This Solves
 
@@ -43,6 +39,12 @@
 | Uptime | Zero downtime since launch (24/7) |
 | Response time | <500ms average |
 | Languages | English and Spanish (no additional staffing) |
+
+## API Overview
+
+**30+ endpoints** across webhook routing, lead dashboard, admin controls, and real-time events:
+
+![Jorge Lead Bot API](docs/screenshots/api-overview.png)
 
 ## Architecture
 
@@ -153,6 +155,9 @@ The repo includes `render.yaml` for Render Blueprint deployment. Connect the rep
 
 ## Project Structure
 
+<details>
+<summary>Directory layout (click to expand)</summary>
+
 ```
 jorge_real_estate_bots/
 ├── bots/
@@ -178,9 +183,14 @@ jorge_real_estate_bots/
 └── Dockerfile
 ```
 
+</details>
+
 ## API Endpoints
 
-All endpoints are served from a single app on port 8001.
+All endpoints are served from a single app on port 8001. Run `uvicorn bots.lead_bot.main:app` and visit `/docs` for the interactive reference.
+
+<details>
+<summary>Full endpoint listing (click to expand)</summary>
 
 ### Webhooks (`routes_webhook.py`)
 - `POST /ghl/webhook/new-lead` -- Compatibility entrypoint for new leads
@@ -242,11 +252,16 @@ curl http://localhost:8001/api/dashboard/stall-stats \
   -H "X-Admin-Key: YOUR_ADMIN_KEY"
 ```
 
+</details>
+
 ## Troubleshooting
 
 See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for solutions to common issues: GHL webhook setup, Redis connection errors, environment variable checklist, HTTP error codes, and bot handoff failures.
 
 ## Production Handoff Docs
+
+<details>
+<summary>Production Handoff Documentation (for operators -- click to expand)</summary>
 
 The canonical production-finalization and handoff package lives in `docs/`:
 
@@ -285,6 +300,8 @@ GHL_API_KEY=... GHL_LOCATION_ID=... python scripts/review_ghl_legacy_contract.py
 JORGE_LIVE_URL=... ADMIN_API_KEY=... JORGE_CONTACT_ID=... DATABASE_URL=... bash scripts/run_production_finalization.sh
 ```
 
+</details>
+
 ## Testing
 
 ```bash
@@ -303,6 +320,13 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 - [EnterpriseHub](https://github.com/ChunkyTortoise/EnterpriseHub) -- Full real estate AI platform this was extracted from, with BI dashboards and CRM integration
 - [Lyrio Dashboard](https://github.com/ChunkyTortoise/lyrio-dashboard) -- Streamlit analytics dashboard with AI concierge, connected to Jorge API
 - [ai-orchestrator](https://github.com/ChunkyTortoise/ai-orchestrator) -- AgentForge: unified async LLM interface (Claude, Gemini, OpenAI, Perplexity)
+
+## Built By
+
+Developed by **[Cayman Roden](https://github.com/ChunkyTortoise)** (Roden AI Solutions) as a production engagement for Jorge Salas (Acuity Real Estate). The system has been in continuous production since January 2026.
+
+- GitHub: [ChunkyTortoise](https://github.com/ChunkyTortoise)
+- Portfolio: [EnterpriseHub](https://github.com/ChunkyTortoise/EnterpriseHub)
 
 ## License
 

@@ -17,7 +17,7 @@ Three AI bots (Lead, Buyer, Seller) in a single FastAPI app using APIRouter patt
 
 ## Test
 ```
-pytest tests/ -v  # 1824 tests
+pytest tests/ -v  # 1,824 tests
 ```
 
 ## Key Env

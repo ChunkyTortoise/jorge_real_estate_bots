@@ -190,7 +190,7 @@ Or re-deploy to the existing service: `jorge-realty-ai-xxdf.onrender.com` (srv-d
 
 ## Current Status
 
-- **1753 tests passing** (as of 2026-03-09)
+- **1824 tests passing** (as of 2026-03-09)
 - All three bots working end-to-end with GHL
 - **Redis connected** -- Render Redis fully reachable
 - **PostgreSQL** -- all DB tables migrated (Alembic runs on boot, non-fatal if DB unreachable)
@@ -227,7 +227,7 @@ jorge-real-estate-bots/
 ├── billing/                # Billing module (for future productization)
 ├── adapters/               # Adapter layer (for future productization)
 ├── api/                    # Additional API modules (for future productization)
-├── tests/                  # 1717+ tests (unit + integration)
+├── tests/                  # 1824 tests (unit + integration)
 ├── docs/                   # Setup guides, specs, troubleshooting, operations runbook
 ├── docker-compose.yml      # Full stack (Postgres, Redis, bot)
 ├── Dockerfile              # Production image
