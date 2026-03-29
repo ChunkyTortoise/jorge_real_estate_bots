@@ -3,15 +3,17 @@
 **40% of real estate leads go cold because agents take >5 minutes to respond.** Jorge uses one unified conversation system with specialized seller, buyer, and lead-intake handlers behind a single routing layer.
 
 [![Deployed on Render](https://img.shields.io/badge/Deployed_on-Render-46E3B7)](https://render.com)
-[![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI&color=C1440E)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Redis](https://img.shields.io/badge/Redis-DC382D.svg?logo=redis&logoColor=white)](https://redis.io)
 [![Claude](https://img.shields.io/badge/Claude_API-Anthropic-orange)](https://anthropic.com)
-[![Tests](https://img.shields.io/badge/tests-1824%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1824%20passing-D4A574)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
-> **Production client project** — Built for Jorge Salas (Acuity Real Estate, Rancho Cucamonga CA) by Cayman Roden / Roden AI Solutions. This system handles live inbound leads via GoHighLevel CRM, qualifying 500+ contacts since January 2026 with zero downtime. This is not a tutorial or demo — it is a deployed, revenue-generating AI system.
+> **Production system** — Automates lead qualification for a real estate agency using GHL webhooks, Claude AI, and Redis. Processing 1,800+ tests passing.
+
+> Built for Jorge Salas (Acuity Real Estate, Rancho Cucamonga CA) by Cayman Roden / Roden AI Solutions. Handling live inbound leads via GoHighLevel CRM, qualifying 500+ contacts since January 2026 with zero downtime. This is not a tutorial or demo — it is a deployed, revenue-generating AI system.
 
 ## What This Solves
 
@@ -40,6 +42,17 @@
 | Response time | <500ms average |
 | Languages | English and Spanish (no additional staffing) |
 
+## For Hiring Managers
+
+| If you're evaluating for... | Where to look | Training behind it |
+|-----------------------------|--------------|-------------------|
+| **AI / ML Engineer** | Claude conversation engine ([`bots/shared/claude_client.py`](bots/shared/claude_client.py)), confidence-based model routing ([`bots/shared/business_rules.py`](bots/shared/business_rules.py)), multi-turn memory management | IBM GenAI Engineering (144h), Microsoft AI & ML Engineering (75h) |
+| **Backend / AI Automation Engineer** | Webhook normalization + dedup + per-contact locking ([`bots/lead_bot/routes_webhook.py`](bots/lead_bot/routes_webhook.py)), Redis rate limiting, GHL CRM real-time sync | IBM GenAI Engineering (144h), Vanderbilt Agentic AI (58h) |
+| **CRM / Marketing Automation** | Full AWARENESS→CONVERSION funnel attribution ([`bots/shared/funnel_attribution.py`](bots/shared/funnel_attribution.py)), SMS re-engagement sequences ([`bots/shared/stall_reengagement.py`](bots/shared/stall_reengagement.py)), campaign metrics ([`bots/shared/sms_metrics_collector.py`](bots/shared/sms_metrics_collector.py)) | Google Digital Marketing (190h), Meta Social Media Marketing (83h) |
+| **Data Analyst / BI** | Lead dashboard API ([`bots/lead_bot/routes_dashboard.py`](bots/lead_bot/routes_dashboard.py)), funnel conversion metrics, per-stage ROI tracking | Google Data Analytics (181h), IBM BI Analyst (141h) |
+
+→ Full cert-to-code mapping: [`docs/certifications.md`](docs/certifications.md) (920h across 8 certifications)
+
 ## API Overview
 
 **30+ endpoints** across webhook routing, lead dashboard, admin controls, and real-time events:
@@ -51,6 +64,7 @@
 The system runs as a single FastAPI application. Incoming webhooks are normalized, deduplicated, locked per-contact, resolved to a canonical mode, and then dispatched to specialized internal handlers.
 
 ```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': {'primaryColor': '#D4A574', 'primaryBorderColor': '#C1440E', 'primaryTextColor': '#E2E8F0', 'lineColor': '#C1440E', 'background': '#1A1510'}}}%%
 flowchart TB
   subgraph Incoming["Incoming Leads"]
     Web["Web Forms"]
@@ -107,6 +121,14 @@ flowchart TB
   Temp --> GHL
   Lyrio --> Dashboard
 ```
+
+## Domain Context
+
+Real estate agencies lose 40-60% of leads due to slow follow-up. This system:
+- Responds to incoming GHL webhooks within seconds
+- Qualifies leads using Claude AI conversation analysis
+- Books appointments directly into the agency calendar
+- All integrations configurable via environment variables — no code changes needed for new verticals
 
 ## Quick Start
 
