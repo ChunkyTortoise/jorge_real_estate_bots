@@ -1,3 +1,5 @@
+![Jorge Real Estate Bots](docs/screenshots/banner.png)
+
 # Jorge Real Estate Bots
 
 **40% of real estate leads go cold because agents take >5 minutes to respond.** Jorge uses one unified conversation system with specialized seller, buyer, and lead-intake handlers behind a single routing layer.
