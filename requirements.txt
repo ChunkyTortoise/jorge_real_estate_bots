@@ -1,62 +1,62 @@
 # Jorge's Real Estate AI Bots - Dependencies
 
 # ========== CORE FRAMEWORK ==========
-fastapi==0.128.0
-uvicorn[standard]==0.40.0
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
 pydantic==2.12.5
-pydantic-settings==2.12.0
-python-multipart==0.0.21
+pydantic-settings==2.13.1
+python-multipart==0.0.24
 
 # ========== AI/LLM ==========
-anthropic==0.76.0
+anthropic==0.89.0
 
 # ========== DATABASE ==========
-sqlalchemy==2.0.46
-alembic==1.18.1
+sqlalchemy==2.0.49
+alembic==1.18.4
 psycopg2-binary==2.9.11
 asyncpg==0.31.0
 aiosqlite==0.22.1
 
 # ========== CACHING ==========
-redis==7.1.0
-hiredis==2.3.2
+redis==7.4.0
+hiredis==3.3.1
 
 # ========== STREAMLIT DASHBOARD ==========
 # NOTE: streamlit, pandas, numpy moved to requirements-dashboard.txt
 # Install separately for dashboard containers: pip install -r requirements-dashboard.txt
-plotly==6.5.2
+plotly==6.6.0
 
 # ========== HTTP CLIENTS ==========
 httpx==0.28.1
-requests==2.32.5
-aiohttp==3.13.3
-tenacity==9.1.2
+requests==2.33.1
+aiohttp==3.13.5
+tenacity==9.1.4
 
 
 # ========== UTILITIES ==========
-python-dotenv==1.2.1
+python-dotenv==1.2.2
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
-PyJWT==2.10.1
+PyJWT==2.12.1
 python-dateutil==2.9.0.post0
 
 # ========== TESTING ==========
 pytest==9.0.2
 pytest-asyncio==1.3.0
-pytest-cov==7.0.0
+pytest-cov==7.1.0
 pytest-mock==3.15.1
 websocket-client==1.9.0
 
 # ========== CODE QUALITY ==========
-ruff==0.14.14
-mypy==1.19.1
+ruff==0.15.9
+mypy==1.20.0
 
 # ========== MONITORING & LOGGING ==========
 structlog==25.5.0
-sentry-sdk[fastapi]==1.40.0
+sentry-sdk[fastapi]==2.57.0
 
 # ========== PDF GENERATION (Seller Bot CMA) ==========
-reportlab==4.4.9
-pillow==12.1.0
+reportlab==4.4.10
+pillow==12.2.0
 
 # celery removed — no Celery workers or task definitions in this codebase
