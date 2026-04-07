@@ -4,18 +4,28 @@
 
 **40% of real estate leads go cold because agents take >5 minutes to respond.** Jorge uses one unified conversation system with specialized seller, buyer, and lead-intake handlers behind a single routing layer.
 
-[![Deployed on Render](https://img.shields.io/badge/Deployed_on-Render-46E3B7)](https://render.com)
+[![Production Deployed](https://img.shields.io/badge/Production-Jan--Mar_2026-46E3B7)](https://render.com)
 [![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI&color=C1440E)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Redis](https://img.shields.io/badge/Redis-DC382D.svg?logo=redis&logoColor=white)](https://redis.io)
 [![Claude](https://img.shields.io/badge/Claude_API-Anthropic-orange)](https://anthropic.com)
-[![Tests](https://img.shields.io/badge/tests-1824%20passing-D4A574)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1%2C707%20passing-D4A574)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
-> **Production system** — Automates lead qualification for a real estate agency using GHL webhooks, Claude AI, and Redis. Processing 1,800+ tests passing.
+> **Production system** — Automated lead qualification for a real estate agency using GHL webhooks, Claude AI, and Redis. 1,707 tests passing.
 
-> Built for Jorge Salas (Acuity Real Estate, Rancho Cucamonga CA) by Cayman Roden / Roden AI Solutions. Handling live inbound leads via GoHighLevel CRM, qualifying 500+ contacts since January 2026 with zero downtime. This is not a tutorial or demo — it is a deployed, revenue-generating AI system.
+> Built for Jorge Salas (Acuity Real Estate, Rancho Cucamonga CA) by Cayman Roden / Roden AI Solutions. Processed 500+ inbound leads via GoHighLevel CRM (Jan-Mar 2026) with zero downtime. This is not a tutorial or demo -- it was a deployed, revenue-generating AI system.
+
+### Production Dashboard (Lyrio)
+
+| Chat Interface | Lead Activity | Bot Management |
+|---------------|---------------|----------------|
+| ![Chat](lyrio-chat-page.png) | ![Activity](lyrio-activity-page.png) | ![Bots](lyrio-bots-page.png) |
+
+| Cost Tracking | Lead Pipeline | Tone Settings |
+|--------------|---------------|---------------|
+| ![Costs](lyrio-costs-page.png) | ![Leads](lyrio-leads-page.png) | ![Tone](lyrio-tone-page.png) |
 
 ## What This Solves
 
@@ -27,7 +37,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Tests | **1824 passing** |
+| Tests | **1,707 passing** |
 | Public model | 1 canonical conversation system |
 | Cross-Bot Handoff | 0.7 confidence threshold, circular prevention, rate limiting |
 | CRM Integration | GoHighLevel real-time sync |
@@ -43,6 +53,31 @@
 | Uptime | Zero downtime since launch (24/7) |
 | Response time | <500ms average |
 | Languages | English and Spanish (no additional staffing) |
+
+## Production Metrics
+
+Verified operational data from production deployment (Jan-Mar 2026):
+
+| System | Metric | Value | How Verified |
+|--------|--------|-------|-------------|
+| **Lead Processing** | Total leads handled | 500+ | GHL contact records |
+| **Uptime** | Downtime incidents | 0 | Render health checks, 24/7 |
+| **Response Latency** | Average response time | <500ms | FastAPI request logging |
+| **Webhook Reliability** | Deduplication | Two-phase TTL (120s guard + 300s post-success) | `routes_webhook.py` dedup keys |
+| **Webhook Reliability** | Per-contact lock | Atomic `setnx`, 90s TTL | Prevents concurrent message handling |
+| **Rate Limiting** | Global | Per-minute + per-endpoint | `rate_limit_middleware.py` |
+| **Rate Limiting** | Per-contact | 10 msgs/min | Redis counter with TTL |
+| **Model Routing** | Haiku | Routine tasks (lead categorization) | `claude_client.py` TaskComplexity enum |
+| **Model Routing** | Sonnet | Complex analysis (qualification) | Cost/quality-aware routing |
+| **Model Routing** | Opus | High-stakes (seller negotiations) | Reserved for critical decisions |
+| **Prompt Caching** | Anthropic cache | Enabled for >1024 char system prompts | `cache_read_input_tokens` tracking |
+| **Circuit Breaker** | GHL API protection | Opens after 5 failures in 60s, 30s cooldown | `GHLCircuitBreaker` class |
+| **Conversation History** | Context window | 20 messages (10 turns) max | Prevents context bloat |
+| **Response Safety** | Identity filters | 38 regex patterns | `response_filter.py` |
+| **Response Safety** | Output truncation | 480 chars at word boundary | SMS-compatible responses |
+| **Bilingual** | Spanish detection | 2+ indicator words from frozen set | Auto-routes to BILINGUAL_HANDOFF |
+| **Test Coverage** | Passing tests | 1,707 | `pytest tests/ -q` |
+| **Retry Logic** | Anthropic API | Exponential backoff (2s-15s) via tenacity | RateLimitError + InternalServerError |
 
 ## For Hiring Managers
 
@@ -155,7 +190,7 @@ docker compose up
 
 ### Render Deployment
 
-The repo includes `render.yaml` for Render Blueprint deployment. Connect the repo and configure the `jorge-env` environment group with:
+Production ran on Render (Jan-Mar 2026), processing 500+ leads with zero downtime. The repo includes `render.yaml` for Render Blueprint deployment. To redeploy, connect the repo and configure the `jorge-env` environment group with:
 `REDIS_URL`, `GHL_API_KEY`, `ADMIN_API_KEY`, `ANTHROPIC_API_KEY`, `GHL_LOCATION_ID`, `JORGE_USER_ID`, `JORGE_CALENDAR_ID`
 
 ## Bot Capabilities
@@ -175,7 +210,7 @@ The repo includes `render.yaml` for Render Blueprint deployment. Connect the rep
 | AI | Claude (Haiku/Sonnet routing) |
 | Cache | Redis (sorted sets, rate limiting, bot state, funnel attribution) |
 | CRM | GoHighLevel (webhooks, custom fields, workflows) |
-| Testing | pytest, pytest-asyncio (1824 tests passing) |
+| Testing | pytest, pytest-asyncio (1,707 tests passing) |
 
 ## Project Structure
 
@@ -201,7 +236,7 @@ jorge_real_estate_bots/
 │   └── buyer_bot/           # Buyer qualification + property matching
 ├── database/                # SQLAlchemy models, async session
 ├── command_center/          # Streamlit dashboard components
-├── tests/                   # 1824 passing tests
+├── tests/                   # 1,707 passing tests
 ├── docker-compose.yml       # Redis + app + dashboard
 ├── render.yaml              # Render Blueprint config
 └── Dockerfile

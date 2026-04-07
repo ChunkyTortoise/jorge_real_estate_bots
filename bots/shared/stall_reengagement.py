@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from bots.shared.config import settings
+from bots.shared.event_models import DecisionEvent
 from bots.shared.ghl_client import GHLClient
 from bots.shared.logger import get_logger
 
@@ -80,6 +82,13 @@ class StallReengagementService:
             data["attempts"] += 1
             data["last_sent"] = datetime.now(timezone.utc).isoformat()
             await self._redis.set(key, json.dumps(data), ex=86400 * 30)  # 30 days TTL
+            event = DecisionEvent(
+                event_type="stall_reengagement",
+                contact_id=contact_id,
+                decision="reengagement_sent",
+                reason=f"stalled at stage {stage}, attempt {data['attempts']}",
+            )
+            logger.info("decision_event", extra={"decision_event": asdict(event)})
             logger.info("Sent re-engagement SMS to %s (attempt %d)", contact_id, data["attempts"])
             return True
         except Exception as e:

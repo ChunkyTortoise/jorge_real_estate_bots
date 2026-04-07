@@ -6,16 +6,30 @@ This module defines Pydantic models for all event types in the Jorge system:
 - GHL events (6 types): Contact updates, tags, workflows, API operations
 - Cache events (3 types): Hit, miss, set operations
 - System events (2 types): Performance, health monitoring
+- Decision events: Structured logging for key routing/handoff decisions
 
 Events follow a standard schema with validation, serialization, and type safety.
 """
 
+from dataclasses import asdict, dataclass, field as dc_field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Literal, Optional, Type, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+@dataclass
+class DecisionEvent:
+    """Structured decision event for key routing/handoff decisions."""
+    event_type: str  # "mode_resolution" | "bot_routing" | "handoff_trigger" | "opt_out_detection" | "stall_reengagement"
+    contact_id: str
+    decision: str  # e.g., "routed_to_seller_bot"
+    reason: str  # e.g., "seller intent keywords detected"
+    confidence: Optional[float] = None
+    bot_type: Optional[str] = None
+    timestamp: datetime = dc_field(default_factory=datetime.now)
 
 
 class EventCategory(str, Enum):
