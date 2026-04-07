@@ -1,0 +1,546 @@
+[
+  {
+    "id": "JR-TC-001",
+    "input": "I want to sell my house",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "asks_q1_condition": true
+    },
+    "category": "seller_qualification",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q0",
+      "current_question": 0
+    },
+    "description": "Q0 greeting triggers Q1 condition question. Bot should introduce itself as Jorge and ask about property condition."
+  },
+  {
+    "id": "JR-TC-002",
+    "input": "It needs a new roof and the kitchen is outdated but everything else is fine",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_condition": "needs_minor_repairs",
+      "asks_q2_price": true
+    },
+    "category": "seller_qualification",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q1",
+      "current_question": 1
+    },
+    "description": "Q1 condition answer (minor repairs) should extract condition and advance to Q2 price question."
+  },
+  {
+    "id": "JR-TC-003",
+    "input": "The foundation is cracked, there's mold in the basement, and the plumbing needs to be completely redone",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_condition": "needs_major_repairs",
+      "asks_q2_price": true
+    },
+    "category": "seller_qualification",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q1",
+      "current_question": 1
+    },
+    "description": "Q1 condition answer (major repairs) should extract correctly and advance to Q2."
+  },
+  {
+    "id": "JR-TC-004",
+    "input": "I think around 500k, maybe 520",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_price_range": [
+        500000,
+        520000
+      ],
+      "asks_q3_motivation": true
+    },
+    "category": "seller_qualification",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q2",
+      "current_question": 2
+    },
+    "description": "Q2 price answer with range. Should extract price_expectation and advance to Q3 motivation."
+  },
+  {
+    "id": "JR-TC-005",
+    "input": "mid fives",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_price": 550000,
+      "asks_q3_motivation": true
+    },
+    "category": "seller_qualification",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q2",
+      "current_question": 2
+    },
+    "description": "Q2 colloquial price ('mid fives' = $550k). Tests colloquial price extraction regex."
+  },
+  {
+    "id": "JR-TC-006",
+    "input": "We got relocated to Texas for my wife's job, need to sell fast",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_motivation": "job_relocation",
+      "extracts_urgency": "high",
+      "asks_q4_offer": true
+    },
+    "category": "seller_qualification",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q3",
+      "current_question": 3
+    },
+    "description": "Q3 motivation (job relocation + high urgency). Should present cash offer in Q4."
+  },
+  {
+    "id": "JR-TC-007",
+    "input": "My mom passed and I inherited the place, no rush to sell honestly",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_motivation": "inheritance",
+      "extracts_urgency": "low",
+      "asks_q4_offer": true
+    },
+    "category": "seller_qualification",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q3",
+      "current_question": 3
+    },
+    "description": "Q3 motivation (inheritance, low urgency). Should still advance to Q4 offer."
+  },
+  {
+    "id": "JR-TC-008",
+    "input": "Yeah that sounds good, let's do it",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_offer_accepted": true,
+      "extracts_timeline_acceptable": true,
+      "temperature": "hot"
+    },
+    "category": "seller_qualification",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q4",
+      "current_question": 4,
+      "price_expectation": 500000
+    },
+    "description": "Q4 offer accepted. Should mark HOT, trigger qualified status and scheduling."
+  },
+  {
+    "id": "JR-TC-009",
+    "input": "That's way too low, I need at least 600k",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_offer_accepted": false,
+      "temperature": "warm"
+    },
+    "category": "seller_qualification",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q4",
+      "current_question": 4,
+      "price_expectation": 500000
+    },
+    "description": "Q4 offer rejected. Should mark WARM (all 4 answered but no acceptance), soft close."
+  },
+  {
+    "id": "JR-TC-010",
+    "input": "Let me think about it and get back to you",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "triggers_soft_close": true
+    },
+    "category": "seller_qualification",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q4",
+      "current_question": 4,
+      "price_expectation": 500000
+    },
+    "description": "Q4 hesitation phrase triggers soft close response instead of hard push."
+  },
+  {
+    "id": "JR-TC-011",
+    "input": "Looking for a 3 bed 2 bath around $450k in Rancho Cucamonga",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_beds": 3,
+      "extracts_baths": 2,
+      "extracts_price_range": true,
+      "extracts_area": true,
+      "asks_q2_financial": true
+    },
+    "category": "buyer_scheduling",
+    "bot_type": "buyer",
+    "conversation_state": {
+      "current_question": 1
+    },
+    "description": "Buyer Q1 property preferences with all fields. Should extract and advance to Q2 financial readiness."
+  },
+  {
+    "id": "JR-TC-012",
+    "input": "4 bedroom, 3 bath, at least 2000 sqft, under 600k, anywhere in the IE",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "asks_q2_financial": true
+    },
+    "category": "buyer_scheduling",
+    "bot_type": "buyer",
+    "conversation_state": {
+      "current_question": 1
+    },
+    "description": "Buyer Q1 with sqft requirement and broad area. Tests extraction of all preference fields."
+  },
+  {
+    "id": "JR-TC-013",
+    "input": "Yes I'm pre-approved for 500k through Wells Fargo",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_preapproved": true,
+      "asks_q3_timeline": true
+    },
+    "category": "buyer_scheduling",
+    "bot_type": "buyer",
+    "conversation_state": {
+      "current_question": 2
+    },
+    "description": "Buyer Q2 pre-approval confirmed. Should advance to Q3 timeline question."
+  },
+  {
+    "id": "JR-TC-014",
+    "input": "We're paying cash, already sold our place in LA",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_preapproved": true,
+      "asks_q3_timeline": true
+    },
+    "category": "buyer_scheduling",
+    "bot_type": "buyer",
+    "conversation_state": {
+      "current_question": 2
+    },
+    "description": "Buyer Q2 cash buyer. Should extract as financially ready and advance to Q3."
+  },
+  {
+    "id": "JR-TC-015",
+    "input": "We need to move in within 30 days, my lease is up",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_timeline": "0-30 days",
+      "asks_q4_motivation": true
+    },
+    "category": "buyer_scheduling",
+    "bot_type": "buyer",
+    "conversation_state": {
+      "current_question": 3
+    },
+    "description": "Buyer Q3 urgent timeline (0-30 days). Should advance to Q4 motivation."
+  },
+  {
+    "id": "JR-TC-016",
+    "input": "Just browsing for now, maybe next year",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "extracts_timeline": "just browsing"
+    },
+    "category": "buyer_scheduling",
+    "bot_type": "buyer",
+    "conversation_state": {
+      "current_question": 3
+    },
+    "description": "Buyer Q3 cold timeline (just browsing). Should still complete qualification gracefully."
+  },
+  {
+    "id": "JR-TC-017",
+    "input": "Growing family, we need more space for the kids",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "no_seller_questions": true,
+      "extracts_motivation": true
+    },
+    "category": "buyer_scheduling",
+    "bot_type": "buyer",
+    "conversation_state": {
+      "current_question": 4
+    },
+    "description": "Buyer Q4 motivation (growing family). Must NOT ask seller-adjacent questions (condition, worth, etc)."
+  },
+  {
+    "id": "JR-TC-018",
+    "input": "What's my home worth? Can you give me a Zestimate?",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "redirects_to_buying": true,
+      "no_fabricated_values": true
+    },
+    "category": "buyer_scheduling",
+    "bot_type": "buyer",
+    "conversation_state": {
+      "current_question": 2
+    },
+    "description": "Seller-adjacent question in buyer context. Must redirect to buying focus, never fabricate values."
+  },
+  {
+    "id": "JR-TC-019",
+    "input": "Hi I just saw your ad about selling homes in Rancho Cucamonga",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "classifies_as": "seller"
+    },
+    "category": "lead_intake",
+    "bot_type": "lead",
+    "description": "New lead mentioning selling. Should classify as seller intent and route to seller bot."
+  },
+  {
+    "id": "JR-TC-020",
+    "input": "I'm looking to buy a house in the Inland Empire area",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "classifies_as": "buyer"
+    },
+    "category": "lead_intake",
+    "bot_type": "lead",
+    "description": "New lead with buyer intent. Should classify and route to buyer bot."
+  },
+  {
+    "id": "JR-TC-021",
+    "input": "Hey I got your number from a friend, what do you do?",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "asks_clarifying_question": true
+    },
+    "category": "lead_intake",
+    "bot_type": "lead",
+    "description": "Ambiguous lead with no buyer/seller signal. Should ask clarifying question to determine intent."
+  },
+  {
+    "id": "JR-TC-022",
+    "input": "Do you buy houses for cash? I need to sell ASAP",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "classifies_as": "seller",
+      "detects_urgency": true
+    },
+    "category": "lead_intake",
+    "bot_type": "lead",
+    "description": "Urgent seller lead. Should classify as seller with high urgency signal."
+  },
+  {
+    "id": "JR-TC-023",
+    "input": "Can you help me find investment properties?",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "classifies_as": "buyer"
+    },
+    "category": "lead_intake",
+    "bot_type": "lead",
+    "description": "Investment buyer lead. Should classify as buyer intent."
+  },
+  {
+    "id": "JR-TC-024",
+    "input": "I want to sell my current place and buy something bigger",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "handles_dual_intent": true
+    },
+    "category": "lead_intake",
+    "bot_type": "lead",
+    "description": "Dual intent (sell + buy). Should handle gracefully, typically prioritize seller flow first."
+  },
+  {
+    "id": "JR-TC-025",
+    "input": "What are the tax implications of selling my house?",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "persona_jorge": true,
+      "no_legal_advice": true,
+      "deflects_to_professional": true
+    },
+    "category": "lead_intake",
+    "bot_type": "lead",
+    "description": "Legal/tax question. Must deflect to attorney/CPA, never provide advice."
+  },
+  {
+    "id": "JR-TC-026",
+    "input": "",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "handles_gracefully": true,
+      "no_crash": true
+    },
+    "category": "edge_case",
+    "bot_type": "seller",
+    "description": "Empty message. Bot must not crash, should handle gracefully."
+  },
+  {
+    "id": "JR-TC-027",
+    "input": "🤷👍🏠",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "handles_gracefully": true,
+      "no_crash": true
+    },
+    "category": "edge_case",
+    "bot_type": "buyer",
+    "description": "Emoji-only message (shrug + thumbs up + house). Must not crash or extract false data."
+  },
+  {
+    "id": "JR-TC-028",
+    "input": "y",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "does_not_treat_as_yes": true,
+      "handles_gracefully": true
+    },
+    "category": "edge_case",
+    "bot_type": "buyer",
+    "conversation_state": {
+      "current_question": 2
+    },
+    "description": "Single char 'y' must NOT be treated as 'yes' for pre-approval. Substring 'yes' in 'y' is False."
+  },
+  {
+    "id": "JR-TC-029",
+    "input": "asdfjkl;qwerty12345!!!",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "handles_gracefully": true,
+      "no_crash": true,
+      "no_false_extraction": true
+    },
+    "category": "edge_case",
+    "bot_type": "seller",
+    "conversation_state": {
+      "stage": "Q1",
+      "current_question": 1
+    },
+    "description": "Garbage keyboard mash input. Must not crash or extract false condition/price data."
+  },
+  {
+    "id": "JR-TC-030",
+    "input": "Hola, quiero vender mi casa en Rancho Cucamonga",
+    "expected_output_properties": {
+      "max_length": 480,
+      "no_urls": true,
+      "no_ai_disclosure": true,
+      "detects_spanish": true,
+      "triggers_bilingual_handoff": true
+    },
+    "category": "edge_case",
+    "bot_type": "lead",
+    "description": "Spanish language message with seller intent. Must detect Spanish (2+ indicator words: hola, vender, casa) and trigger bilingual handoff."
+  }
+]

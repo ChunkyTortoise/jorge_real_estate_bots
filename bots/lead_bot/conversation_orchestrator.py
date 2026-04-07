@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Dict, Optional
 
+from bots.shared.event_models import DecisionEvent
 from bots.shared.ghl_client import unwrap_ghl_response
 from bots.shared.logger import get_logger
 from bots.shared.conversation_contract import (
@@ -17,6 +18,11 @@ from bots.shared.conversation_contract import (
 )
 
 logger = get_logger(__name__)
+
+
+def emit_decision_event(event: DecisionEvent) -> None:
+    """Log a structured decision event via the existing JSON logger."""
+    logger.info("decision_event", extra={"decision_event": asdict(event)})
 
 
 @dataclass
@@ -96,7 +102,15 @@ async def resolve_mode(
     ghl_client: Any,
 ) -> RoutingDecision:
     if payload.explicit_mode:
-        return RoutingDecision(mode=payload.explicit_mode, source="payload", explicit=True)
+        decision = RoutingDecision(mode=payload.explicit_mode, source="payload", explicit=True)
+        emit_decision_event(DecisionEvent(
+            event_type="mode_resolution",
+            contact_id=payload.contact_id,
+            decision=f"resolved_to_{payload.explicit_mode.value}",
+            reason="explicit mode in payload",
+            bot_type=payload.explicit_mode.value,
+        ))
+        return decision
 
     if cache:
         try:
@@ -106,7 +120,15 @@ async def resolve_mode(
         if cached:
             if isinstance(cached, bytes):
                 cached = cached.decode("utf-8")
-            return RoutingDecision(mode=normalize_conversation_mode(cached), source="canonical_cache")
+            resolved = normalize_conversation_mode(cached)
+            emit_decision_event(DecisionEvent(
+                event_type="mode_resolution",
+                contact_id=payload.contact_id,
+                decision=f"resolved_to_{resolved.value}",
+                reason="cached canonical mode",
+                bot_type=resolved.value,
+            ))
+            return RoutingDecision(mode=resolved, source="canonical_cache")
 
     _ghl_contact: Optional[Dict[str, Any]] = None
     if ghl_client:
@@ -122,7 +144,15 @@ async def resolve_mode(
                 if key in ("ai_mode", "bot_type"):
                     value = cf.get("value") or ""
                     if value:
-                        return RoutingDecision(mode=normalize_conversation_mode(value), source="ghl_custom_field", contact_snapshot=contact_resp)
+                        ghl_mode = normalize_conversation_mode(value)
+                        emit_decision_event(DecisionEvent(
+                            event_type="mode_resolution",
+                            contact_id=payload.contact_id,
+                            decision=f"resolved_to_{ghl_mode.value}",
+                            reason=f"GHL custom field {key}={value}",
+                            bot_type=ghl_mode.value,
+                        ))
+                        return RoutingDecision(mode=ghl_mode, source="ghl_custom_field", contact_snapshot=contact_resp)
         except asyncio.TimeoutError:
             logger.warning(
                 f"GHL get_contact timed out for {payload.contact_id} during mode resolution"
@@ -133,6 +163,13 @@ async def resolve_mode(
             )
 
     if is_likely_spanish(payload.message_body):
+        emit_decision_event(DecisionEvent(
+            event_type="mode_resolution",
+            contact_id=payload.contact_id,
+            decision="resolved_to_bilingual_handoff",
+            reason="Spanish language detected in message",
+            bot_type="bilingual_handoff",
+        ))
         return RoutingDecision(
             mode=ConversationMode.BILINGUAL_HANDOFF,
             source="classifier",
@@ -140,9 +177,30 @@ async def resolve_mode(
             contact_snapshot=_ghl_contact,
         )
     if _has_seller_intent(payload.message_body):
+        emit_decision_event(DecisionEvent(
+            event_type="mode_resolution",
+            contact_id=payload.contact_id,
+            decision="resolved_to_seller",
+            reason="seller intent keywords detected",
+            bot_type="seller",
+        ))
         return RoutingDecision(mode=ConversationMode.SELLER, source="classifier", contact_snapshot=_ghl_contact)
     if _has_buyer_intent(payload.message_body):
+        emit_decision_event(DecisionEvent(
+            event_type="mode_resolution",
+            contact_id=payload.contact_id,
+            decision="resolved_to_buyer",
+            reason="buyer intent keywords detected",
+            bot_type="buyer",
+        ))
         return RoutingDecision(mode=ConversationMode.BUYER, source="classifier", contact_snapshot=_ghl_contact)
+    emit_decision_event(DecisionEvent(
+        event_type="mode_resolution",
+        contact_id=payload.contact_id,
+        decision="resolved_to_lead_intake",
+        reason="no explicit mode or intent detected, defaulting to lead intake",
+        bot_type="lead_intake",
+    ))
     return RoutingDecision(
         mode=ConversationMode.LEAD_INTAKE,
         source="classifier",

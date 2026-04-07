@@ -16,6 +16,7 @@ from bots.shared.bot_settings import (
     KNOWN_BOTS as _known_bots,
 )
 from bots.shared.config import settings
+from bots.shared.cost_tracker import get_cost_tracker
 from bots.shared.conversation_contract import (
     CONVERSATION_MODE_CACHE_PREFIX,
     extract_canonical_view,
@@ -324,6 +325,15 @@ async def admin_calendar_debug(_=Depends(get_admin_or_apikey)):
         result["write_error"] = str(exc)
 
     return result
+
+
+@router.get("/admin/costs")
+async def admin_get_costs(period: str = "24h", _=Depends(get_admin_or_apikey)):
+    """Return LLM cost summary for the given period (24h, 7d, 30d)."""
+    if period not in ("24h", "7d", "30d"):
+        raise HTTPException(status_code=400, detail="period must be 24h, 7d, or 30d")
+    tracker = get_cost_tracker()
+    return await tracker.get_summary(period)
 
 
 @router.get("/health/schema-check")

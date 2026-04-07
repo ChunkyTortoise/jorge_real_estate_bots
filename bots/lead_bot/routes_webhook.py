@@ -10,7 +10,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
-from bots.lead_bot.conversation_orchestrator import normalize_payload, resolve_mode
+from bots.lead_bot.conversation_orchestrator import emit_decision_event, normalize_payload, resolve_mode
+from bots.shared.event_models import DecisionEvent
 from bots.shared.config import settings
 from bots.shared.conversation_contract import (
     CONVERSATION_MODE_CACHE_PREFIX,
@@ -234,6 +235,12 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
             try:
                 _srs = StallReengagementService(redis_client=_get_raw_redis())
                 if _srs.is_opt_out_message(message_body):
+                    emit_decision_event(DecisionEvent(
+                        event_type="opt_out_detection",
+                        contact_id=contact_id,
+                        decision="opt_out_recorded",
+                        reason=f"opt-out keyword detected in message: {message_body[:60]}",
+                    ))
                     await _srs.record_opt_out(contact_id)
                     if state._ghl_client:
                         try:
@@ -381,6 +388,14 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 f"source={_bot_type_source!r}, msg={message_body[:60]!r}"
             )
 
+            emit_decision_event(DecisionEvent(
+                event_type="bot_routing",
+                contact_id=contact_id,
+                decision=f"routed_to_{bot_type_lower}_bot",
+                reason=f"mode={mode.value} resolved via {_bot_type_source}",
+                bot_type=bot_type_lower,
+            ))
+
             if manual_takeover:
                 mr = await _handle_manual_takeover(
                     contact_id=contact_id, location_id=location_id,
@@ -407,12 +422,26 @@ async def unified_ghl_webhook(request: Request, background_tasks: BackgroundTask
                 if mr.early_return is not None:
                     return mr.early_return
             elif mode == ConversationMode.BILINGUAL_HANDOFF:
+                emit_decision_event(DecisionEvent(
+                    event_type="handoff_trigger",
+                    contact_id=contact_id,
+                    decision="bilingual_handoff",
+                    reason="Spanish language detected, handing off for bilingual support",
+                    bot_type=bot_type_lower,
+                ))
                 mr = await _handle_bilingual_handoff(
                     contact_id=contact_id, location_id=location_id,
                     result_meta=result_meta, state=state,
                     _webhook_cache=_webhook_cache,
                 )
             elif mode == ConversationMode.HUMAN_HANDOFF:
+                emit_decision_event(DecisionEvent(
+                    event_type="handoff_trigger",
+                    contact_id=contact_id,
+                    decision="human_handoff",
+                    reason=routing.handoff_reason or "human handoff requested",
+                    bot_type=bot_type_lower,
+                ))
                 mr = await _handle_human_handoff(
                     contact_id=contact_id, location_id=location_id,
                     bot_type_lower=bot_type_lower, result_meta=result_meta,
