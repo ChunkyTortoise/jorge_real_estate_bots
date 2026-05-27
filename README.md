@@ -13,7 +13,7 @@
 [![Tests](https://img.shields.io/badge/tests-1%2C707%20passing-D4A574)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
-> **Production system** — Automated lead qualification for a real estate agency using GHL webhooks, Claude AI, and Redis. 1,707 tests passing.
+> **Production system** - Automated lead qualification for a real estate agency using GHL webhooks, Claude AI, and Redis. 1,707 tests passing.
 
 > Built for Jorge Salas (Acuity Real Estate, Rancho Cucamonga CA) by Cayman Roden / Roden AI Solutions. Processed 500+ inbound leads via GoHighLevel CRM (Jan-Mar 2026) with zero downtime. This is not a tutorial or demo -- it was a deployed, revenue-generating AI system.
 
@@ -165,7 +165,7 @@ Real estate agencies lose 40-60% of leads due to slow follow-up. This system:
 - Responds to incoming GHL webhooks within seconds
 - Qualifies leads using Claude AI conversation analysis
 - Books appointments directly into the agency calendar
-- All integrations configurable via environment variables — no code changes needed for new verticals
+- All integrations configurable via environment variables - no code changes needed for new verticals
 
 ## Quick Start
 
