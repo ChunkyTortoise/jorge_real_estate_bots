@@ -12,3 +12,7 @@ ced2ce342bad2978da95868103e4dc601297d531:HANDOFF.md:curl-auth-header:104
 8e315ad0c01115668e9c77710a9e5b702d7bf29c:docs/OPERATIONS.md:curl-auth-header:50
 8e315ad0c01115668e9c77710a9e5b702d7bf29c:docs/OPERATIONS.md:curl-auth-header:63
 8e315ad0c01115668e9c77710a9e5b702d7bf29c:docs/OPERATIONS.md:curl-auth-header:136
+
+# 2026-05-26 maintainer: local-only stash (stash@{0} from feat/hiring-signal-enhancement, 2026-05-19) contains an untracked credentials.md. Not in any branch, not pushed. Drop the stash to remove from local git state if no longer needed.
+cb1817d4516d9f95a00fff2adc639276a131768d:docs/handoff/markdown/04-CREDENTIALS.md:anthropic-api-key:28
+cb1817d4516d9f95a00fff2adc639276a131768d:docs/handoff/markdown/04-CREDENTIALS.md:generic-api-key:161

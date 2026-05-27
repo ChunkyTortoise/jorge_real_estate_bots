@@ -69,3 +69,6 @@ docs/jorge-update-email.md
 docs/jorge-status-*.md
 docs/bot_type_scan_report.json
 docs/conversation_schema_report.json
+
+# github-maintainer skill artifacts
+.maintenance/
