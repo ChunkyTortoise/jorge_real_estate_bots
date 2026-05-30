@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     ghl_api_key: str
     ghl_location_id: str
     # ========== CLAUDE AI CONFIGURATION ==========
-    claude_model: str = "claude-sonnet-4-5-20250929"
-    claude_sonnet_model: str = "claude-sonnet-4-5-20250929"
+    claude_model: str = "claude-sonnet-4-6"
+    claude_sonnet_model: str = "claude-sonnet-4-6"
     claude_haiku_model: str = "claude-haiku-4-5-20251001"
     claude_opus_model: str = "claude-opus-4-8"
 

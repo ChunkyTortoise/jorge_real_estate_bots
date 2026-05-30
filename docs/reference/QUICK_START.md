@@ -210,7 +210,7 @@ curl -H "Authorization: Bearer $ANTHROPIC_API_KEY" https://api.anthropic.com/v1/
 # Common fixes:
 # 1. Verify API key in .env
 # 2. Check rate limits (1000 requests/day free tier)
-# 3. Verify model name: claude-3-5-sonnet-20241022
+# 3. Verify model name: claude-sonnet-4-6
 ```
 
 ### "GHL Webhook Not Firing"

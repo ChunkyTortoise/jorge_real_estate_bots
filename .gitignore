@@ -60,9 +60,11 @@ test.db
 test_local.db
 .claude/
 docs/TAG_SLEEP_PROPOSAL.md
+AGENTS.md.bak-*
 
 # Client deliverables (not for public repo)
 output/
+_attic/
 
 # Internal client communication (PII)
 docs/jorge-update-email.md

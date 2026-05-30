@@ -15,7 +15,7 @@ def tracker(monkeypatch):
 
 
 def _make_record(
-    model="claude-sonnet-4-5-20250514",
+    model="claude-sonnet-4-6",
     input_tokens=1000,
     output_tokens=500,
     bot_type="lead",
@@ -44,7 +44,7 @@ async def test_record_stores_in_redis(tracker):
     assert stored is not None
     assert len(stored) == 1
     assert stored[0]["request_id"] == "req-1"
-    assert stored[0]["model"] == "claude-sonnet-4-5-20250514"
+    assert stored[0]["model"] == "claude-sonnet-4-6"
 
 
 @pytest.mark.asyncio
@@ -58,7 +58,7 @@ async def test_get_summary_returns_all_fields(tracker):
     assert summary["period"] == "24h"
     assert summary["request_count"] == 2
     assert summary["total_cost"] > 0
-    assert "claude-sonnet-4-5-20250514" in summary["by_model"]
+    assert "claude-sonnet-4-6" in summary["by_model"]
     assert "seller" in summary["by_bot"]
     assert "buyer" in summary["by_bot"]
     assert summary["per_request_average"] > 0
@@ -75,9 +75,17 @@ async def test_cost_calculation_haiku(tracker):
 @pytest.mark.asyncio
 async def test_cost_calculation_sonnet(tracker):
     """Sonnet pricing: $3.00/M input, $15.00/M output."""
-    cost = CostTracker.calculate_cost("claude-sonnet-4-5-20250514", 1_000_000, 1_000_000)
+    cost = CostTracker.calculate_cost("claude-sonnet-4-6", 1_000_000, 1_000_000)
     # 1M input * 3.0 + 1M output * 15.0 = 18.0
     assert abs(cost - 18.0) < 0.0001
+
+
+@pytest.mark.asyncio
+async def test_cost_calculation_opus(tracker):
+    """Opus 4.8 pricing: $5.00/M input, $25.00/M output."""
+    cost = CostTracker.calculate_cost("claude-opus-4-8", 1_000_000, 1_000_000)
+    # 1M input * 5.0 + 1M output * 25.0 = 30.0
+    assert abs(cost - 30.0) < 0.0001
 
 
 @pytest.mark.asyncio

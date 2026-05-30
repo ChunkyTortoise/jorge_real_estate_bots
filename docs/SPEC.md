@@ -363,10 +363,10 @@ GHL_WEBHOOK_PUBLIC_KEY=  # Optional RSA verification
 
 ```bash
 # AI Model Override
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
-CLAUDE_SONNET_MODEL=claude-3-5-sonnet-20241022
-CLAUDE_HAIKU_MODEL=claude-3-5-haiku-20241022
-CLAUDE_OPUS_MODEL=claude-3-opus-20240229
+CLAUDE_MODEL=claude-sonnet-4-6
+CLAUDE_SONNET_MODEL=claude-sonnet-4-6
+CLAUDE_HAIKU_MODEL=claude-haiku-4-5-20251001
+CLAUDE_OPUS_MODEL=claude-opus-4-8
 
 # Business Rules
 JORGE_MIN_PRICE=200000

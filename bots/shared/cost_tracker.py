@@ -4,9 +4,7 @@ Cost Tracker for Jorge Real Estate AI Bots.
 Tracks per-request LLM costs and aggregates by model, bot type, and time period.
 Stores records in Redis with daily keys for efficient time-range queries.
 """
-import json
-import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -37,9 +35,9 @@ class CostTracker:
     time-range queries and automatic expiry.
     """
 
-    # Anthropic pricing (per million tokens) - April 2026
+    # Anthropic pricing (per million tokens) - May 2026
     MODEL_PRICING: Dict[str, Dict[str, float]] = {
-        "claude-sonnet-4-5-20250929": {"input": 3.0, "output": 15.0},
+        "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
         "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.0},
         "claude-opus-4-8": {"input": 5.0, "output": 25.0},
     }

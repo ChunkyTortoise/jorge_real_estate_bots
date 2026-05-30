@@ -57,7 +57,7 @@ REDIS_URL=redis://localhost:6379
 
 # Claude AI
 ANTHROPIC_API_KEY=your_claude_api_key
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
+CLAUDE_MODEL=claude-sonnet-4-6
 
 # GoHighLevel
 GHL_API_KEY=your_ghl_api_key

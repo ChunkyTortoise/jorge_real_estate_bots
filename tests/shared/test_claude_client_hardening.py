@@ -4,7 +4,7 @@ Tests for INCREMENT 1A, 3A, 3B: Claude client persona seal, retry, history trunc
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bots.shared.claude_client import ClaudeClient, _FALLBACK_SYSTEM
+from bots.shared.claude_client import ClaudeClient, TaskComplexity, _FALLBACK_SYSTEM
 
 
 class TestFallbackPromptNoAIMention:
@@ -128,6 +128,47 @@ class TestHistoryTruncation:
         call_kwargs = async_client.messages.create.call_args[1]
         messages = call_kwargs["messages"]
         assert len(messages) == 3  # 2 history + 1 prompt
+
+
+class TestSamplingParamGuard:
+    """Opus 4.8 rejects sampling params; Sonnet keeps normal sampling behavior."""
+
+    @staticmethod
+    def _mock_response():
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="ok")]
+        mock_response.usage.input_tokens = 10
+        mock_response.usage.output_tokens = 5
+        mock_response.usage.cache_creation_input_tokens = 0
+        mock_response.usage.cache_read_input_tokens = 0
+        mock_response.stop_reason = "end_turn"
+        return mock_response
+
+    @pytest.mark.asyncio
+    async def test_opus_48_omits_temperature(self):
+        client = ClaudeClient(api_key="test-key")
+        async_client = AsyncMock()
+        async_client.messages.create = AsyncMock(return_value=self._mock_response())
+        client._async_client = async_client
+
+        await client.agenerate(prompt="price strategy", complexity=TaskComplexity.HIGH_STAKES)
+
+        call_kwargs = async_client.messages.create.call_args[1]
+        assert call_kwargs["model"] == "claude-opus-4-8"
+        assert "temperature" not in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_sonnet_46_keeps_temperature(self):
+        client = ClaudeClient(api_key="test-key")
+        async_client = AsyncMock()
+        async_client.messages.create = AsyncMock(return_value=self._mock_response())
+        client._async_client = async_client
+
+        await client.agenerate(prompt="qualify lead", temperature=0.4)
+
+        call_kwargs = async_client.messages.create.call_args[1]
+        assert call_kwargs["model"] == "claude-sonnet-4-6"
+        assert call_kwargs["temperature"] == 0.4
 
 
 class TestClaudeRetry:
