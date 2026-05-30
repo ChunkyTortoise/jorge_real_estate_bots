@@ -39,9 +39,9 @@ class CostTracker:
 
     # Anthropic pricing (per million tokens) - April 2026
     MODEL_PRICING: Dict[str, Dict[str, float]] = {
-        "claude-sonnet-4-5-20250514": {"input": 3.0, "output": 15.0},
+        "claude-sonnet-4-5-20250929": {"input": 3.0, "output": 15.0},
         "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.0},
-        "claude-opus-4-5-20250514": {"input": 15.0, "output": 75.0},
+        "claude-opus-4-8": {"input": 5.0, "output": 25.0},
     }
 
     # Fallback pricing for unknown models (use Sonnet pricing)

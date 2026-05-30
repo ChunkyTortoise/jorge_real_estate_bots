@@ -36,6 +36,13 @@ except ImportError:
     _CLAUDE_RETRY_EXCEPTIONS = (Exception,)
 
 
+def _rejects_sampling_params(model: str) -> bool:
+    """Opus 4.7 and later (including 4.8) reject non-default temperature/top_p/top_k
+    with a 400 error; they use adaptive thinking and the effort parameter instead.
+    Sonnet and Haiku models still accept sampling params."""
+    return (model or "").startswith(("claude-opus-4-7", "claude-opus-4-8"))
+
+
 class TaskComplexity(Enum):
     """Task complexity for intelligent routing."""
     ROUTINE = "routine"      # Lead categorization, basic scoring (Haiku)
@@ -177,14 +184,17 @@ class ClaudeClient:
                 system_blocks.append({"type": "text", "text": system_prompt})
 
         try:
-            response = await self._async_client.messages.create(
-                model=target_model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                system=system_blocks if system_blocks else _FALLBACK_SYSTEM,
-                messages=messages,
-                extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"}
-            )
+            create_kwargs = {
+                "model": target_model,
+                "max_tokens": max_tokens,
+                "system": system_blocks if system_blocks else _FALLBACK_SYSTEM,
+                "messages": messages,
+                "extra_headers": {"anthropic-beta": "prompt-caching-2024-07-31"},
+            }
+            # Opus 4.7+ (incl. 4.8) reject non-default sampling params with a 400.
+            if not _rejects_sampling_params(target_model):
+                create_kwargs["temperature"] = temperature
+            response = await self._async_client.messages.create(**create_kwargs)
 
             # Extract metrics
             input_tokens = response.usage.input_tokens if hasattr(response, 'usage') else None
@@ -279,13 +289,16 @@ class ClaudeClient:
 
         target_model = self._get_routed_model(complexity)
 
-        response = self._client.messages.create(
-            model=target_model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system_prompt or _FALLBACK_SYSTEM,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        create_kwargs = {
+            "model": target_model,
+            "max_tokens": max_tokens,
+            "system": system_prompt or _FALLBACK_SYSTEM,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        # Opus 4.7+ (incl. 4.8) reject non-default sampling params with a 400.
+        if not _rejects_sampling_params(target_model):
+            create_kwargs["temperature"] = temperature
+        response = self._client.messages.create(**create_kwargs)
 
         input_tokens = response.usage.input_tokens if hasattr(response, 'usage') else None
         output_tokens = response.usage.output_tokens if hasattr(response, 'usage') else None
