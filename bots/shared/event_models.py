@@ -11,7 +11,7 @@ This module defines Pydantic models for all event types in the Jorge system:
 Events follow a standard schema with validation, serialization, and type safety.
 """
 
-from dataclasses import asdict, dataclass, field as dc_field
+from dataclasses import dataclass, field as dc_field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Literal, Optional, Type, Union
