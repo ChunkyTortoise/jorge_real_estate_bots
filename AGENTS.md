@@ -1,6 +1,6 @@
-# AGENTS.md
+# jorge-real-estate-bots: Project Context
 
-This file provides guidance to WARP (warp.dev) when working with code in this repository.
+FastAPI bot for GoHighLevel-integrated real estate workflows. Stack: FastAPI, Redis, Claude, Postgres, async SQLAlchemy. Single bot process at port 8001; all webhooks route through `bots/lead_bot/main.py`.
 
 ## Start here
 - `README.md` for the quickest “how to run” path.
@@ -37,7 +37,7 @@ alembic upgrade head
 ### Run the service (local)
 All three bots (Lead, Seller, Buyer) run in a **single FastAPI process** using APIRouter. There is one entry point.
 ```bash
-# Single bot process (:8001) — handles all webhook routes
+# Single bot process (:8001), handles all webhook routes
 uvicorn bots.lead_bot.main:app --host 0.0.0.0 --port 8001 --reload
 
 # Or via Makefile shortcut
@@ -94,9 +94,9 @@ mypy bots/ command_center/ database/
 ## High-level architecture (big picture)
 
 ### Services and boundaries
-Single-process architecture — all bots mount as APIRouters into `bots/lead_bot/main.py`:
+Single-process architecture: all bots mount as APIRouters into `bots/lead_bot/main.py`:
 - `bots/lead_bot/`: **Sole entry point** (`main.py`). Hosts all routers: `routes_webhook.py`, `routes_dashboard.py`, `routes_admin.py`, `routes_realtime.py`, `routes_productization.py`, `routes_test_endpoints.py`.
-- `bots/seller_bot/`: Seller qualification logic (Q0–Q4). Imported as a class by `routes_webhook.py`. No separate FastAPI app.
+- `bots/seller_bot/`: Seller qualification logic (Q0-Q4). Imported as a class by `routes_webhook.py`. No separate FastAPI app.
 - `bots/buyer_bot/`: Buyer qualification logic. Imported as a class by `routes_webhook.py`. No separate FastAPI app.
 - `command_center/`: Streamlit dashboard (“Command Center”). Entry: `command_center/dashboard_v3.py`.
 - `database/`: Async SQLAlchemy models/session + small “repository” helper functions.

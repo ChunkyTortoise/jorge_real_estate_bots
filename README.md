@@ -15,7 +15,7 @@
 
 > **Production system** - Automated lead qualification for a real estate agency using GHL webhooks, Claude AI, and Redis. 1,707 tests passing.
 
-> Built for Jorge Salas (Acuity Real Estate, Rancho Cucamonga CA) by Cayman Roden / Roden AI Solutions. Processed 500+ inbound leads via GoHighLevel CRM (Jan-Mar 2026) with zero downtime. This is not a tutorial or demo -- it was a deployed, revenue-generating AI system.
+> Built for Jorge Salas (Acuity Real Estate, Rancho Cucamonga CA) by Cayman Roden in a contract engagement. Processed 500+ inbound leads via GoHighLevel CRM (Jan-Mar 2026) with zero downtime. This is not a tutorial or demo -- it was a deployed, revenue-generating AI system.
 
 ### Production Dashboard (Lyrio)
 
@@ -382,7 +382,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Built By
 
-Developed by **[Cayman Roden](https://github.com/ChunkyTortoise)** (Roden AI Solutions) as a production engagement for Jorge Salas (Acuity Real Estate). The system has been in continuous production since January 2026.
+Developed by **[Cayman Roden](https://github.com/ChunkyTortoise)** in a contract engagement for Jorge Salas (Acuity Real Estate). The system has been in continuous production since January 2026.
 
 - GitHub: [ChunkyTortoise](https://github.com/ChunkyTortoise)
 - Portfolio: [EnterpriseHub](https://github.com/ChunkyTortoise/EnterpriseHub)
