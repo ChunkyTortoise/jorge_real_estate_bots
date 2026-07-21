@@ -57,6 +57,6 @@ sentry-sdk[fastapi]==1.40.0
 
 # ========== PDF GENERATION (Seller Bot CMA) ==========
 reportlab==4.4.9
-pillow==12.1.0
+pillow==12.3.0
 
 # celery removed — no Celery workers or task definitions in this codebase
