@@ -19,13 +19,7 @@
 
 ### Production Dashboard (Lyrio)
 
-| Chat Interface | Lead Activity | Bot Management |
-|---------------|---------------|----------------|
-| ![Chat](lyrio-chat-page.png) | ![Activity](lyrio-activity-page.png) | ![Bots](lyrio-bots-page.png) |
-
-| Cost Tracking | Lead Pipeline | Tone Settings |
-|--------------|---------------|---------------|
-| ![Costs](lyrio-costs-page.png) | ![Leads](lyrio-leads-page.png) | ![Tone](lyrio-tone-page.png) |
+The production dashboard is not included in this public repository. The API endpoints and the dashboard integration points are documented below.
 
 ## What This Solves
 
@@ -341,7 +335,7 @@ Helper scripts for finish-line verification:
 DATABASE_URL=... python scripts/check_conversation_schema.py
 
 # Hit deployed health/admin/dashboard endpoints and emit a readiness report
-ADMIN_API_KEY=... JORGE_CONTACT_ID=... python scripts/production_readiness_report.py --base-url https://jorge-realty-ai-xxdf.onrender.com
+ADMIN_API_KEY=... JORGE_CONTACT_ID=... python scripts/production_readiness_report.py --base-url https://your-service.onrender.com
 
 # Validate live or exported GHL tags/custom fields/workflows against the contract
 GHL_API_KEY=... GHL_LOCATION_ID=... python scripts/validate_ghl_contract.py --ghl-api-key "$GHL_API_KEY" --location-id "$GHL_LOCATION_ID"
