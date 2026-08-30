@@ -2,7 +2,7 @@
 
 # Jorge Real Estate Bots
 
-**40% of real estate leads go cold because agents take >5 minutes to respond.** Jorge uses one unified conversation system with specialized seller, buyer, and lead-intake handlers behind a single routing layer.
+Jorge uses one unified conversation system with specialized seller, buyer, and lead-intake handlers behind a single routing layer.
 
 [![Production Deployed](https://img.shields.io/badge/Production-Jan--Mar_2026-46E3B7)](https://render.com)
 [![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI&color=C1440E)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
@@ -10,12 +10,11 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Redis](https://img.shields.io/badge/Redis-DC382D.svg?logo=redis&logoColor=white)](https://redis.io)
 [![Claude](https://img.shields.io/badge/Claude_API-Anthropic-orange)](https://anthropic.com)
-[![Tests](https://img.shields.io/badge/tests-1%2C707%20passing-D4A574)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F1C40F.svg)](LICENSE)
 
-> **Production system** - Automated lead qualification for a real estate agency using GHL webhooks, Claude AI, and Redis. 1,707 tests passing.
+> **Client system** - Automated lead qualification for a real estate agency using GHL webhooks, Claude AI, and Redis.
 
-> Built for Jorge Salas (Acuity Real Estate, Rancho Cucamonga CA) by Cayman Roden in a contract engagement. Processed 500+ inbound leads via GoHighLevel CRM (Jan-Mar 2026) with zero downtime. This is not a tutorial or demo -- it was a deployed, revenue-generating AI system.
+> Built for Acuity Real Estate in a paid contract engagement. The client reported 500+ inbound leads processed through GoHighLevel CRM during the January to March 2026 deployment. The handoff included 1,700+ tests and an audit of 226 existing GoHighLevel workflows.
 
 ### Production Dashboard (Lyrio)
 
@@ -31,7 +30,7 @@ The production dashboard is not included in this public repository. The API endp
 
 | Metric | Value |
 |--------|-------|
-| Tests | **1,707 passing** |
+| Tests at handoff | **1,700+** |
 | Public model | 1 canonical conversation system |
 | Cross-Bot Handoff | 0.7 confidence threshold, circular prevention, rate limiting |
 | CRM Integration | GoHighLevel real-time sync |
@@ -43,20 +42,16 @@ The production dashboard is not included in this public repository. The API endp
 
 | Metric | Value |
 |--------|-------|
-| Leads qualified | 500+ since January 2026 |
-| Uptime | Zero downtime since launch (24/7) |
-| Response time | <500ms average |
+| Inbound leads processed | Client-reported 500+ during January to March 2026 |
 | Languages | English and Spanish (no additional staffing) |
 
-## Production Metrics
+## Deployment and Implementation Evidence
 
-Verified operational data from production deployment (Jan-Mar 2026):
+Documented evidence from the January to March 2026 deployment and repository implementation:
 
 | System | Metric | Value | How Verified |
 |--------|--------|-------|-------------|
-| **Lead Processing** | Total leads handled | 500+ | GHL contact records |
-| **Uptime** | Downtime incidents | 0 | Render health checks, 24/7 |
-| **Response Latency** | Average response time | <500ms | FastAPI request logging |
+| **Lead Processing** | Total inbound leads processed | Client-reported 500+ | Client reporting for the January to March 2026 deployment |
 | **Webhook Reliability** | Deduplication | Two-phase TTL (120s guard + 300s post-success) | `routes_webhook.py` dedup keys |
 | **Webhook Reliability** | Per-contact lock | Atomic `setnx`, 90s TTL | Prevents concurrent message handling |
 | **Rate Limiting** | Global | Per-minute + per-endpoint | `rate_limit_middleware.py` |
@@ -70,7 +65,7 @@ Verified operational data from production deployment (Jan-Mar 2026):
 | **Response Safety** | Identity filters | 38 regex patterns | `response_filter.py` |
 | **Response Safety** | Output truncation | 480 chars at word boundary | SMS-compatible responses |
 | **Bilingual** | Spanish detection | 2+ indicator words from frozen set | Auto-routes to BILINGUAL_HANDOFF |
-| **Test Coverage** | Passing tests | 1,707 | `pytest tests/ -q` |
+| **Test Suite** | Tests at handoff | 1,700+ | Handoff repository state |
 | **Retry Logic** | Anthropic API | Exponential backoff (2s-15s) via tenacity | RateLimitError + InternalServerError |
 
 ## For Hiring Managers
@@ -81,8 +76,6 @@ Verified operational data from production deployment (Jan-Mar 2026):
 | **Backend / AI Automation Engineer** | Webhook normalization + dedup + per-contact locking ([`bots/lead_bot/routes_webhook.py`](bots/lead_bot/routes_webhook.py)), Redis rate limiting, GHL CRM real-time sync | IBM GenAI Engineering (144h), Vanderbilt Agentic AI (58h) |
 | **CRM / Marketing Automation** | Full AWARENESS→CONVERSION funnel attribution ([`bots/shared/funnel_attribution.py`](bots/shared/funnel_attribution.py)), SMS re-engagement sequences ([`bots/shared/stall_reengagement.py`](bots/shared/stall_reengagement.py)), campaign metrics ([`bots/shared/sms_metrics_collector.py`](bots/shared/sms_metrics_collector.py)) | Google Digital Marketing (190h), Meta Social Media Marketing (83h) |
 | **Data Analyst / BI** | Lead dashboard API ([`bots/lead_bot/routes_dashboard.py`](bots/lead_bot/routes_dashboard.py)), funnel conversion metrics, per-stage ROI tracking | Google Data Analytics (181h), IBM BI Analyst (141h) |
-
-→ Full cert-to-code mapping: [`docs/certifications.md`](docs/certifications.md) (920h across 8 certifications)
 
 ## API Overview
 
@@ -155,7 +148,7 @@ flowchart TB
 
 ## Domain Context
 
-Real estate agencies lose 40-60% of leads due to slow follow-up. This system:
+This system:
 - Responds to incoming GHL webhooks within seconds
 - Qualifies leads using Claude AI conversation analysis
 - Books appointments directly into the agency calendar
@@ -184,7 +177,7 @@ docker compose up
 
 ### Render Deployment
 
-Production ran on Render (Jan-Mar 2026), processing 500+ leads with zero downtime. The repo includes `render.yaml` for Render Blueprint deployment. To redeploy, connect the repo and configure the `jorge-env` environment group with:
+Production ran on Render from January to March 2026. The client reported 500+ inbound leads processed during that period. The repo includes `render.yaml` for Render Blueprint deployment. To redeploy, connect the repo and configure the `jorge-env` environment group with:
 `REDIS_URL`, `GHL_API_KEY`, `ADMIN_API_KEY`, `ANTHROPIC_API_KEY`, `GHL_LOCATION_ID`, `JORGE_USER_ID`, `JORGE_CALENDAR_ID`
 
 ## Bot Capabilities
@@ -204,7 +197,7 @@ Production ran on Render (Jan-Mar 2026), processing 500+ leads with zero downtim
 | AI | Claude (Haiku/Sonnet routing) |
 | Cache | Redis (sorted sets, rate limiting, bot state, funnel attribution) |
 | CRM | GoHighLevel (webhooks, custom fields, workflows) |
-| Testing | pytest, pytest-asyncio (1,707 tests passing) |
+| Testing | pytest, pytest-asyncio (1,700+ tests at handoff) |
 
 ## Project Structure
 
@@ -230,7 +223,7 @@ jorge_real_estate_bots/
 │   └── buyer_bot/           # Buyer qualification + property matching
 ├── database/                # SQLAlchemy models, async session
 ├── command_center/          # Streamlit dashboard components
-├── tests/                   # 1,707 passing tests
+├── tests/                   # Unit, integration, and contract tests
 ├── docker-compose.yml       # Redis + app + dashboard
 ├── render.yaml              # Render Blueprint config
 └── Dockerfile
@@ -370,16 +363,13 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Related Projects
 
-- [EnterpriseHub](https://github.com/ChunkyTortoise/EnterpriseHub) -- Full real estate AI platform this was extracted from, with BI dashboards and CRM integration
-- [Lyrio Dashboard](https://github.com/ChunkyTortoise/lyrio-dashboard) -- Streamlit analytics dashboard with AI concierge, connected to Jorge API
 - [ai-orchestrator](https://github.com/ChunkyTortoise/ai-orchestrator) -- AgentForge: unified async LLM interface (Claude, Gemini, OpenAI, Perplexity)
 
 ## Built By
 
-Developed by **[Cayman Roden](https://github.com/ChunkyTortoise)** in a contract engagement for Jorge Salas (Acuity Real Estate). The system has been in continuous production since January 2026.
+Developed by **[Cayman Roden](https://github.com/ChunkyTortoise)** in a paid contract engagement for Acuity Real Estate. The documented deployment period is January to March 2026.
 
 - GitHub: [ChunkyTortoise](https://github.com/ChunkyTortoise)
-- Portfolio: [EnterpriseHub](https://github.com/ChunkyTortoise/EnterpriseHub)
 
 ## License
 
