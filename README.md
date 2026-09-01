@@ -45,6 +45,22 @@ The production dashboard is not included in this public repository. The API endp
 | Inbound leads processed | Client-reported 500+ during January to March 2026 |
 | Languages | English and Spanish (no additional staffing) |
 
+## Scope and Contribution
+
+What I built, and what was already running before I arrived. A reviewer should not have to guess where the client's platform ends and my engineering begins.
+
+**Mine.** Every line of application code in this repository. 188 commits, sole author, from the initial commit on 2026-01-23 through handoff. 178 of those fall inside the January to March 2026 engagement window, 112 of them feature, fix, refactor, or test commits. The test suite is mine as well: 1,729 test functions across 96 files.
+
+```bash
+git log --format='%an' | sort -u                    # one author
+git log --format='%ci' | cut -c1-7 | sort | uniq -c # commits by month
+rg -c '^\s*(async )?def test_' tests/              # test functions per file
+```
+
+**Not mine.** GoHighLevel is the client's CRM platform. I built the integration layer against it (webhook normalization, deduplication, per-contact locking, real-time sync), not the platform. The 226 GoHighLevel workflows referenced below were **pre-existing client configuration**; that work was an inventory and findings audit over what was already running, not workflows I authored. The production dashboard (Lyrio) is the client's and is not in this repository.
+
+**Client-reported, not independently audited.** The 500+ inbound lead figure comes from the client's GoHighLevel contact records for the January to March 2026 run. I did not re-count it from a raw export, and it should be read as client reporting rather than a third-party audited number.
+
 ## Deployment and Implementation Evidence
 
 Documented evidence from the January to March 2026 deployment and repository implementation:
