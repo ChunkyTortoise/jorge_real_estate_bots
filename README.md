@@ -4,7 +4,7 @@
 
 Jorge uses one unified conversation system with specialized seller, buyer, and lead-intake handlers behind a single routing layer.
 
-[![Production Deployed](https://img.shields.io/badge/Production-Jan--Mar_2026-46E3B7)](https://render.com)
+[![Production Deployed](https://img.shields.io/badge/Production-Jan--Mar_2026-46E3B7)](#render-deployment)
 [![CI](https://img.shields.io/github/actions/workflow/status/ChunkyTortoise/jorge_real_estate_bots/ci.yml?label=CI&color=C1440E)](https://github.com/ChunkyTortoise/jorge_real_estate_bots/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -86,12 +86,12 @@ Documented evidence from the January to March 2026 deployment and repository imp
 
 ## For Hiring Managers
 
-| If you're evaluating for... | Where to look | Training behind it |
-|-----------------------------|--------------|-------------------|
-| **AI / ML Engineer** | Claude conversation engine ([`bots/shared/claude_client.py`](bots/shared/claude_client.py)), confidence-based model routing ([`bots/shared/business_rules.py`](bots/shared/business_rules.py)), multi-turn memory management | IBM GenAI Engineering (144h), Microsoft AI & ML Engineering (75h) |
-| **Backend / AI Automation Engineer** | Webhook normalization + dedup + per-contact locking ([`bots/lead_bot/routes_webhook.py`](bots/lead_bot/routes_webhook.py)), Redis rate limiting, GHL CRM real-time sync | IBM GenAI Engineering (144h), Vanderbilt Agentic AI (58h) |
-| **CRM / Marketing Automation** | Full AWARENESS→CONVERSION funnel attribution ([`bots/shared/funnel_attribution.py`](bots/shared/funnel_attribution.py)), SMS re-engagement sequences ([`bots/shared/stall_reengagement.py`](bots/shared/stall_reengagement.py)), campaign metrics ([`bots/shared/sms_metrics_collector.py`](bots/shared/sms_metrics_collector.py)) | Google Digital Marketing (190h), Meta Social Media Marketing (83h) |
-| **Data Analyst / BI** | Lead dashboard API ([`bots/lead_bot/routes_dashboard.py`](bots/lead_bot/routes_dashboard.py)), funnel conversion metrics, per-stage ROI tracking | Google Data Analytics (181h), IBM BI Analyst (141h) |
+| If you're evaluating for... | Where to look | Production Evidence & Design |
+|-----------------------------|--------------|------------------------------|
+| **AI / ML Engineer** | Claude conversation engine ([`bots/shared/claude_client.py`](bots/shared/claude_client.py)), confidence-based model routing ([`bots/shared/business_rules.py`](bots/shared/business_rules.py)), multi-turn memory management | Two-pass Claude routing (Haiku/Sonnet/Opus), prompt caching (>1024 chars), 38-pattern regex response safety filter |
+| **Backend / AI Automation Engineer** | Webhook normalization + dedup + per-contact locking ([`bots/lead_bot/routes_webhook.py`](bots/lead_bot/routes_webhook.py)), Redis rate limiting, GHL CRM real-time sync | Two-phase TTL dedup (120s guard + 300s post-success), atomic `setnx` per-contact lock, 1,729-function test suite |
+| **CRM / Marketing Automation** | Full AWARENESS→CONVERSION funnel attribution ([`bots/shared/funnel_attribution.py`](bots/shared/funnel_attribution.py)), SMS re-engagement sequences ([`bots/shared/stall_reengagement.py`](bots/shared/stall_reengagement.py)), campaign metrics ([`bots/shared/sms_metrics_collector.py`](bots/shared/sms_metrics_collector.py)) | GHL webhook deduplication, automated Hot/Warm/Cold tag publishing, bilingual EN/ES auto-routing |
+| **Data Analyst / BI** | Lead dashboard API ([`bots/lead_bot/routes_dashboard.py`](bots/lead_bot/routes_dashboard.py)), funnel conversion metrics, per-stage ROI tracking | 12 dashboard endpoints, stage-by-stage conversion analytics, Redis sorted sets with 30-day rolling TTL |
 
 ## API Overview
 
@@ -379,7 +379,8 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Related Projects
 
-- [ai-orchestrator](https://github.com/ChunkyTortoise/ai-orchestrator) -- AgentForge: unified async LLM interface (Claude, Gemini, OpenAI, Perplexity)
+- [llm-reviewer-path](https://github.com/ChunkyTortoise/llm-reviewer-path) -- Cloneable 10-minute hiring-manager index for eval gates, approval boundaries, and retrieval failure modes
+- [mcp-server-toolkit](https://github.com/ChunkyTortoise/mcp-server-toolkit) -- Production MCP server framework: caching, rate limiting, auth, and OpenTelemetry instrumentation
 
 ## Built By
 
